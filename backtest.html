@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backtest & ML — Turf Analyzer v4</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh;
+  }
+  header {
+    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+  }
+  header h1 {
+    font-size: 20px;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a {
+    color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px;
+  }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+  .section {
+    background: rgba(30, 41, 59, 0.6); border-radius: 12px;
+    padding: 20px; margin-bottom: 20px; border: 1px solid #334155;
+  }
+  .section h2 {
+    font-size: 17px; margin-bottom: 14px; color: #10b981;
+    border-bottom: 1px solid #334155; padding-bottom: 8px;
+  }
+  .section p { color: #94a3b8; font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  select, button, input {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 7px 12px; border-radius: 7px; font-size: 12px;
+  }
+  button {
+    background: #10b981; border: none; cursor: pointer; font-weight: 600;
+  }
+  button:hover { background: #059669; }
+  button.purple { background: #8b5cf6; }
+  button.purple:hover { background: #7c3aed; }
+
+  .results-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px; margin-top: 16px;
+  }
+  .stat-card {
+    background: #0f172a; padding: 14px; border-radius: 10px;
+    text-align: center; border: 1px solid #334155;
+  }
+  .stat-card .value {
+    font-size: 26px; font-weight: 800; line-height: 1;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat-card .label {
+    font-size: 11px; color: #94a3b8; text-transform: uppercase;
+    margin-top: 5px; letter-spacing: 0.5px;
+  }
+  .stat-card.roi-positive .value { background: linear-gradient(90deg, #10b981, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .stat-card.roi-negative .value { background: linear-gradient(90deg, #ef4444, #f87171); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+  .vb-list { margin-top: 14px; }
+  .vb-row {
+    display: grid; grid-template-columns: 50px 1fr 70px 70px 70px 100px;
+    gap: 8px; padding: 7px 10px; background: #0f172a;
+    border-radius: 5px; margin-bottom: 4px; font-size: 12px; align-items: center;
+  }
+  .vb-row.win { border-left: 3px solid #10b981; }
+  .vb-row.lose { border-left: 3px solid #ef4444; opacity: 0.7; }
+
+  .loading { text-align: center; padding: 30px; color: #94a3b8; }
+  .spinner {
+    border: 3px solid #334155; border-top: 3px solid #10b981;
+    border-radius: 50%; width: 30px; height: 30px;
+    animation: spin 1s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .success { color: #10b981; font-weight: 600; }
+  .error { color: #ef4444; font-weight: 600; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid #334155; }
+  th { color: #06b6d4; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+  tr:hover td { background: #0f172a; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab {
+    background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+    padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 12px;
+  }
+  .tab.active { background: #064e3b; border-color: #10b981; color: #6ee7b7; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐎 Turf Analyzer — Backtest & ML <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v4</span></h1>
+  <div class="nav-links">
+    <a href="/">Analyse</a>
+    <a href="/backtest" class="active">Backtest & ML</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/dashboard">📊 Dashboard</a>
+    <a href="/models">🧠 Modèles</a>
+  </div>
+</header>
+
+<div class="container">
+  <!-- ML Training -->
+  <div class="section">
+    <h2>🧠 Modèle ML v4 (Ensemble GBM + Random Forest)</h2>
+    <p>
+      Entraîne un <strong>ensemble</strong> de deux modèles : Gradient Boosting (capture non-linéarités)
+      + Random Forest (réduit la variance). Combiné avec calibration isotone.
+      Utilise <strong>23 features</strong> (marché, forme, carrière, gains, driver, entraîneur,
+      distance, cheval, Elo, âge, repos, tendance, confrontations,
+      <strong>pedigree</strong>, <strong>corde</strong>, <strong>équipements</strong>, <strong>profil</strong>, etc.).
+    </p>
+    <div class="controls">
+      <label>Type :
+        <select id="trainType">
+          <option value="xgb" selected>🌟 XGBoost-like (recommandé)</option>
+          <option value="stacking">🏆 Stacking (XGB+RF+MLP)</option>
+          <option value="mlp">🧠 Neural Network (MLP)</option>
+          <option value="ensemble">Ensemble GBM+RF</option>
+          <option value="gbm">GBM seul</option>
+          <option value="rf">Random Forest seul</option>
+        </select>
+      </label>
+      <label>Jours :
+        <select id="trainDays">
+          <option value="10">10</option>
+          <option value="15">15</option>
+          <option value="21" selected>21</option>
+          <option value="30">30</option>
+        </select>
+      </label>
+      <label>Arbres GBM :
+        <select id="trainTreesGbm">
+          <option value="30">30</option>
+          <option value="50" selected>50</option>
+          <option value="100">100</option>
+        </select>
+      </label>
+      <label>Arbres RF :
+        <select id="trainTreesRf">
+          <option value="20">20</option>
+          <option value="30" selected>30</option>
+          <option value="50">50</option>
+        </select>
+      </label>
+      <button class="purple" onclick="trainModel()">🚀 Entraîner</button>
+    </div>
+    <div id="trainResult"></div>
+  </div>
+
+  <!-- Backtest -->
+  <div class="section">
+    <h2>📊 Backtest</h2>
+    <p>Teste l'algo sur les courses passées : taux de réussite, ROI Kelly, value bets, etc.</p>
+    <div class="controls">
+      <label>Période :
+        <select id="btDays">
+          <option value="3">3 jours</option>
+          <option value="7" selected>7 jours</option>
+          <option value="14">14 jours</option>
+          <option value="30">30 jours</option>
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="btML" style="width:auto;"> Avec ML
+      </label>
+      <button onclick="runBacktest()">▶️ Lancer</button>
+    </div>
+    <div id="btResult"></div>
+  </div>
+
+  <!-- Walk-Forward (validation temporelle rigoureuse) -->
+  <div class="section" style="border:1px solid #8b5cf6;">
+    <h2>🔬 Walk-Forward <span style="background:#8b5cf6;color:#fff;padding:2px 6px;border-radius:4px;font-size:10px;">v7 · sans look-ahead</span></h2>
+    <p style="color:#94a3b8;font-size:13px;line-height:1.5;">
+      Backtest temporel <b>rigoureux</b> : pour chaque fenêtre de test, les stats et le modèle
+      sont calculés <b>uniquement sur le passé strict</b> (aucune fuite du futur). Les chiffres
+      obtenus ici sont les <b>vrais</b> chiffres « comme en conditions réelles ».
+      <br>⚠️ Lent : chaque fold recalcule les stats 180j (≈ 3-5 min/fold).
+    </p>
+    <div class="controls" style="flex-wrap:wrap;">
+      <label>Folds :
+        <select id="wfFolds">
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="3" selected>3</option>
+          <option value="4">4</option>
+        </select>
+      </label>
+      <label>Train (j) :
+        <select id="wfTrain">
+          <option value="14">14</option>
+          <option value="21" selected>21</option>
+          <option value="30">30</option>
+          <option value="45">45</option>
+        </select>
+      </label>
+      <label>Test (j) :
+        <select id="wfTest">
+          <option value="3">3</option>
+          <option value="5" selected>5</option>
+          <option value="7">7</option>
+        </select>
+      </label>
+      <label>Gap (j) :
+        <select id="wfGap">
+          <option value="0">0</option>
+          <option value="1" selected>1</option>
+          <option value="2">2</option>
+        </select>
+      </label>
+      <label>Mode :
+        <select id="wfMode">
+          <option value="rolling" selected>Glissant (rolling)</option>
+          <option value="expanding">Cumulatif (expanding)</option>
+        </select>
+      </label>
+      <label>Modèle :
+        <select id="wfModel">
+          <option value="xgb" selected>XGBoost-like</option>
+          <option value="rf">Random Forest</option>
+          <option value="gbm">Gradient Boosting</option>
+          <option value="mlp">Neural Net (MLP)</option>
+          <option value="ensemble">Ensemble</option>
+        </select>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" id="wfML" style="width:auto;" checked> Avec ML
+      </label>
+      <button class="purple" onclick="runWalkForward()">🔬 Lancer le walk-forward</button>
+    </div>
+    <div id="wfResult"></div>
+  </div>
+
+  <!-- Top teams -->
+  <div class="section">
+    <h2>👥 Top drivers & entraîneurs</h2>
+    <div class="tabs">
+      <div class="tab active" onclick="showTab('drivers', this)">Drivers</div>
+      <div class="tab" onclick="showTab('entraineurs', this)">Entraîneurs</div>
+    </div>
+    <button onclick="loadTeamStats()">🔄 Charger</button>
+    <div id="teamResult"></div>
+  </div>
+</div>
+
+<script>
+async function trainModel() {
+  const days = document.getElementById('trainDays').value;
+  const trees_gbm = document.getElementById('trainTreesGbm').value;
+  const trees_rf = document.getElementById('trainTreesRf').value;
+  const type = document.getElementById('trainType').value;
+  const res_div = document.getElementById('trainResult');
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement Ensemble en cours… (1-3 min)</div>';
+  try {
+    const res = await fetch(`/api/train?days=${days}&trees_gbm=${trees_gbm}&trees_rf=${trees_rf}&type=${type}`, {method:'POST'});
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    res_div.innerHTML = `
+      <div class="success">
+        ✅ Modèle <strong>${data.model_type}</strong> entraîné !<br>
+        📊 ${data.n_samples} échantillons | GBM: ${data.n_trees_gbm} arbres | RF: ${data.n_trees_rf} arbres<br>
+        🕐 ${new Date(data.trained_at).toLocaleString('fr-FR')}<br>
+        <small style="color:#94a3b8;">Mode ML disponible sur la page Analyse.</small>
+      </div>
+    `;
+  } catch(e) {
+    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+async function runBacktest() {
+  const days = document.getElementById('btDays').value;
+  const ml = document.getElementById('btML').checked ? '&ml=1' : '';
+  const res_div = document.getElementById('btResult');
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Backtest en cours…</div>';
+  try {
+    const res = await fetch(`/api/backtest?days=${days}${ml}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderBacktest(data);
+  } catch(e) {
+    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+function renderBacktest(d) {
+  const roiCls = d.roi > 0 ? 'roi-positive' : 'roi-negative';
+  const vbCls = d.vb_roi > 0 ? 'roi-positive' : 'roi-negative';
+  const kCls = d.kelly_roi > 0 ? 'roi-positive' : 'roi-negative';
+
+  let html = `
+    <h3 style="margin:14px 0 8px;color:#06b6d4;font-size:14px;">📊 Pronostic #1 (mise fixe 1€)</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.total_courses}</div><div class="label">Courses</div></div>
+      <div class="stat-card"><div class="value">${d.taux_top1}%</div><div class="label">#1 gagne</div></div>
+      <div class="stat-card"><div class="value">${d.taux_top1_place}%</div><div class="label">#1 dans tiercé</div></div>
+      <div class="stat-card"><div class="value">${d.taux_top3}%</div><div class="label">Gagnant top 3</div></div>
+      <div class="stat-card ${roiCls}"><div class="value">${d.roi>0?'+':''}${d.roi}%</div><div class="label">ROI</div></div>
+      <div class="stat-card"><div class="value">${d.gain_total}€</div><div class="label">Gain</div></div>
+    </div>
+
+    <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Value Bets (mise 1€)</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.vb_nb}</div><div class="label">Total</div></div>
+      <div class="stat-card"><div class="value">${d.vb_winrate}%</div><div class="label">Winrate</div></div>
+      <div class="stat-card ${vbCls}"><div class="value">${d.vb_roi>0?'+':''}${d.vb_roi}%</div><div class="label">ROI</div></div>
+    </div>
+
+    <h3 style="margin:18px 0 8px;color:#a78bfa;font-size:14px;">💰 Kelly Criterion (sizing optimal, capital 100€)</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.kelly_mise_totale}€</div><div class="label">Mise totale</div></div>
+      <div class="stat-card"><div class="value">${d.kelly_gain_total}€</div><div class="label">Gain total</div></div>
+      <div class="stat-card ${kCls}"><div class="value">${d.kelly_profit>0?'+':''}${d.kelly_profit}€</div><div class="label">Profit</div></div>
+      <div class="stat-card ${kCls}"><div class="value">${d.kelly_roi>0?'+':''}${d.kelly_roi}%</div><div class="label">ROI Kelly</div></div>
+    </div>
+  `;
+
+  if (d.value_bets && d.value_bets.length) {
+    html += '<div class="vb-list"><h4 style="margin:14px 0 8px;color:#94a3b8;font-size:12px;">Derniers value bets :</h4>';
+    d.value_bets.slice().reverse().forEach(b => {
+      html += `
+        <div class="vb-row ${b.gagne?'win':'lose'}">
+          <span style="color:#94a3b8;">${b.date}</span>
+          <strong>${b.cheval}</strong>
+          <span>C ${b.cote}</span>
+          <span style="color:#10b981;">+${b.edge}%</span>
+          <span>K ${b.kellyMise || 0}€</span>
+          <span>${b.gagne ? '✅ GAGNÉ' : '❌ Perdu'}</span>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  document.getElementById('btResult').innerHTML = html;
+}
+
+let teamData = null;
+let currentTab = 'drivers';
+
+async function runWalkForward() {
+  const body = {
+    n_folds: parseInt(document.getElementById('wfFolds').value),
+    train_window: parseInt(document.getElementById('wfTrain').value),
+    test_window: parseInt(document.getElementById('wfTest').value),
+    gap: parseInt(document.getElementById('wfGap').value),
+    mode: document.getElementById('wfMode').value,
+    model_type: document.getElementById('wfModel').value,
+    use_ml: document.getElementById('wfML').checked
+  };
+  const res_div = document.getElementById('wfResult');
+  const est = body.n_folds * 4;
+  res_div.innerHTML = `<div class="loading"><div class="spinner"></div>Walk-forward en cours… (~${est} min, ${body.n_folds} fold(s) × stats 180j)</div>`;
+  try {
+    const res = await fetch('/api/backtest/walkforward', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const d = await res.json();
+    if (d.error) { res_div.innerHTML = `<div class="error">❌ ${d.error}</div>`; return; }
+    renderWalkForward(d);
+  } catch (e) {
+    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+function renderWalkForward(d) {
+  const g = d.global;
+  const roiCls = g.kelly_roi > 0 ? 'roi-positive' : 'roi-negative';
+  let html = `
+    <div style="margin-top:14px;padding:10px;background:#1e1b3a;border-radius:8px;border-left:3px solid #8b5cf6;">
+      <b style="color:#c4b5fd;">📐 Résultat agrégé (sans look-ahead)</b>
+      <span style="color:#64748b;font-size:11px;"> — ${g.n_folds} folds · ${g.n_test_courses} courses testées · ${g.n_test_samples} chevaux</span>
+    </div>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${g.top1_rate}%</div><div class="label">#1 gagne (réel)</div></div>
+      <div class="stat-card"><div class="value">${g.top3_rate}%</div><div class="label">Gagnant top 3</div></div>
+      <div class="stat-card"><div class="value">${g.auc}</div><div class="label">AUC</div></div>
+      <div class="stat-card"><div class="value">${g.log_loss}</div><div class="label">Log-loss</div></div>
+      <div class="stat-card"><div class="value">${g.brier}</div><div class="label">Brier</div></div>
+      <div class="stat-card"><div class="value">±${g.top1_std}</div><div class="label">Stabilité Top1 (σ)</div></div>
+    </div>
+    <h4 style="margin:14px 0 6px;color:#94a3b8;font-size:12px;">💰 Kelly (value bets, sans fuite)</h4>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${g.value_bets}</div><div class="label">Value bets</div></div>
+      <div class="stat-card"><div class="value">${g.vb_winrate}%</div><div class="label">Winrate VB</div></div>
+      <div class="stat-card"><div class="value">${g.kelly_mise}€</div><div class="label">Mise</div></div>
+      <div class="stat-card ${roiCls}"><div class="value">${g.kelly_profit>0?'+':''}${g.kelly_profit}€</div><div class="label">Profit</div></div>
+      <div class="stat-card ${roiCls}"><div class="value">${g.kelly_roi>0?'+':''}${g.kelly_roi}%</div><div class="label">ROI Kelly</div></div>
+    </div>`;
+
+  html += `<h4 style="margin:16px 0 6px;color:#94a3b8;font-size:12px;">🔍 Détail par fold</h4>
+    <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead><tr style="color:#94a3b8;text-align:left;border-bottom:1px solid #334155;">
+        <th style="padding:6px;">Fold</th><th>Entraînement</th><th>Test</th>
+        <th>Courses</th><th>Top1</th><th>Top3</th><th>AUC</th><th>Log-loss</th>
+      </tr></thead><tbody>`;
+  d.folds.forEach(f => {
+    html += `<tr style="border-bottom:1px solid #1e293b;">
+      <td style="padding:6px;">#${f.fold}</td>
+      <td style="color:#64748b;">${f.train}</td>
+      <td style="color:#64748b;">${f.test}</td>
+      <td>${f.n_test_courses}</td>
+      <td><b>${f.top1_rate}%</b></td>
+      <td>${f.top3_rate||0}%</td>
+      <td>${f.auc}</td>
+      <td>${f.log_loss}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+
+  html += `<p style="margin-top:12px;font-size:12px;color:#64748b;line-height:1.5;">
+    ℹ️ Ces chiffres sont généralement <b>plus bas</b> que le backtest classique ci-dessus :
+    c'est <b>normal et sain</b>. Le backtest classique surestime à cause de la fuite de données
+    (stats calculées sur 180j incluant le futur). Le walk-forward reflète la performance réelle.</p>`;
+  document.getElementById('wfResult').innerHTML = html;
+}
+
+async function loadTeamStats() {
+  const res_div = document.getElementById('teamResult');
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement…</div>';
+  try {
+    const res = await fetch('/api/team-stats');
+    teamData = await res.json();
+    renderTeamStats();
+  } catch(e) {
+    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+function showTab(name, el) {
+  currentTab = name;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  if (teamData) renderTeamStats();
+}
+
+function renderTeamStats() {
+  if (!teamData) return;
+  const list = currentTab === 'drivers' ? teamData.drivers : teamData.entraineurs;
+  let html = `<table>
+    <thead><tr><th>#</th><th>Nom</th><th>Courses</th><th>V</th><th>P</th><th>Taux V.</th></tr></thead>
+    <tbody>`;
+  list.forEach((p, i) => {
+    html += `<tr>
+      <td>${i+1}</td><td><strong>${p.nom}</strong></td>
+      <td>${p.courses}</td><td>${p.victoires}</td><td>${p.places}</td>
+      <td style="color:#10b981;font-weight:700;">${p.taux_victoire}%</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('teamResult').innerHTML = html;
+}
+</script>
+</body>
+</html>

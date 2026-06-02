@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Modèles ML — Turf Analyzer v6</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh; }
+  header { background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px; }
+  header h1 { font-size: 20px;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+  .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px; }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
+  .section { background: rgba(30, 41, 59, 0.6); border-radius: 12px;
+    padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
+  .section h2 { font-size: 17px; margin-bottom: 14px; color: #10b981;
+    border-bottom: 1px solid #334155; padding-bottom: 8px; }
+  .section p { color: #94a3b8; font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  select, button, input {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 8px 14px; border-radius: 7px; font-size: 13px; }
+  button { background: #10b981; border: none; cursor: pointer; font-weight: 600; color: white; }
+  button:hover { background: #059669; }
+  button.purple { background: #8b5cf6; }
+  button.purple:hover { background: #7c3aed; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #334155; }
+  th { color: #06b6d4; font-weight: 700; text-transform: uppercase; font-size: 11px;
+    background: #0f172a; }
+  tr:hover td { background: #1e293b; }
+  td.winner { background: rgba(16, 185, 129, 0.15); font-weight: 700; }
+  td.metric { font-family: 'Courier New', monospace; font-size: 13px; }
+
+  .badge-best { background: #facc15; color: #0f172a; padding: 2px 8px;
+    border-radius: 4px; font-size: 10px; font-weight: 800; margin-left: 6px; }
+
+  .loading { text-align: center; padding: 30px; color: #94a3b8; }
+  .spinner { border: 3px solid #334155; border-top: 3px solid #10b981;
+    border-radius: 50%; width: 30px; height: 30px;
+    animation: spin 1s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+  .success { color: #10b981; font-weight: 600; }
+  .error { color: #ef4444; font-weight: 600; }
+
+  .info-box { background: rgba(139, 92, 246, 0.1); border: 1px solid #8b5cf6;
+    border-radius: 8px; padding: 12px 14px; font-size: 12px; color: #c4b5fd; }
+  .info-box strong { color: #a78bfa; }
+
+  .metrics-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 10px; margin-top: 12px; font-size: 11px; }
+  .metric-card { background: #0f172a; padding: 10px; border-radius: 6px;
+    border: 1px solid #334155; }
+  .metric-card h4 { color: #06b6d4; font-size: 11px; margin-bottom: 4px;
+    text-transform: uppercase; }
+  .metric-card p { color: #94a3b8; line-height: 1.4; font-size: 11px; margin: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐎 Turf Analyzer — Modèles ML<span class="version-tag">v6</span></h1>
+  <div class="nav-links">
+    <a href="/">Analyse</a>
+    <a href="/backtest">Backtest & ML</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/dashboard">📊 Dashboard</a>
+    <a href="/models" class="active">🧠 Modèles</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="section">
+    <h2>⚖️ Comparaison de modèles</h2>
+    <p>
+      Entraîne <strong>4 modèles différents</strong> (GBM, Random Forest, XGBoost-like, MLP)
+      sur l'historique récent et compare leur performance via log-loss, AUC et Brier score.
+      Cela permet de choisir le meilleur modèle pour ton jeu de données actuel.
+    </p>
+    <div class="controls">
+      <label>Jours d'entraînement :
+        <select id="cmpDays">
+          <option value="10">10 jours</option>
+          <option value="15" selected>15 jours</option>
+          <option value="21">21 jours</option>
+          <option value="30">30 jours</option>
+        </select>
+      </label>
+      <button class="purple" onclick="runCompare()">⚖️ Comparer les modèles</button>
+    </div>
+    <div id="compareResult"></div>
+
+    <div class="metrics-legend">
+      <div class="metric-card">
+        <h4>📉 Log-loss</h4>
+        <p>Erreur logarithmique. <strong>Plus c'est bas, mieux c'est.</strong> Bon < 0.30.</p>
+      </div>
+      <div class="metric-card">
+        <h4>📈 AUC (Area Under Curve)</h4>
+        <p>Capacité à discriminer les gagnants. <strong>Plus c'est haut, mieux c'est.</strong> 0.5 = hasard, 1.0 = parfait.</p>
+      </div>
+      <div class="metric-card">
+        <h4>🎯 Brier score</h4>
+        <p>Qualité de calibration des probabilités. <strong>Plus c'est bas, mieux c'est.</strong> Bon < 0.10.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>🔍 AutoML : recherche automatique d'hyperparamètres (MLP)</h2>
+    <p>
+      Teste <strong>8 configurations</strong> aléatoires de Neural Network (architecture, dropout,
+      learning rate) avec validation croisée 2-fold. Retourne la meilleure config trouvée.
+    </p>
+    <div class="controls">
+      <label>Jours :
+        <select id="amlDays">
+          <option value="10" selected>10 jours</option>
+          <option value="15">15 jours</option>
+          <option value="21">21 jours</option>
+        </select>
+      </label>
+      <button class="purple" onclick="runAutoML()">🔍 Lancer AutoML</button>
+    </div>
+    <div id="autoMlResult"></div>
+  </div>
+
+  <div class="section">
+    <h2>📚 Guide des modèles</h2>
+    <div class="info-box">
+      <p><strong>GBM (Gradient Boosting)</strong> — Rapide, simple, bon pour démarrer. 50 arbres en séquence.</p>
+      <p><strong>Random Forest</strong> — Robuste, gère le bruit, parallélisable. 30 arbres indépendants.</p>
+      <p><strong>XGBoost-like</strong> — Le plus performant en général. Régularisation L2, early stopping. <strong>Recommandé</strong>.</p>
+      <p><strong>MLP (Neural Network)</strong> — Capture les patterns complexes. 2 couches cachées, dropout, Adam optimizer.</p>
+      <p><strong>Ensemble</strong> — Combine GBM + RF (60/40). Réduit la variance.</p>
+      <p><strong>Stacking</strong> — Combine XGBoost + RF + MLP via méta-modèle qui apprend les poids optimaux. Le plus avancé.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+async function runCompare() {
+  const days = document.getElementById('cmpDays').value;
+  const div = document.getElementById('compareResult');
+  div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement de 4 modèles... (1-3 min)</div>';
+  try {
+    const res = await fetch(`/api/models/compare?days=${days}`, {method: 'POST'});
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderCompare(data);
+  } catch(e) {
+    div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+function renderCompare(d) {
+  let html = `
+    <div class="success" style="margin-bottom:14px;">
+      ✅ ${d.n_samples} échantillons | ${d.n_wins} victoires (${d.win_rate}%)
+    </div>
+    <table>
+      <thead><tr>
+        <th>Modèle</th>
+        <th>Log-loss ↓</th>
+        <th>AUC ↑</th>
+        <th>Brier ↓</th>
+        <th>Détails</th>
+      </tr></thead>
+      <tbody>
+  `;
+  d.models.forEach((m, i) => {
+    const isWinner = i === 0;
+    const detail = m.n_trees_used ? `${m.n_trees_used} arbres utilisés` :
+                   m.best_epoch ? `Best epoch: ${m.best_epoch}` : '—';
+    html += `<tr>
+      <td><strong>${m.name}</strong>${isWinner ? '<span class="badge-best">🏆 BEST</span>' : ''}</td>
+      <td class="metric ${isWinner?'winner':''}">${m.log_loss.toFixed(4)}</td>
+      <td class="metric">${m.auc.toFixed(4)}</td>
+      <td class="metric">${m.brier.toFixed(4)}</td>
+      <td style="font-size:11px;color:#94a3b8;">${detail}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  document.getElementById('compareResult').innerHTML = html;
+}
+
+async function runAutoML() {
+  const days = document.getElementById('amlDays').value;
+  const div = document.getElementById('autoMlResult');
+  div.innerHTML = '<div class="loading"><div class="spinner"></div>Recherche en cours... (8 modèles × 2 folds CV, ~3-6 min)</div>';
+  try {
+    const res = await fetch(`/api/models/automl?days=${days}`, {method: 'POST'});
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderAutoML(data);
+  } catch(e) {
+    div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+function renderAutoML(d) {
+  if (!d.best_params) {
+    document.getElementById('autoMlResult').innerHTML = '<div class="error">Aucun résultat</div>';
+    return;
+  }
+  let html = `
+    <div class="success" style="margin-bottom:14px;">
+      🏆 <strong>Meilleure configuration trouvée</strong> (log-loss: ${d.best_score.toFixed(4)}) :<br>
+      <code style="background:#0f172a;padding:6px 10px;border-radius:4px;display:inline-block;margin-top:6px;">
+        ${JSON.stringify(d.best_params, null, 2).replace(/\\n/g, '<br>').replace(/  /g, '&nbsp;&nbsp;')}
+      </code>
+    </div>
+    <h4 style="color:#06b6d4;font-size:13px;margin:14px 0 8px;">Tous les essais (triés par log-loss) :</h4>
+    <table>
+      <thead><tr><th>Rang</th><th>Hidden sizes</th><th>Dropout</th><th>LR</th><th>Log-loss ↓</th><th>AUC ↑</th></tr></thead>
+      <tbody>
+  `;
+  d.all_results.forEach((r, i) => {
+    if (r.error) {
+      html += `<tr><td>#${i+1}</td><td colspan="5" class="error">${r.error}</td></tr>`;
+    } else {
+      const p = r.params;
+      html += `<tr>
+        <td>${i === 0 ? '🏆 #1' : '#' + (i+1)}</td>
+        <td><code>${p.hidden_sizes}</code></td>
+        <td>${p.dropout}</td>
+        <td>${p.learning_rate}</td>
+        <td class="metric ${i===0?'winner':''}">${r.score.toFixed(4)}</td>
+        <td class="metric">${r.auc.toFixed(4)}</td>
+      </tr>`;
+    }
+  });
+  html += '</tbody></table>';
+  document.getElementById('autoMlResult').innerHTML = html;
+}
+</script>
+</body>
+</html>

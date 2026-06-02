@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mes paris — Turf Analyzer v4</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh;
+  }
+  header {
+    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+  }
+  header h1 {
+    font-size: 20px;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a {
+    color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px;
+  }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .stat-card {
+    background: rgba(30, 41, 59, 0.6); padding: 14px;
+    border-radius: 10px; text-align: center; border: 1px solid #334155;
+  }
+  .stat-card .value {
+    font-size: 26px; font-weight: 800; line-height: 1;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .stat-card.profit-positive .value { background: linear-gradient(90deg, #10b981, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .stat-card.profit-negative .value { background: linear-gradient(90deg, #ef4444, #f87171); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .stat-card .label {
+    font-size: 11px; color: #94a3b8; text-transform: uppercase;
+    margin-top: 5px; letter-spacing: 0.5px;
+  }
+
+  .section-title {
+    font-size: 16px; color: #10b981; margin: 18px 0 10px;
+    border-bottom: 1px solid #334155; padding-bottom: 8px;
+  }
+
+  .bet-row {
+    background: rgba(30, 41, 59, 0.6); padding: 12px 14px;
+    border-radius: 8px; margin-bottom: 8px; border: 1px solid #334155;
+    display: grid; grid-template-columns: 80px 1fr 80px 80px 80px 200px;
+    gap: 10px; align-items: center; font-size: 13px;
+  }
+  .bet-row.gagne { border-left: 4px solid #10b981; }
+  .bet-row.perdu { border-left: 4px solid #ef4444; opacity: 0.8; }
+  .bet-row.en_attente { border-left: 4px solid #f59e0b; }
+
+  .bet-cheval { font-weight: 700; }
+  .bet-meta { font-size: 11px; color: #94a3b8; }
+  .bet-gain { font-weight: 700; }
+  .bet-gain.positive { color: #10b981; }
+  .bet-gain.negative { color: #ef4444; }
+
+  .bet-actions { display: flex; gap: 4px; }
+  .bet-actions button {
+    background: #1e293b; border: 1px solid #334155; color: #cbd5e1;
+    padding: 4px 8px; border-radius: 4px; font-size: 11px; cursor: pointer;
+  }
+  .bet-actions button.win { background: #064e3b; color: #6ee7b7; }
+  .bet-actions button.lose { background: #7f1d1d; color: #fca5a5; }
+  .bet-actions button.del { background: #475569; padding: 4px 6px; }
+  .bet-actions button:hover { opacity: 0.8; }
+
+  .empty {
+    text-align: center; padding: 40px; color: #64748b;
+  }
+
+  @media (max-width: 700px) {
+    .bet-row { grid-template-columns: 1fr; gap: 4px; }
+    .bet-actions { justify-content: center; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐎 Turf Analyzer — Mes paris</h1>
+  <div class="nav-links">
+    <a href="/">Analyse</a>
+    <a href="/backtest">Backtest & ML</a>
+    <a href="/paris" class="active">📋 Mes paris</a>
+    <a href="/dashboard">📊 Dashboard</a>
+    <a href="/models">🧠 Modèles</a>
+  </div>
+</header>
+
+<div class="container">
+  <div id="statsBlock" class="stats-grid"></div>
+
+  <h2 class="section-title">⏳ Paris en attente</h2>
+  <div id="enAttenteBlock"></div>
+
+  <h2 class="section-title">📜 Historique</h2>
+  <div id="historiqueBlock"></div>
+</div>
+
+<script>
+async function loadBets() {
+  try {
+    const res = await fetch('/api/bets');
+    const data = await res.json();
+    renderStats(data.stats);
+    renderBets(data.bets);
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function renderStats(s) {
+  const profitClass = s.profit > 0 ? 'profit-positive' : (s.profit < 0 ? 'profit-negative' : '');
+  document.getElementById('statsBlock').innerHTML = `
+    <div class="stat-card"><div class="value">${s.total_bets}</div><div class="label">Paris totaux</div></div>
+    <div class="stat-card"><div class="value">${s.en_attente}</div><div class="label">En attente</div></div>
+    <div class="stat-card"><div class="value">${s.winrate}%</div><div class="label">Taux de réussite</div></div>
+    <div class="stat-card"><div class="value">${s.total_mise}€</div><div class="label">Mise totale</div></div>
+    <div class="stat-card"><div class="value">${s.total_gain}€</div><div class="label">Gain total</div></div>
+    <div class="stat-card ${profitClass}"><div class="value">${s.profit > 0 ? '+' : ''}${s.profit}€</div><div class="label">Profit</div></div>
+    <div class="stat-card ${profitClass}"><div class="value">${s.roi > 0 ? '+' : ''}${s.roi}%</div><div class="label">ROI réel</div></div>
+  `;
+}
+
+function renderBets(bets) {
+  const enAttente = bets.filter(b => b.statut === 'EN_ATTENTE');
+  const historique = bets.filter(b => b.statut !== 'EN_ATTENTE');
+
+  document.getElementById('enAttenteBlock').innerHTML = enAttente.length
+    ? enAttente.map(renderBetRow).join('')
+    : '<div class="empty">Aucun pari en attente</div>';
+
+  document.getElementById('historiqueBlock').innerHTML = historique.length
+    ? historique.map(renderBetRow).join('')
+    : '<div class="empty">Aucun pari résolu</div>';
+}
+
+function renderBetRow(b) {
+  const cls = b.statut === 'GAGNE' ? 'gagne' : (b.statut === 'PERDU' ? 'perdu' : 'en_attente');
+  const gain = b.statut === 'GAGNE' ? `+${(b.gain - b.mise).toFixed(2)}€` :
+               (b.statut === 'PERDU' ? `-${b.mise}€` : '—');
+  const gainCls = b.statut === 'GAGNE' ? 'positive' : (b.statut === 'PERDU' ? 'negative' : '');
+  return `
+    <div class="bet-row ${cls}">
+      <div class="bet-meta">${b.date}<br><small>${b.course || ''}</small></div>
+      <div>
+        <div class="bet-cheval">${b.cheval}</div>
+        ${b.edge ? `<div class="bet-meta">Edge: +${b.edge}%</div>` : ''}
+      </div>
+      <div>Cote <strong>${b.cote}</strong></div>
+      <div>Mise <strong>${b.mise}€</strong></div>
+      <div class="bet-gain ${gainCls}">${gain}</div>
+      <div class="bet-actions">
+        ${b.statut === 'EN_ATTENTE' ? `
+          <button class="win" onclick="resolveBet(${b.id}, true)">✅ Gagné</button>
+          <button class="lose" onclick="resolveBet(${b.id}, false)">❌ Perdu</button>
+        ` : ''}
+        <button class="del" onclick="deleteBet(${b.id})">🗑</button>
+      </div>
+    </div>
+  `;
+}
+
+async function resolveBet(id, gagne) {
+  await fetch(`/api/bets/${id}`, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({gagne}),
+  });
+  loadBets();
+}
+
+async function deleteBet(id) {
+  if (!confirm('Supprimer ce pari ?')) return;
+  await fetch(`/api/bets/${id}`, {method: 'DELETE'});
+  loadBets();
+}
+
+loadBets();
+</script>
+</body>
+</html>

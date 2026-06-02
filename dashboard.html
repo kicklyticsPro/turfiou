@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard ROI — Turf Analyzer v5</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh; }
+  header { background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px; }
+  header h1 { font-size: 20px;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a { color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px; }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+  .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+
+  .container { max-width: 1300px; margin: 0 auto; padding: 24px 16px; }
+
+  .section { background: rgba(30, 41, 59, 0.6); border-radius: 12px;
+    padding: 20px; margin-bottom: 20px; border: 1px solid #334155; }
+  .section h2 { font-size: 16px; margin-bottom: 14px; color: #10b981;
+    border-bottom: 1px solid #334155; padding-bottom: 8px; }
+
+  .periods-tabs { display: flex; gap: 6px; margin-bottom: 14px; }
+  .period-tab { background: #1e293b; border: 1px solid #334155; color: #94a3b8;
+    padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 12px; }
+  .period-tab.active { background: #064e3b; border-color: #10b981; color: #6ee7b7; }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; }
+  .kpi { background: #0f172a; padding: 14px; border-radius: 8px;
+    border: 1px solid #334155; text-align: center; }
+  .kpi .v { font-size: 24px; font-weight: 800; line-height: 1;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+  .kpi .l { font-size: 10px; color: #94a3b8; text-transform: uppercase;
+    margin-top: 5px; letter-spacing: 0.5px; }
+  .kpi.pos .v { background: linear-gradient(90deg, #10b981, #34d399);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+  .kpi.neg .v { background: linear-gradient(90deg, #ef4444, #f87171);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; }
+
+  /* Graphique SVG profit cumulé */
+  .chart-wrap { background: #0f172a; padding: 16px; border-radius: 8px; margin-top: 12px; }
+  .chart-wrap svg { width: 100%; height: 280px; }
+  .chart-line { fill: none; stroke: #10b981; stroke-width: 2; }
+  .chart-area { fill: url(#chartGrad); opacity: 0.3; }
+  .chart-axis { stroke: #334155; stroke-width: 1; }
+  .chart-grid { stroke: #1e293b; stroke-width: 1; stroke-dasharray: 2,2; }
+  .chart-label { fill: #94a3b8; font-size: 10px; font-family: monospace; }
+  .chart-dot { fill: #10b981; }
+  .chart-dot.neg { fill: #ef4444; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid #334155; }
+  th { color: #06b6d4; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+  tr:hover td { background: #0f172a; }
+  .profit-pos { color: #10b981; font-weight: 700; }
+  .profit-neg { color: #ef4444; font-weight: 700; }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .empty { text-align: center; padding: 40px; color: #64748b; }
+
+  button { background: #10b981; border: none; cursor: pointer;
+    font-weight: 600; color: white; padding: 8px 14px; border-radius: 7px; font-size: 13px; }
+  button:hover { background: #059669; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐎 Turf Analyzer — Dashboard ROI<span class="version-tag">v5</span></h1>
+  <div class="nav-links">
+    <a href="/">Analyse</a>
+    <a href="/backtest">Backtest & ML</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/dashboard" class="active">📊 Dashboard</a>
+    <a href="/models">🧠 Modèles</a>
+  </div>
+</header>
+
+<div class="container">
+
+  <div class="section">
+    <h2>📈 Statistiques globales</h2>
+    <div class="periods-tabs">
+      <div class="period-tab active" data-period="global" onclick="switchPeriod('global', this)">Tout</div>
+      <div class="period-tab" data-period="30j" onclick="switchPeriod('30j', this)">30 jours</div>
+      <div class="period-tab" data-period="7j" onclick="switchPeriod('7j', this)">7 jours</div>
+    </div>
+    <div id="kpisBlock" class="kpis"></div>
+  </div>
+
+  <div class="section">
+    <h2>📉 Évolution du profit cumulé</h2>
+    <div class="chart-wrap">
+      <svg id="profitChart" viewBox="0 0 600 280" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id="chartGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#10b981" stop-opacity="0.6"/>
+            <stop offset="100%" stop-color="#10b981" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <div id="chartInfo" style="margin-top:10px;font-size:11px;color:#94a3b8;text-align:center;"></div>
+  </div>
+
+  <div class="grid-2">
+    <div class="section">
+      <h2>📍 Par hippodrome</h2>
+      <div id="parHippoBlock"></div>
+    </div>
+    <div class="section">
+      <h2>🏁 Par discipline</h2>
+      <div id="parDisciplineBlock"></div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>🎯 Par type de pari</h2>
+    <div id="parTypeBlock"></div>
+  </div>
+
+</div>
+
+<script>
+let currentData = null;
+
+async function loadDashboard() {
+  try {
+    const res = await fetch('/api/dashboard');
+    currentData = await res.json();
+    renderKPIs('global');
+    renderChart();
+    renderTable('parHippoBlock', currentData.stats_par_hippodrome, 'Hippodrome');
+    renderTable('parDisciplineBlock', currentData.stats_par_discipline, 'Discipline');
+    renderTable('parTypeBlock', currentData.stats_par_type, 'Type pari');
+  } catch(e) {
+    console.error(e);
+  }
+}
+
+function switchPeriod(p, el) {
+  document.querySelectorAll('.period-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  renderKPIs(p);
+}
+
+function renderKPIs(period) {
+  const s = period === '30j' ? currentData.stats_30j :
+            period === '7j' ? currentData.stats_7j : currentData.stats_global;
+  const profCls = s.profit > 0 ? 'pos' : (s.profit < 0 ? 'neg' : '');
+  document.getElementById('kpisBlock').innerHTML = `
+    <div class="kpi"><div class="v">${s.total_bets}</div><div class="l">Paris totaux</div></div>
+    <div class="kpi"><div class="v">${s.resolved}</div><div class="l">Résolus</div></div>
+    <div class="kpi"><div class="v">${s.en_attente}</div><div class="l">En attente</div></div>
+    <div class="kpi"><div class="v">${s.wins}</div><div class="l">Gagnés</div></div>
+    <div class="kpi"><div class="v">${s.winrate}%</div><div class="l">Taux réussite</div></div>
+    <div class="kpi"><div class="v">${s.total_mise}€</div><div class="l">Mise totale</div></div>
+    <div class="kpi"><div class="v">${s.total_gain}€</div><div class="l">Gain total</div></div>
+    <div class="kpi ${profCls}"><div class="v">${s.profit > 0 ? '+' : ''}${s.profit}€</div><div class="l">Profit</div></div>
+    <div class="kpi ${profCls}"><div class="v">${s.roi > 0 ? '+' : ''}${s.roi}%</div><div class="l">ROI</div></div>
+  `;
+}
+
+function renderChart() {
+  const data = currentData.evolution_profit || [];
+  const svg = document.getElementById('profitChart');
+  svg.innerHTML = svg.querySelector('defs').outerHTML;  // garde le gradient
+
+  if (data.length === 0) {
+    document.getElementById('chartInfo').textContent = 'Aucun pari résolu pour générer le graphique';
+    return;
+  }
+
+  const W = 600, H = 280, pad = 40;
+  const xs = data.map((d, i) => i);
+  const ys = data.map(d => d.profit_cumule);
+  const yMin = Math.min(0, ...ys);
+  const yMax = Math.max(0, ...ys);
+  const yRange = yMax - yMin || 1;
+  const xScale = (i) => pad + (i / Math.max(data.length - 1, 1)) * (W - 2 * pad);
+  const yScale = (v) => H - pad - ((v - yMin) / yRange) * (H - 2 * pad);
+
+  // Grid horizontal
+  const ns = 'http://www.w3.org/2000/svg';
+  for (let i = 0; i <= 4; i++) {
+    const y = pad + (i / 4) * (H - 2 * pad);
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', pad); line.setAttribute('x2', W - pad);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'chart-grid');
+    svg.appendChild(line);
+    const val = yMax - (i / 4) * yRange;
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 6); label.setAttribute('y', y + 4);
+    label.setAttribute('class', 'chart-label');
+    label.textContent = val.toFixed(0) + '€';
+    svg.appendChild(label);
+  }
+
+  // Ligne zéro
+  const zeroY = yScale(0);
+  if (zeroY >= pad && zeroY <= H - pad) {
+    const zLine = document.createElementNS(ns, 'line');
+    zLine.setAttribute('x1', pad); zLine.setAttribute('x2', W - pad);
+    zLine.setAttribute('y1', zeroY); zLine.setAttribute('y2', zeroY);
+    zLine.setAttribute('stroke', '#475569'); zLine.setAttribute('stroke-width', '1');
+    svg.appendChild(zLine);
+  }
+
+  // Aire
+  let areaPath = `M ${xScale(0)} ${yScale(0)}`;
+  data.forEach((d, i) => { areaPath += ` L ${xScale(i)} ${yScale(d.profit_cumule)}`; });
+  areaPath += ` L ${xScale(data.length-1)} ${yScale(0)} Z`;
+  const area = document.createElementNS(ns, 'path');
+  area.setAttribute('d', areaPath);
+  area.setAttribute('class', 'chart-area');
+  svg.appendChild(area);
+
+  // Ligne
+  let path = `M ${xScale(0)} ${yScale(data[0].profit_cumule)}`;
+  data.forEach((d, i) => { if (i > 0) path += ` L ${xScale(i)} ${yScale(d.profit_cumule)}`; });
+  const pathEl = document.createElementNS(ns, 'path');
+  pathEl.setAttribute('d', path);
+  pathEl.setAttribute('class', 'chart-line');
+  svg.appendChild(pathEl);
+
+  // Points
+  data.forEach((d, i) => {
+    const c = document.createElementNS(ns, 'circle');
+    c.setAttribute('cx', xScale(i));
+    c.setAttribute('cy', yScale(d.profit_cumule));
+    c.setAttribute('r', 3);
+    c.setAttribute('class', d.delta >= 0 ? 'chart-dot' : 'chart-dot neg');
+    svg.appendChild(c);
+  });
+
+  // Labels dates extrémités
+  const labStart = document.createElementNS(ns, 'text');
+  labStart.setAttribute('x', xScale(0)); labStart.setAttribute('y', H - 10);
+  labStart.setAttribute('class', 'chart-label');
+  labStart.textContent = data[0].date;
+  svg.appendChild(labStart);
+  const labEnd = document.createElementNS(ns, 'text');
+  labEnd.setAttribute('x', xScale(data.length-1) - 50); labEnd.setAttribute('y', H - 10);
+  labEnd.setAttribute('class', 'chart-label');
+  labEnd.textContent = data[data.length-1].date;
+  svg.appendChild(labEnd);
+
+  document.getElementById('chartInfo').textContent =
+    `${data.length} paris résolus · Profit final : ${data[data.length-1].profit_cumule}€`;
+}
+
+function renderTable(elId, rows, dimLabel) {
+  const el = document.getElementById(elId);
+  if (!rows || rows.length === 0) {
+    el.innerHTML = '<div class="empty">Aucune donnée</div>';
+    return;
+  }
+  let html = `<table>
+    <thead><tr><th>${dimLabel}</th><th>Paris</th><th>WR</th><th>Mise</th><th>Gain</th><th>Profit</th><th>ROI</th></tr></thead>
+    <tbody>`;
+  rows.slice(0, 15).forEach(r => {
+    const pCls = r.profit > 0 ? 'profit-pos' : (r.profit < 0 ? 'profit-neg' : '');
+    html += `<tr>
+      <td><strong>${r.dimension}</strong></td>
+      <td>${r.nb_bets}</td>
+      <td>${r.winrate}%</td>
+      <td>${r.mise}€</td>
+      <td>${r.gain}€</td>
+      <td class="${pCls}">${r.profit > 0 ? '+' : ''}${r.profit}€</td>
+      <td class="${pCls}">${r.roi > 0 ? '+' : ''}${r.roi}%</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+loadDashboard();
+</script>
+</body>
+</html>
