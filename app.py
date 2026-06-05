@@ -1040,6 +1040,96 @@ def backtest(days_back=7, use_ml=False):
 
 
 # ============================================================
+#  Bilan quotidien
+# ============================================================
+def bilan(days_back=7, use_ml=False):
+    """Stats par jour : où finit le #1 de l'algo (1er, 2e, 3e, hors podium)."""
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
+        max_days=HISTORY_DAYS)
+    today = datetime.now()
+    daily_results = []
+
+    for delta in range(1, days_back + 1):
+        d = today - timedelta(days=delta)
+        date_str = fmt_date(d)
+        day = {
+            "date": d.strftime("%d/%m/%Y"),
+            "date_short": d.strftime("%d/%m"),
+            "jour": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][d.weekday()],
+            "total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0,
+            "top3_total": 0,
+            "courses": [],
+        }
+
+        try:
+            prog = get_programme(date_str)
+        except Exception:
+            continue
+
+        tasks = []
+        for r in prog["programme"]["reunions"]:
+            hippo = r["hippodrome"]["libelleCourt"]
+            for c in r["courses"]:
+                if c.get("arriveeDefinitive"):
+                    tasks.append((date_str, r["numOfficiel"], c["numOrdre"],
+                                  c.get("distance"), c.get("discipline"), hippo,
+                                  c.get("corde", "")))
+
+        with ThreadPoolExecutor(max_workers=20) as ex:
+            results = list(ex.map(_fetch_full, tasks))
+
+        for result in results:
+            if not result:
+                continue
+            parts, perfs, distance, discipline, hippodrome, type_corde = result
+            analyses = analyser_course(parts, perfs, distance, discipline,
+                                        hippodrome, type_corde,
+                                        team_stats, horse_stats, elo, elo_hist,
+                                        horse_races, pedigree, use_ml=use_ml,
+                                        capital=100)
+            if not analyses:
+                continue
+
+            day["total"] += 1
+            top1 = analyses[0]
+            place = top1.get("ordreArrivee", 0) or 0
+
+            course_detail = {
+                "nom": top1["nom"],
+                "place": place,
+                "cote": top1.get("cote"),
+            }
+
+            if place == 1:
+                day["top1"] += 1
+                course_detail["resultat"] = "🥇"
+            elif place == 2:
+                day["top2"] += 1
+                course_detail["resultat"] = "🥈"
+            elif place == 3:
+                day["top3"] += 1
+                course_detail["resultat"] = "🥉"
+            elif place > 0:
+                day["hors"] += 1
+                course_detail["resultat"] = f"#{place}"
+            else:
+                day["hors"] += 1
+                course_detail["resultat"] = "—"
+
+            if 1 <= place <= 3:
+                day["top3_total"] += 1
+
+            day["courses"].append(course_detail)
+
+        if day["total"] > 0:
+            day["taux_top1"] = round(day["top1"] / day["total"] * 100, 1)
+            day["taux_top3"] = round(day["top3_total"] / day["total"] * 100, 1)
+            daily_results.append(day)
+
+    return daily_results
+
+
+# ============================================================
 #  Crack horses (public API)
 # ============================================================
 def get_crack_horses(date_str):
@@ -1175,6 +1265,12 @@ def paris_page():
     return render_template("paris.html")
 
 
+@app.route("/bilan")
+@admin_required
+def bilan_page():
+    return render_template("bilan.html")
+
+
 @app.route("/api/reunions")
 @admin_required
 def api_reunions():
@@ -1258,6 +1354,28 @@ def api_course(r_num, c_num):
         "live": live,
         "timestamp": datetime.now().isoformat(),
     })
+
+
+@app.route("/api/bilan")
+@admin_required
+def api_bilan():
+    days = int(request.args.get("days", 7))
+    use_ml = request.args.get("ml") == "1"
+    days = min(days, 30)
+    try:
+        data = bilan(days_back=days, use_ml=use_ml)
+        # Totaux globaux
+        totals = {"total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0,
+                  "top3_total": 0}
+        for d in data:
+            for k in totals:
+                totals[k] += d.get(k, 0)
+        n = totals["total"] or 1
+        totals["taux_top1"] = round(totals["top1"] / n * 100, 1)
+        totals["taux_top3"] = round(totals["top3_total"] / n * 100, 1)
+        return jsonify({"daily": data, "totals": totals})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/backtest")
