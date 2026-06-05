@@ -1068,11 +1068,22 @@ def get_crack_horses(date_str):
                         if p.get("statut") == "PARTANT"]
             all_horses = [p.get("nom") for p in partants if p.get("nom")]
 
+            # Calculer les scores ELO de tous les partants de la course
+            race_scores = []
             for p in partants:
                 cheval = p.get("nom")
                 if not cheval:
                     continue
                 elo_score = get_elo_score(cheval, elo, all_horses)
+                race_scores.append((p, cheval, elo_score))
+
+            # Si TOUS les chevaux de la course sont Crack,
+            # la course est homogène → on l'exclut
+            if race_scores and all(s >= CRACK_THRESHOLD for _, _, s in race_scores):
+                continue
+
+            # Sinon, ne garder que les vrais cracks qui se démarquent
+            for p, cheval, elo_score in race_scores:
                 if elo_score >= CRACK_THRESHOLD:
                     rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
                     cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
