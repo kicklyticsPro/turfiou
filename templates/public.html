@@ -186,8 +186,8 @@
     padding: 3px 8px; border-radius: 20px; font-size: 10px;
     font-weight: 800; white-space: nowrap;
   }
-  .role-badge.top3 { background: rgba(239,68,68,0.2); color: #ef4444; }
   .role-badge.crack-tag { background: rgba(250,204,21,0.2); color: #facc15; }
+  .role-badge.rang-tag { background: rgba(239,68,68,0.15); color: #ef4444; }
 
   /* ===== Course du Jour hero ===== */
   .jour-hero {
@@ -200,25 +200,42 @@
     background: linear-gradient(90deg, #ef4444, #f59e0b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
+  .jour-hero .jour-libelle {
+    color: #fbbf24; font-size: 14px; font-weight: 600; margin-bottom: 6px;
+  }
   .jour-hero .jour-meta {
     display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
     color: #94a3b8; font-size: 13px; margin-bottom: 8px;
   }
   .jour-hero .jour-meta strong { color: #e2e8f0; }
-  .jour-hero .jour-score {
-    display: inline-flex; align-items: center; gap: 6px;
-    background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
-    border-radius: 20px; padding: 6px 14px; margin-top: 4px;
+  .jour-hero .jour-stats {
+    display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 8px;
   }
-  .jour-hero .jour-score .js-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
-  .jour-hero .jour-score .js-val {
-    font-size: 18px; font-weight: 800; color: #ef4444;
+  .jour-hero .jour-stat {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 20px; padding: 5px 12px;
   }
-  .jour-section-label {
-    font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;
-    letter-spacing: 1px; margin: 14px 0 8px; padding-left: 4px;
+  .jour-hero .jour-stat .st-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
+  .jour-hero .jour-stat .st-val { font-size: 15px; font-weight: 800; color: #ef4444; }
+  .jour-hero .jour-stat .st-val.crack-val { color: #facc15; }
+  .jour-selection-label {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 700; color: #e2e8f0;
+    margin: 16px 0 10px; padding: 8px 12px;
+    border-radius: 8px;
   }
-  .jour-section-label span { color: #e2e8f0; }
+  .jour-selection-label.cracks-section {
+    background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2);
+  }
+  .jour-selection-label.classement-section {
+    background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15);
+  }
+  .jour-selection-label .section-emoji { font-size: 16px; }
+  .jour-selection-label .section-count {
+    background: #334155; color: #94a3b8; padding: 1px 8px;
+    border-radius: 10px; font-size: 11px; margin-left: 4px;
+  }
 
   /* ===== Empty / Loading ===== */
   .empty-state { text-align: center; padding: 50px 20px; color: #64748b; }
@@ -273,7 +290,7 @@
     <span class="tab-count" id="countBase">—</span>
   </button>
   <button class="tab-btn" id="tabJour" onclick="switchTab('jour')">
-    <span class="tab-icon">🎯</span> Course du Jour
+    <span class="tab-icon">🎯</span> Quinté
     <span class="tab-count" id="countJour">—</span>
   </button>
 </div>
@@ -472,7 +489,7 @@ function renderBases(data) {
   block.innerHTML = html;
 }
 
-/* ===== RENDER COURSE DU JOUR ===== */
+/* ===== RENDER QUINTÉ DU JOUR ===== */
 function renderJour(data) {
   const block = document.getElementById('resultsBlock');
   const sel = data.selection || [];
@@ -481,17 +498,21 @@ function renderJour(data) {
   if (!course || !sel.length) {
     block.innerHTML = `<div class="empty-state">
       <div class="emoji">🏇</div>
-      <h2>Aucune course du jour trouvée</h2>
-      <p>Pas assez de données pour déterminer la meilleure course.</p>
+      <h2>Aucun Quinté trouvé</h2>
+      <p>Pas de course de Quinté programmée pour cette date.</p>
     </div>`;
     return;
   }
 
+  const cracks = sel.filter(s => s.is_crack);
+  const others = sel.filter(s => !s.is_crack);
+
   let html = '';
 
-  // Hero : info course
+  // Hero
   html += `<div class="jour-hero">
-    <div class="jour-title">🎯 Course du Jour — R${course.r_num}C${course.c_num}</div>
+    <div class="jour-title">🎯 Quinté du Jour — R${course.r_num}C${course.c_num}</div>
+    ${course.libelle ? `<div class="jour-libelle">${course.libelle}</div>` : ''}
     <div class="jour-meta">
       <span>📍 <strong>${course.hippodrome}</strong></span>
       <span>🕐 <strong>${course.heure}</strong></span>
@@ -499,24 +520,34 @@ function renderJour(data) {
       <span>📏 <strong>${course.distance}m</strong></span>
       <span>🐎 <strong>${course.nb_partants} partants</strong></span>
     </div>
-    <div class="jour-score">
-      <span class="js-label">Score Top 3</span>
-      <span class="js-val">${course.top3_sum}%</span>
+    <div class="jour-stats">
+      <div class="jour-stat">
+        <span class="st-label">Sélection</span>
+        <span class="st-val">${sel.length} chevaux</span>
+      </div>
+      <div class="jour-stat">
+        <span class="st-label">Cracks</span>
+        <span class="st-val crack-val">${course.nb_cracks || 0}</span>
+      </div>
     </div>
   </div>`;
 
-  // Séparer top3 et cracks
-  const top3 = sel.filter(s => s.role === 'top3');
-  const cracks = sel.filter(s => s.role === 'crack');
-
-  if (top3.length) {
-    html += `<div class="jour-section-label">🏅 Les <span>${top3.length}</span> favoris de la course</div>`;
-    top3.forEach(c => { html += horseCard(c, 'jour'); });
+  // Section Cracks
+  if (cracks.length) {
+    html += `<div class="jour-selection-label cracks-section">
+      <span class="section-emoji">⚡</span> Cracks
+      <span class="section-count">${cracks.length}</span>
+    </div>`;
+    cracks.forEach(c => { html += horseCard(c, 'jour'); });
   }
 
-  if (cracks.length) {
-    html += `<div class="jour-section-label">⚡ Cracks complémentaires (<span>${cracks.length}</span>)</div>`;
-    cracks.forEach(c => { html += horseCard(c, 'jour'); });
+  // Section Classement
+  if (others.length) {
+    html += `<div class="jour-selection-label classement-section">
+      <span class="section-emoji">📊</span> Complémentaires (classement)
+      <span class="section-count">${others.length}</span>
+    </div>`;
+    others.forEach(c => { html += horseCard(c, 'jour'); });
   }
 
   block.innerHTML = html;
@@ -524,9 +555,9 @@ function renderJour(data) {
 
 /* ===== Generic horse card ===== */
 function horseCard(c, style) {
-  const roleBadge = c.role === 'top3'
-    ? `<span class="role-badge top3">#${c.rang || '?'}</span>`
-    : (c.is_crack ? `<span class="role-badge crack-tag">⚡ Crack</span>` : '');
+  const roleBadge = c.is_crack
+    ? `<span class="role-badge crack-tag">⚡ Crack</span>`
+    : (style === 'jour' ? `<span class="role-badge rang-tag">#${c.rang || '?'}</span>` : '');
 
   const chancePill = c.chance !== undefined
     ? `<div class="score-pill ${style}">
@@ -573,5 +604,5 @@ function horseCard(c, style) {
 document.getElementById('datePicker').value = todayStr();
 loadAll();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0707b88fb64763b',t:'MTc4MDY3NjE5NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a07095a928ff009e',t:'MTc4MDY3NzI2NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
