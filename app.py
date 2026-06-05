@@ -1305,11 +1305,11 @@ def get_super_base(date_str):
 
 
 # ============================================================
-#  Course du Jour (public API)
+#  Course du Jour (public API) — Quinté du jour
 # ============================================================
 def get_course_du_jour(date_str):
-    """Sélectionne la course avec la plus forte somme de chance des 3 premiers,
-    puis retourne le top 3 + les cracks de cette course comme sélection."""
+    """Sélectionne la course du Quinté, puis retourne les cracks
+    + les meilleurs du classement pour arriver à 7 chevaux."""
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
 
     try:
@@ -1317,129 +1317,145 @@ def get_course_du_jour(date_str):
     except Exception:
         return None
 
-    best_course = None
-    best_score = 0
-    best_analyses = []
-    best_meta = None
-
+    # Trouver la course du Quinté
+    quinte_meta = None
     for r in programme["programme"]["reunions"]:
         hippo = r["hippodrome"]["libelleCourt"]
         for c in r["courses"]:
             r_num = r["numOfficiel"]
             c_num = c["numOrdre"]
-            distance = c.get("distance")
-            discipline = c.get("discipline", "")
-            type_corde = c.get("corde", "")
-            try:
-                parts = get_participants(date_str, r_num, c_num)
-                perfs = get_performances(date_str, r_num, c_num)
-            except Exception:
-                continue
+            # Le Quinté est identifié par le champ resume dans le libellé
+            # ou par la discipline + conditions. On cherche le mot "quinté"
+            libelle = (c.get("libelle") or "").lower()
+            libelle_court = (c.get("libelleCourt") or "").lower()
+            conditions = (c.get("conditions") or "").lower()
+            # Vérifier via le critère quinté
+            is_quinte = False
 
-            analyses = analyser_course(
-                parts, perfs, distance, discipline, hippo, type_corde,
-                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
-                use_ml=False, capital=100)
+            # Méthode 1 : prixPension ou mention quinté dans les champs texte
+            if "quinte" in libelle or "quinte" in libelle_court or "quinte" in conditions:
+                is_quinte = True
 
-            if len(analyses) < 3:
-                continue
+            # Méthode 2 : champ betTypes ou prixPension
+            bet_types = c.get("betTypes", [])
+            if isinstance(bet_types, list):
+                for bt in bet_types:
+                    bt_name = ""
+                    if isinstance(bt, str):
+                        bt_name = bt.lower()
+                    elif isinstance(bt, dict):
+                        bt_name = (bt.get("code") or bt.get("libelle") or "").lower()
+                    if "quinte" in bt_name:
+                        is_quinte = True
+                        break
 
-            # Somme des chances des 3 premiers
-            top3_sum = sum(a.get("chance", 0) for a in analyses[:3])
+            # Méthode 3 : catégorie quinté
+            categorie = (c.get("categorie") or "").lower() if isinstance(c.get("categorie"), str) else ""
+            if "quinte" in categorie:
+                is_quinte = True
 
-            if top3_sum > best_score:
-                best_score = top3_sum
-                best_analyses = analyses
-                best_meta = {
+            if is_quinte:
+                quinte_meta = {
                     "r_num": r_num, "c_num": c_num,
-                    "hippodrome": hippo, "discipline": discipline,
-                    "distance": distance, "type_corde": type_corde,
+                    "hippodrome": hippo,
+                    "discipline": c.get("discipline", ""),
+                    "distance": c.get("distance"),
+                    "type_corde": c.get("corde", ""),
                     "heure": datetime.fromtimestamp(
                         c["heureDepart"] / 1000
                     ).strftime("%H:%M") if c.get("heureDepart") else "",
-                    "nb_partants": len([p for p in parts.get("participants", [])
-                                        if p.get("statut") == "PARTANT"]),
-                    "top3_sum": round(top3_sum, 2),
+                    "libelle": c.get("libelle") or c.get("libelleCourt") or "",
                 }
+                break
+        if quinte_meta:
+            break
 
-    if not best_meta:
+    if not quinte_meta:
         return None
 
-    # Construire la sélection : top 3 + cracks
-    partants = best_analyses
+    # Analyser la course du quinté
+    try:
+        parts = get_participants(date_str, quinte_meta["r_num"], quinte_meta["c_num"])
+        perfs = get_performances(date_str, quinte_meta["r_num"], quinte_meta["c_num"])
+    except Exception:
+        return None
+
+    analyses = analyser_course(
+        parts, perfs,
+        quinte_meta["distance"], quinte_meta["discipline"],
+        quinte_meta["hippodrome"], quinte_meta["type_corde"],
+        team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
+        use_ml=False, capital=100)
+
+    if len(analyses) < 3:
+        return None
+
+    nb_partants = len([p for p in parts.get("participants", [])
+                        if p.get("statut") == "PARTANT"])
+
+    # Construire la sélection de 7 chevaux :
+    # D'abord les cracks, puis les meilleurs du classement dans l'ordre
+    SELECTION_SIZE = 7
+
+    # Identifier les cracks (ELO ≥ 85, > 0 courses)
+    crack_nums = set()
+    for a in analyses:
+        if (a["scores"]["elo"] >= 85
+                and (a.get("nbCourses", 0) or 0) > 0):
+            crack_nums.add(a["numPmu"])
+
+    # Construire la liste : cracks d'abord (dans l'ordre du classement),
+    # puis les autres dans l'ordre du classement, jusqu'à 7
     selection = []
-    seen_nums = set()
+    seen = set()
 
-    # Ajouter le top 3
-    for i, a in enumerate(partants[:3]):
-        nb_courses = a.get("nbCourses", 0) or 0
-        if nb_courses == 0:
-            continue
-        seen_nums.add(a["numPmu"])
-        selection.append({
-            "numPmu": a["numPmu"],
-            "cheval": a["nom"],
-            "chance": a.get("chance", 0),
-            "elo_score": a["scores"]["elo"],
-            "forme": a["scores"]["forme"],
-            "driver": a["driver"],
-            "entraineur": a["entraineur"],
-            "age": a.get("age"),
-            "sexe": a.get("sexe"),
-            "cote": a.get("cote"),
-            "musique": a.get("musique", ""),
-            "nb_courses": nb_courses,
-            "nb_victoires": a.get("nbVictoires", 0),
-            "nb_places": a.get("nbPlaces", 0),
-            "gains_carriere": a.get("gainsCarriere", 0),
-            "edge": a.get("edge", 0),
-            "value_bet": a.get("valueBet", False),
-            "rang": i + 1,
-            "is_crack": a["scores"]["elo"] >= 85,
-            "role": "top3",
-        })
+    # Pass 1 : les cracks dans l'ordre du classement algo
+    for a in analyses:
+        if a["numPmu"] in crack_nums and a["numPmu"] not in seen:
+            if (a.get("nbCourses", 0) or 0) > 0:
+                seen.add(a["numPmu"])
+                selection.append(_selection_entry(a, is_crack=True))
 
-    # Ajouter les cracks qui ne sont pas déjà dans le top 3
-    for a in partants:
-        if a["numPmu"] in seen_nums:
-            continue
-        nb_courses = a.get("nbCourses", 0) or 0
-        if nb_courses == 0:
-            continue
-        if a["scores"]["elo"] < 85:
-            continue
+    # Pass 2 : le reste dans l'ordre du classement
+    for a in analyses:
+        if a["numPmu"] not in seen:
+            if (a.get("nbCourses", 0) or 0) > 0:
+                seen.add(a["numPmu"])
+                selection.append(_selection_entry(a, is_crack=False))
 
-        seen_nums.add(a["numPmu"])
-        selection.append({
-            "numPmu": a["numPmu"],
-            "cheval": a["nom"],
-            "chance": a.get("chance", 0),
-            "elo_score": a["scores"]["elo"],
-            "forme": a["scores"]["forme"],
-            "driver": a["driver"],
-            "entraineur": a["entraineur"],
-            "age": a.get("age"),
-            "sexe": a.get("sexe"),
-            "cote": a.get("cote"),
-            "musique": a.get("musique", ""),
-            "nb_courses": nb_courses,
-            "nb_victoires": a.get("nbVictoires", 0),
-            "nb_places": a.get("nbPlaces", 0),
-            "gains_carriere": a.get("gainsCarriere", 0),
-            "edge": a.get("edge", 0),
-            "value_bet": a.get("valueBet", False),
-            "rang": a.get("rang", 0),
-            "is_crack": True,
-            "role": "crack",
-        })
+    # Couper à 7
+    selection = selection[:SELECTION_SIZE]
 
-    # Trier : top3 d'abord (par rang), puis cracks (par elo_score desc)
-    selection.sort(key=lambda x: (0 if x["role"] == "top3" else 1,
-                                   x.get("rang", 99) if x["role"] == "top3" else -x["elo_score"]))
+    quinte_meta["nb_partants"] = nb_partants
+    quinte_meta["nb_cracks"] = len(crack_nums)
 
     return {
-        "meta": best_meta,
+        "meta": quinte_meta,
         "selection": selection,
+    }
+
+
+def _selection_entry(a, is_crack=False):
+    return {
+        "numPmu": a["numPmu"],
+        "cheval": a["nom"],
+        "chance": a.get("chance", 0),
+        "rang": a.get("rang", 0),
+        "elo_score": a["scores"]["elo"],
+        "forme": a["scores"]["forme"],
+        "driver": a["driver"],
+        "entraineur": a["entraineur"],
+        "age": a.get("age"),
+        "sexe": a.get("sexe"),
+        "cote": a.get("cote"),
+        "musique": a.get("musique", ""),
+        "nb_courses": a.get("nbCourses", 0) or 0,
+        "nb_victoires": a.get("nbVictoires", 0),
+        "nb_places": a.get("nbPlaces", 0),
+        "gains_carriere": a.get("gainsCarriere", 0),
+        "edge": a.get("edge", 0),
+        "value_bet": a.get("valueBet", False),
+        "is_crack": is_crack,
     }
 
 
