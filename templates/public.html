@@ -259,7 +259,7 @@ function renderCracks(data) {
     block.innerHTML = `<div class="empty-state">
       <div class="emoji">🏇</div>
       <h2>Aucun cheval Crack trouvé</h2>
-      <p>Pas de cheval avec un score ELO exceptionnel (≥ 1560) pour cette date.<br>
+      <p>Pas de cheval avec un score ELO exceptionnel (≥ 85) pour cette date.<br>
       Essayez une autre journée de courses.</p>
     </div>`;
     return;
@@ -328,7 +328,7 @@ function renderCracks(data) {
       `;
 
       // Trier les chevaux par ELO décroissant dans la course
-      cou.horses.sort((a, b) => b.elo_rating - a.elo_rating);
+      cou.horses.sort((a, b) => b.elo_score - a.elo_score);
 
       cou.horses.forEach(c => {
         html += `
@@ -347,7 +347,7 @@ function renderCracks(data) {
             <div class="card-right">
               <div class="elo-pill">
                 <span class="elo-label">ELO</span>
-                <span class="elo-val">${c.elo_rating}</span>
+                <span class="elo-val">${c.elo_score}</span>
               </div>
               ${c.cote ? `<span class="cote-pill">Cote ${c.cote}</span>` : ''}
             </div>
@@ -376,5 +376,5 @@ function formatDate(dateStr) {
 document.getElementById('datePicker').value = todayStr();
 loadCracks();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0702cb03e28d127',t:'MTc4MDY3Mjk2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a07036cb7f8ad56c',t:'MTc4MDY3MzM3OQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
