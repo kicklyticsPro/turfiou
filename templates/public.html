@@ -27,37 +27,31 @@
   /* ===== Onglets ===== */
   .tabs {
     display: flex; justify-content: center; gap: 4px;
-    padding: 12px 16px 0; max-width: 860px; margin: 0 auto;
+    padding: 12px 12px 0; max-width: 860px; margin: 0 auto;
   }
   .tab-btn {
-    flex: 1; max-width: 260px; padding: 10px 16px;
+    flex: 1; max-width: 220px; padding: 9px 10px;
     background: rgba(30, 41, 59, 0.5); border: 1px solid #334155;
     border-bottom: none; border-radius: 10px 10px 0 0;
-    color: #94a3b8; font-size: 14px; font-weight: 700;
+    color: #94a3b8; font-size: 13px; font-weight: 700;
     cursor: pointer; transition: all .2s; text-align: center;
   }
   .tab-btn:hover { color: #e2e8f0; background: rgba(30, 41, 59, 0.8); }
-  .tab-btn.active-crack {
-    background: rgba(250, 204, 21, 0.1); border-color: #facc15;
-    color: #facc15;
-  }
-  .tab-btn.active-base {
-    background: rgba(16, 185, 129, 0.1); border-color: #10b981;
-    color: #10b981;
-  }
-  .tab-btn .tab-icon { font-size: 16px; }
+  .tab-btn.active-crack { background: rgba(250,204,21,0.1); border-color: #facc15; color: #facc15; }
+  .tab-btn.active-base { background: rgba(16,185,129,0.1); border-color: #10b981; color: #10b981; }
+  .tab-btn.active-jour { background: rgba(239,68,68,0.1); border-color: #ef4444; color: #ef4444; }
+  .tab-btn .tab-icon { font-size: 15px; }
   .tab-btn .tab-count {
     display: inline-block; background: #334155; color: #e2e8f0;
     padding: 1px 7px; border-radius: 10px; font-size: 11px;
-    margin-left: 6px; font-weight: 600;
+    margin-left: 4px; font-weight: 600;
   }
   .tab-btn.active-crack .tab-count { background: #facc15; color: #0f172a; }
   .tab-btn.active-base .tab-count { background: #10b981; color: #0f172a; }
+  .tab-btn.active-jour .tab-count { background: #ef4444; color: #fff; }
 
   /* ===== Container ===== */
-  .container {
-    max-width: 860px; margin: 0 auto; padding: 0 16px 20px;
-  }
+  .container { max-width: 860px; margin: 0 auto; padding: 0 16px 20px; }
   .date-bar {
     display: flex; justify-content: center; align-items: center;
     gap: 12px; padding: 14px 0; flex-wrap: wrap;
@@ -86,27 +80,22 @@
   }
   .reunion-header.crack-style { border-bottom: 2px solid #facc15; }
   .reunion-header.base-style { border-bottom: 2px solid #10b981; }
+  .reunion-header.jour-style { border-bottom: 2px solid #ef4444; }
   .reunion-header .reunion-title { display: flex; align-items: center; gap: 10px; }
   .reunion-header .reunion-num {
     padding: 4px 12px; border-radius: 20px; font-size: 13px;
     font-weight: 800; letter-spacing: 0.5px;
   }
-  .reunion-header .reunion-num.crack {
-    background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a;
-  }
-  .reunion-header .reunion-num.base {
-    background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a;
-  }
+  .reunion-header .reunion-num.crack { background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a; }
+  .reunion-header .reunion-num.base { background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a; }
+  .reunion-header .reunion-num.jour { background: linear-gradient(135deg, #ef4444, #f59e0b); color: #fff; }
   .reunion-header .reunion-hippo { font-size: 15px; font-weight: 700; color: #e2e8f0; }
   .reunion-header .reunion-count {
     font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
   }
-  .reunion-header .reunion-count.crack {
-    background: rgba(250,204,21,0.15); color: #facc15;
-  }
-  .reunion-header .reunion-count.base {
-    background: rgba(16,185,129,0.15); color: #10b981;
-  }
+  .reunion-header .reunion-count.crack { background: rgba(250,204,21,0.15); color: #facc15; }
+  .reunion-header .reunion-count.base { background: rgba(16,185,129,0.15); color: #10b981; }
+  .reunion-header .reunion-count.jour { background: rgba(239,68,68,0.15); color: #ef4444; }
   .reunion-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
   /* ===== Course séparateur ===== */
@@ -117,9 +106,11 @@
   .course-sep .course-label {
     padding: 3px 12px; border-radius: 6px;
     font-size: 12px; font-weight: 700; white-space: nowrap;
+    background: #0f172a;
   }
-  .course-sep .course-label.crack { background: #0f172a; color: #06b6d4; }
-  .course-sep .course-label.base { background: #0f172a; color: #10b981; }
+  .course-sep .course-label.crack { color: #06b6d4; }
+  .course-sep .course-label.base { color: #10b981; }
+  .course-sep .course-label.jour { color: #ef4444; }
   .course-sep .course-infos { color: #94a3b8; font-size: 12px; }
   .course-sep .course-heure { color: #f59e0b; font-weight: 700; font-size: 12px; margin-left: auto; white-space: nowrap; }
 
@@ -129,30 +120,26 @@
     transition: all .2s; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
   }
   .horse-card:hover { transform: translateY(-1px); }
-  .horse-card.crack {
-    background: rgba(30,41,59,0.7); border: 1px solid rgba(250,204,21,0.3);
-  }
+  .horse-card.crack { background: rgba(30,41,59,0.7); border: 1px solid rgba(250,204,21,0.3); }
   .horse-card.crack:hover { border-color: #facc15; box-shadow: 0 0 20px rgba(250,204,21,0.12); }
-  .horse-card.base {
-    background: rgba(30,41,59,0.7); border: 1px solid rgba(16,185,129,0.3);
-  }
+  .horse-card.base { background: rgba(30,41,59,0.7); border: 1px solid rgba(16,185,129,0.3); }
   .horse-card.base:hover { border-color: #10b981; box-shadow: 0 0 20px rgba(16,185,129,0.12); }
+  .horse-card.jour { background: rgba(30,41,59,0.7); border: 1px solid rgba(239,68,68,0.3); }
+  .horse-card.jour:hover { border-color: #ef4444; box-shadow: 0 0 20px rgba(239,68,68,0.12); }
 
   .card-num {
     width: 34px; height: 34px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     font-size: 14px; font-weight: 800; flex-shrink: 0;
   }
-  .card-num.crack {
-    background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a;
-  }
-  .card-num.base {
-    background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a;
-  }
+  .card-num.crack { background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a; }
+  .card-num.base { background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a; }
+  .card-num.jour { background: linear-gradient(135deg, #ef4444, #f59e0b); color: #fff; }
   .card-main { flex: 1; min-width: 140px; }
   .card-main .card-nom { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
   .card-main .card-nom.crack { color: #facc15; }
   .card-main .card-nom.base { color: #10b981; }
+  .card-main .card-nom.jour { color: #ef4444; }
   .card-main .card-details {
     display: flex; gap: 10px; flex-wrap: wrap;
     color: #94a3b8; font-size: 12px;
@@ -170,15 +157,10 @@
     display: inline-flex; align-items: center; gap: 5px;
     border-radius: 20px; padding: 5px 10px;
   }
-  .score-pill.crack {
-    background: rgba(250,204,21,0.1); border: 1px solid rgba(250,204,21,0.25);
-  }
-  .score-pill.base {
-    background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25);
-  }
-  .score-pill .pill-label {
-    font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;
-  }
+  .score-pill.crack { background: rgba(250,204,21,0.1); border: 1px solid rgba(250,204,21,0.25); }
+  .score-pill.base { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25); }
+  .score-pill.jour { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); }
+  .score-pill .pill-label { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
   .score-pill .pill-val { font-size: 15px; font-weight: 800; }
   .score-pill .pill-val.crack {
     background: linear-gradient(90deg, #facc15, #f59e0b);
@@ -186,6 +168,10 @@
   }
   .score-pill .pill-val.base {
     background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .score-pill .pill-val.jour {
+    background: linear-gradient(90deg, #ef4444, #f59e0b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
   .cote-pill {
@@ -196,6 +182,43 @@
     background: #f59e0b; color: #0f172a; padding: 3px 8px;
     border-radius: 20px; font-size: 10px; font-weight: 800; white-space: nowrap;
   }
+  .role-badge {
+    padding: 3px 8px; border-radius: 20px; font-size: 10px;
+    font-weight: 800; white-space: nowrap;
+  }
+  .role-badge.top3 { background: rgba(239,68,68,0.2); color: #ef4444; }
+  .role-badge.crack-tag { background: rgba(250,204,21,0.2); color: #facc15; }
+
+  /* ===== Course du Jour hero ===== */
+  .jour-hero {
+    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(245,158,11,0.1));
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 14px; padding: 20px; margin-bottom: 16px; text-align: center;
+  }
+  .jour-hero .jour-title {
+    font-size: 24px; font-weight: 800; margin-bottom: 6px;
+    background: linear-gradient(90deg, #ef4444, #f59e0b);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .jour-hero .jour-meta {
+    display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
+    color: #94a3b8; font-size: 13px; margin-bottom: 8px;
+  }
+  .jour-hero .jour-meta strong { color: #e2e8f0; }
+  .jour-hero .jour-score {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 20px; padding: 6px 14px; margin-top: 4px;
+  }
+  .jour-hero .jour-score .js-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
+  .jour-hero .jour-score .js-val {
+    font-size: 18px; font-weight: 800; color: #ef4444;
+  }
+  .jour-section-label {
+    font-size: 12px; font-weight: 700; color: #64748b; text-transform: uppercase;
+    letter-spacing: 1px; margin: 14px 0 8px; padding-left: 4px;
+  }
+  .jour-section-label span { color: #e2e8f0; }
 
   /* ===== Empty / Loading ===== */
   .empty-state { text-align: center; padding: 50px 20px; color: #64748b; }
@@ -215,12 +238,8 @@
     border-radius: 10px; padding: 10px 16px; margin-bottom: 16px;
     text-align: center; font-size: 13px;
   }
-  .summary-bar.crack {
-    background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2);
-  }
-  .summary-bar.base {
-    background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);
-  }
+  .summary-bar.crack { background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2); }
+  .summary-bar.base { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); }
   .summary-bar strong.crack { color: #facc15; }
   .summary-bar strong.base { color: #10b981; }
 
@@ -232,8 +251,9 @@
     .horse-card { gap: 8px; padding: 12px 14px; }
     .card-main .card-nom { font-size: 15px; }
     .card-right { width: 100%; justify-content: flex-start; }
-    .tabs { gap: 3px; padding: 10px 8px 0; }
-    .tab-btn { font-size: 12px; padding: 8px 10px; }
+    .tabs { gap: 3px; padding: 10px 6px 0; }
+    .tab-btn { font-size: 11px; padding: 7px 6px; }
+    .jour-hero .jour-title { font-size: 18px; }
   }
 </style>
 </head>
@@ -251,6 +271,10 @@
   <button class="tab-btn" id="tabBase" onclick="switchTab('base')">
     <span class="tab-icon">🏆</span> Super Base
     <span class="tab-count" id="countBase">—</span>
+  </button>
+  <button class="tab-btn" id="tabJour" onclick="switchTab('jour')">
+    <span class="tab-icon">🎯</span> Course du Jour
+    <span class="tab-count" id="countJour">—</span>
   </button>
 </div>
 
@@ -275,7 +299,7 @@
 
 <script>
 let currentTab = 'crack';
-let cacheData = { crack: null, base: null };
+let cacheData = { crack: null, base: null, jour: null };
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
@@ -284,6 +308,7 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById('tabCrack').className = 'tab-btn' + (tab === 'crack' ? ' active-crack' : '');
   document.getElementById('tabBase').className = 'tab-btn' + (tab === 'base' ? ' active-base' : '');
+  document.getElementById('tabJour').className = 'tab-btn' + (tab === 'jour' ? ' active-jour' : '');
   renderCurrent();
 }
 
@@ -294,18 +319,23 @@ async function loadAll() {
   block.innerHTML = '<div class="loading"><div class="spinner"></div>Analyse en cours… (1ère fois : 1-3 min)</div>';
 
   try {
-    const [resCrack, resBase] = await Promise.all([
+    const [resCrack, resBase, resJour] = await Promise.all([
       fetch(`/api/crack-horses?date=${dateApi}`).then(r => r.json()),
-      fetch(`/api/super-base?date=${dateApi}`).then(r => r.json())
+      fetch(`/api/super-base?date=${dateApi}`).then(r => r.json()),
+      fetch(`/api/course-du-jour?date=${dateApi}`).then(r => r.json())
     ]);
     if (resCrack.error) throw new Error(resCrack.error);
     if (resBase.error) throw new Error(resBase.error);
+    if (resJour.error) throw new Error(resJour.error);
 
     cacheData.crack = resCrack;
     cacheData.base = resBase;
+    cacheData.jour = resJour;
 
     document.getElementById('countCrack').textContent = (resCrack.cracks || []).length;
     document.getElementById('countBase').textContent = (resBase.bases || []).length;
+    const selCount = (resJour.selection || []).length;
+    document.getElementById('countJour').textContent = selCount > 0 ? selCount + ' chx' : '—';
 
     renderCurrent();
   } catch(e) {
@@ -320,6 +350,7 @@ async function loadAll() {
 function renderCurrent() {
   if (currentTab === 'crack' && cacheData.crack) renderCracks(cacheData.crack);
   else if (currentTab === 'base' && cacheData.base) renderBases(cacheData.base);
+  else if (currentTab === 'jour' && cacheData.jour) renderJour(cacheData.jour);
 }
 
 function formatDate(dateStr) {
@@ -329,7 +360,6 @@ function formatDate(dateStr) {
   return dateStr || '';
 }
 
-/* ===== Grouper par réunion ===== */
 function groupByReunion(items) {
   const map = {};
   items.forEach(item => {
@@ -340,7 +370,6 @@ function groupByReunion(items) {
   return Object.values(map).sort((a, b) => a.num_reunion - b.num_reunion);
 }
 
-/* ===== Grouper par course ===== */
 function groupByCourse(items) {
   const map = {};
   items.forEach(item => {
@@ -390,39 +419,12 @@ function renderCracks(data) {
         <span class="course-infos">${ci.discipline||''} ${ci.distance?ci.distance+'m':''} — ${ci.nb_partants} partants</span>
         <span class="course-heure">🕐 ${ci.heure||'—'}</span>
       </div>`;
-
       cou.items.sort((a, b) => b.elo_score - a.elo_score);
-      cou.items.forEach(c => {
-        html += crackCard(c);
-      });
+      cou.items.forEach(c => { html += horseCard(c, 'crack'); });
     });
-
     html += `</div></div>`;
   });
   block.innerHTML = html;
-}
-
-function crackCard(c) {
-  return `<div class="horse-card crack">
-    <div class="card-num crack">${c.numPmu}</div>
-    <div class="card-main">
-      <div class="card-nom crack">${c.cheval}</div>
-      <div class="card-details">
-        ${c.age?`<span>🎂 <strong>${c.age} ans</strong></span>`:''}
-        ${c.sexe?`<span>${c.sexe==='FEMELLES'?'♀️':(c.sexe==='HONGRES'?'骟':'♂️')} <strong>${c.sexe}</strong></span>`:''}
-        <span>🏇 <strong>${c.driver}</strong></span>
-        <span>👤 <strong>${c.entraineur}</strong></span>
-        ${c.nb_courses?`<span>📊 <strong>${c.nb_courses} courses</strong></span>`:''}
-      </div>
-    </div>
-    <div class="card-right">
-      <div class="score-pill crack">
-        <span class="pill-label">ELO</span>
-        <span class="pill-val crack">${c.elo_score}</span>
-      </div>
-      ${c.cote?`<span class="cote-pill">Cote ${c.cote}</span>`:''}
-    </div>
-  </div>`;
 }
 
 /* ===== RENDER SUPER BASE ===== */
@@ -463,34 +465,104 @@ function renderBases(data) {
         <span class="course-infos">${c.discipline||''} ${c.distance?c.distance+'m':''} — ${c.nb_partants} partants</span>
         <span class="course-heure">🕐 ${c.heure||'—'}</span>
       </div>`;
-      html += baseCard(c);
+      html += horseCard(c, 'base');
     });
-
     html += `</div></div>`;
   });
   block.innerHTML = html;
 }
 
-function baseCard(c) {
-  return `<div class="horse-card base">
-    <div class="card-num base">${c.numPmu}</div>
+/* ===== RENDER COURSE DU JOUR ===== */
+function renderJour(data) {
+  const block = document.getElementById('resultsBlock');
+  const sel = data.selection || [];
+  const course = data.course;
+
+  if (!course || !sel.length) {
+    block.innerHTML = `<div class="empty-state">
+      <div class="emoji">🏇</div>
+      <h2>Aucune course du jour trouvée</h2>
+      <p>Pas assez de données pour déterminer la meilleure course.</p>
+    </div>`;
+    return;
+  }
+
+  let html = '';
+
+  // Hero : info course
+  html += `<div class="jour-hero">
+    <div class="jour-title">🎯 Course du Jour — R${course.r_num}C${course.c_num}</div>
+    <div class="jour-meta">
+      <span>📍 <strong>${course.hippodrome}</strong></span>
+      <span>🕐 <strong>${course.heure}</strong></span>
+      <span>🏁 <strong>${course.discipline}</strong></span>
+      <span>📏 <strong>${course.distance}m</strong></span>
+      <span>🐎 <strong>${course.nb_partants} partants</strong></span>
+    </div>
+    <div class="jour-score">
+      <span class="js-label">Score Top 3</span>
+      <span class="js-val">${course.top3_sum}%</span>
+    </div>
+  </div>`;
+
+  // Séparer top3 et cracks
+  const top3 = sel.filter(s => s.role === 'top3');
+  const cracks = sel.filter(s => s.role === 'crack');
+
+  if (top3.length) {
+    html += `<div class="jour-section-label">🏅 Les <span>${top3.length}</span> favoris de la course</div>`;
+    top3.forEach(c => { html += horseCard(c, 'jour'); });
+  }
+
+  if (cracks.length) {
+    html += `<div class="jour-section-label">⚡ Cracks complémentaires (<span>${cracks.length}</span>)</div>`;
+    cracks.forEach(c => { html += horseCard(c, 'jour'); });
+  }
+
+  block.innerHTML = html;
+}
+
+/* ===== Generic horse card ===== */
+function horseCard(c, style) {
+  const roleBadge = c.role === 'top3'
+    ? `<span class="role-badge top3">#${c.rang || '?'}</span>`
+    : (c.is_crack ? `<span class="role-badge crack-tag">⚡ Crack</span>` : '');
+
+  const chancePill = c.chance !== undefined
+    ? `<div class="score-pill ${style}">
+        <span class="pill-label">Chance</span>
+        <span class="pill-val ${style}">${c.chance}%</span>
+      </div>` : '';
+
+  const eloPill = c.elo_score !== undefined
+    ? `<div class="score-pill ${style}">
+        <span class="pill-label">ELO</span>
+        <span class="pill-val ${style}">${c.elo_score}</span>
+      </div>` : '';
+
+  const stats = c.nb_courses
+    ? `<span>📊 <strong>${c.nb_courses}c ${c.nb_victoires||0}V ${c.nb_places||0}P</strong></span>` : '';
+
+  const gains = c.gains_carriere
+    ? `<span>💰 <strong>${c.gains_carriere.toLocaleString()}€</strong></span>` : '';
+
+  return `<div class="horse-card ${style}">
+    <div class="card-num ${style}">${c.numPmu}</div>
     <div class="card-main">
-      <div class="card-nom base">${c.cheval}</div>
+      <div class="card-nom ${style}">${c.cheval}</div>
       <div class="card-details">
         ${c.age?`<span>🎂 <strong>${c.age} ans</strong></span>`:''}
         ${c.sexe?`<span>${c.sexe==='FEMELLES'?'♀️':(c.sexe==='HONGRES'?'骟':'♂️')} <strong>${c.sexe}</strong></span>`:''}
         <span>🏇 <strong>${c.driver}</strong></span>
         <span>👤 <strong>${c.entraineur}</strong></span>
-        ${c.nb_courses?`<span>📊 <strong>${c.nb_courses}c ${c.nb_victoires||0}V ${c.nb_places||0}P</strong></span>`:''}
-        ${c.gains_carriere?`<span>💰 <strong>${c.gains_carriere.toLocaleString()}€</strong></span>`:''}
+        ${stats}${gains}
       </div>
       ${c.musique?`<span class="card-musique">${c.musique}</span>`:''}
     </div>
     <div class="card-right">
-      <div class="score-pill base">
-        <span class="pill-label">Chance</span>
-        <span class="pill-val base">${c.chance}%</span>
-      </div>
+      ${roleBadge}
+      ${chancePill}
+      ${eloPill}
       ${c.cote?`<span class="cote-pill">Cote ${c.cote}</span>`:''}
       ${c.value_bet?`<span class="value-badge">⭐ VALUE</span>`:''}
     </div>
@@ -501,5 +573,5 @@ function baseCard(c) {
 document.getElementById('datePicker').value = todayStr();
 loadAll();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0707b88fb64763b',t:'MTc4MDY3NjE5NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
