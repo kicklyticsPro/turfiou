@@ -1095,6 +1095,7 @@ def get_crack_horses(date_str):
                     rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
                     cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
                     cracks.append({
+                        "numPmu": p.get("numPmu"),
                         "cheval": cheval,
                         "elo_rating": round(raw_elo, 0),
                         "driver": p.get("driver") or "—",
