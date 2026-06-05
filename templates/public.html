@@ -216,15 +216,15 @@ function renderCracks(data) {
 
   let html = `
     <div class="summary-bar">
-      🏆 <strong>${cracks.length}</strong> cheval${cracks.length > 1 ? 'x' : ''} Crack
-      trouvé${cracks.length > 1 ? 's' : ''} pour le <strong>${formatDate(data.date)}</strong>
+      🏆 <strong>${cracks.length}</strong> cheval${cracks.length > 1 ? 'x' : ''} recommandé${cracks.length > 1 ? 's' : ''}
+      pour le <strong>${formatDate(data.date)}</strong>
     </div>
   `;
 
   cracks.forEach(c => {
     html += `
       <div class="crack-card">
-        <span class="crack-badge">⚡ CRACK</span>
+        <span class="crack-badge">#${c.numPmu}</span>
         <div class="race-info">
           <span class="race-tag">${c.course}</span>
           <span class="hippo">📍 ${c.hippodrome} — ${c.discipline || ''} ${c.distance ? c.distance + 'm' : ''}</span>
@@ -264,5 +264,5 @@ function formatDate(dateStr) {
 document.getElementById('datePicker').value = todayStr();
 loadCracks();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a06f21e788cd02a5',t:'MTc4MDY2MjAzNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a06f277fbe7819a5',t:'MTc4MDY2MjI2Ng=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
