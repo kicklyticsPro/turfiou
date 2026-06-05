@@ -1215,6 +1215,96 @@ def get_crack_horses(date_str):
 
 
 # ============================================================
+#  Super Base (public API) — #1 de chaque course
+# ============================================================
+def get_super_base(date_str):
+    """Retourne le #1 (meilleure chance heuristique) de chaque course,
+    en excluant les chevaux avec 0 courses."""
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
+
+    try:
+        programme = get_programme(date_str)
+    except Exception:
+        return []
+
+    bases = []
+
+    for r in programme["programme"]["reunions"]:
+        hippo = r["hippodrome"]["libelleCourt"]
+        for c in r["courses"]:
+            r_num = r["numOfficiel"]
+            c_num = c["numOrdre"]
+            distance = c.get("distance")
+            discipline = c.get("discipline", "")
+            type_corde = c.get("corde", "")
+            try:
+                parts = get_participants(date_str, r_num, c_num)
+                perfs = get_performances(date_str, r_num, c_num)
+            except Exception:
+                continue
+
+            # Analyse complète (sans ML) pour avoir le classement
+            analyses = analyser_course(
+                parts, perfs, distance, discipline, hippo, type_corde,
+                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
+                use_ml=False, capital=100)
+
+            if not analyses:
+                continue
+
+            top1 = analyses[0]
+            nb_courses = top1.get("nbCourses", 0) or 0
+
+            # Exclure si 0 courses
+            if nb_courses == 0:
+                continue
+
+            partants = [p for p in parts.get("participants", [])
+                        if p.get("statut") == "PARTANT"]
+
+            rap = None
+            for p in partants:
+                if p.get("numPmu") == top1["numPmu"]:
+                    rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+                    break
+            cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
+
+            bases.append({
+                "numPmu": top1["numPmu"],
+                "cheval": top1["nom"],
+                "chance": top1.get("chance", 0),
+                "elo_score": top1["scores"]["elo"],
+                "forme": top1["scores"]["forme"],
+                "driver": top1["driver"],
+                "entraineur": top1["entraineur"],
+                "age": top1.get("age"),
+                "sexe": top1.get("sexe"),
+                "cote": cote,
+                "musique": top1.get("musique", ""),
+                "hippodrome": hippo,
+                "num_reunion": r_num,
+                "course": f"R{r_num}C{c_num}",
+                "num_course": c_num,
+                "heure": datetime.fromtimestamp(
+                    c["heureDepart"] / 1000
+                ).strftime("%H:%M") if c.get("heureDepart") else "",
+                "discipline": discipline,
+                "distance": distance,
+                "nb_partants": len(partants),
+                "nb_courses": nb_courses,
+                "nb_victoires": top1.get("nbVictoires", 0),
+                "nb_places": top1.get("nbPlaces", 0),
+                "gains_carriere": top1.get("gainsCarriere", 0),
+                "edge": top1.get("edge", 0),
+                "value_bet": top1.get("valueBet", False),
+            })
+
+    # Trier par num_reunion puis num_course
+    bases.sort(key=lambda x: (x["num_reunion"], x["num_course"]))
+    return bases
+
+
+# ============================================================
 #  ROUTES PUBLIQUES (sans auth)
 # ============================================================
 @app.route("/")
@@ -1228,6 +1318,16 @@ def api_crack_horses():
     try:
         cracks = get_crack_horses(date_str)
         return jsonify({"date": date_str, "cracks": cracks})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/super-base")
+def api_super_base():
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    try:
+        bases = get_super_base(date_str)
+        return jsonify({"date": date_str, "bases": bases})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
