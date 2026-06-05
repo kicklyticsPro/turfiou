@@ -1077,6 +1077,12 @@ def get_crack_horses(date_str):
                 elo_score = get_elo_score(cheval, elo, all_horses)
                 race_scores.append((p, cheval, elo_score))
 
+            # Si TOUS les chevaux n'ont jamais couru (ELO par défaut 1500),
+            # les scores sont sans valeur → on exclut
+            all_elos = [elo.get(h, 1500) for h in all_horses if h]
+            if all_elos and all(e == 1500 for e in all_elos):
+                continue
+
             # Si TOUS les chevaux de la course sont Crack,
             # la course est homogène → on l'exclut
             if race_scores and all(s >= CRACK_THRESHOLD for _, _, s in race_scores):
