@@ -1,0 +1,14 @@
+# Configuration Render.com — Déploiement automatique
+# Documentation : https://render.com/docs/yaml-spec
+services:
+  - type: web
+    name: turf-analyzer
+    runtime: python
+    plan: free                    # Plan gratuit (peut être starter/standard pour payant)
+    region: frankfurt             # Région la plus proche pour l'Europe
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+    autoDeploy: true              # Déploie auto à chaque push Git
