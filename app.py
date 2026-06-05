@@ -28,6 +28,13 @@ from lib.features_v4 import (build_pedigree_stats, get_pedigree_score,
                               detect_profile, get_profile_match_score)
 from lib import bets_tracker
 
+# NEW v5 - modèle avancé
+try:
+    from lib.ml_advanced import train_advanced, load_advanced
+    HAS_ADVANCED = True
+except:
+    HAS_ADVANCED = False
+
 app = Flask(__name__)
 
 PMU_BASE = "https://offline.turfinfo.api.pmu.fr/rest/client/61/programme"
@@ -48,6 +55,7 @@ ELO_HIST_FILE = os.path.join(CACHE_DIR, "elo_hist_v4.pkl")
 HORSE_RACES_FILE = os.path.join(CACHE_DIR, "horse_races_v4.pkl")
 PEDIGREE_FILE = os.path.join(CACHE_DIR, "pedigree_v4.pkl")           # NEW v4
 ML_MODEL_FILE = os.path.join(CACHE_DIR, "ml_ensemble_v4.pkl")        # NEW v4 : ensemble
+ML_MODEL_FILE_V5 = os.path.join(CACHE_DIR, "ml_advanced_v5.pkl")     # NEW v5
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 
@@ -521,30 +529,41 @@ def score_distance(perfs_detail, distance_course):
 # ============================================================
 def featurize(p, nb_partants):
     s = p["scores"]
+    # v5 : ajout d'interactions pour capturer non-linéarités
+    forme = s.get("forme", 0)
+    elo = s.get("elo", 50)
+    driver = s.get("driver", 50)
+    marche = s.get("marche", 0)
+    
     return [
-        s.get("marche", 0),
-        s.get("forme", 0),
+        marche,
+        forme,
         s.get("carriere", 0),
         s.get("gains", 0),
-        s.get("driver", 50),
+        driver,
         s.get("entraineur", 50),
         s.get("distance", 50),
         s.get("cheval_stats", 50),
-        s.get("elo", 50),
+        elo,
         s.get("age_sexe", 50),
         s.get("repos", 50),
         s.get("elo_trend", 50),
         s.get("confrontation", 50),
-        s.get("pedigree", 50),       # NEW v4
-        s.get("corde", 50),          # NEW v4
-        s.get("equipment", 50),      # NEW v4
-        s.get("profile_match", 50),  # NEW v4
+        s.get("pedigree", 50),
+        s.get("corde", 50),
+        s.get("equipment", 50),
+        s.get("profile_match", 50),
         nb_partants,
         1.0 / max(p.get("cote") or 50, 1),
         p["bonus"].get("team", 0),
         p["bonus"].get("deferre", 0),
-        p.get("age") or 5,            # NEW v4 : âge brut
-        1 if p.get("sexe") == "FEMELLES" else 0,  # NEW v4 : femelle
+        p.get("age") or 5,
+        1 if p.get("sexe") == "FEMELLES" else 0,
+        # NEW v5 interactions
+        forme * elo / 100,  # forme × elo
+        driver * s.get("entraineur", 50) / 100,  # team synergy
+        marche * s.get("cheval_stats", 50) / 100,  # marché vs stats
+        abs(forme - 50),  # écart à la moyenne (forme extrême)
     ]
 
 
@@ -552,10 +571,16 @@ FEATURE_NAMES = ["marche","forme","carriere","gains","driver","entraineur",
                  "distance","cheval_stats","elo","age_sexe","repos",
                  "elo_trend","confrontation","pedigree","corde","equipment",
                  "profile_match","nb_partants","inv_cote",
-                 "bonus_team","bonus_deferre","age_raw","is_female"]
+                 "bonus_team","bonus_deferre","age_raw","is_female",
+                 "forme_x_elo","team_synergy","marche_x_stats","forme_extreme"]
 
 
 def load_ml_model():
+    # Priorité au modèle v5 avancé
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_FILE_V5)
+        if adv:
+            return adv
     payload = load_pickle(ML_MODEL_FILE, max_age_hours=24*14)
     return load_model_from_dict(payload) if payload else None
 
@@ -633,6 +658,15 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         return None
 
     print(f"[ML v4] {len(X)} échantillons, {sum(y)} victoires ({sum(y)/len(X)*100:.1f}%)")
+
+    # NEW v5 : modèle avancé
+    if model_type == "advanced" and HAS_ADVANCED:
+        print("[ML v5] Entraînement stacking avancé (LGBM+CatBoost+HGB+RF+LR)...")
+        train_advanced(X, y, ML_MODEL_FILE_V5)
+        return {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
+                "model_type": "advanced_v5",
+                "models": "LGBM,CatBoost,HistGB,RF,LR",
+                "calibration": "TimeSeriesSplit + Platt/Isotone"}
 
     gbm = None
     rf = None
@@ -1110,7 +1144,7 @@ def api_train():
     days = min(days, 30)
     n_trees_gbm = int(request.args.get("trees_gbm", 50))
     n_trees_rf = int(request.args.get("trees_rf", 30))
-    model_type = request.args.get("type", "ensemble")
+    model_type = request.args.get("type", "advanced")  # v5 par défaut
     try:
         info = train_ml_model(days_back=days, n_trees_gbm=n_trees_gbm,
                               n_trees_rf=n_trees_rf, model_type=model_type)
