@@ -1193,7 +1193,9 @@ def get_crack_horses(date_str):
                     "sexe": p.get("sexe"),
                     "cote": cote,
                     "hippodrome": hippo,
+                    "num_reunion": r_num,
                     "course": f"R{r_num}C{c_num}",
+                    "num_course": c_num,
                     "heure": datetime.fromtimestamp(
                         c["heureDepart"] / 1000
                     ).strftime("%H:%M") if c.get("heureDepart") else "",
@@ -1203,8 +1205,8 @@ def get_crack_horses(date_str):
                     "nb_courses": nb_courses,
                 })
 
-    # Trier par ELO décroissant
-    cracks.sort(key=lambda x: -x["elo_rating"])
+    # Trier : d'abord par num_reunion, puis par num_course, puis par ELO décroissant
+    cracks.sort(key=lambda x: (x["num_reunion"], x["num_course"], -x["elo_rating"]))
     return cracks
 
 
