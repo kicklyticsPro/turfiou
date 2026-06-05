@@ -1133,8 +1133,8 @@ def bilan(days_back=7, use_ml=False):
 #  Crack horses (public API)
 # ============================================================
 def get_crack_horses(date_str):
-    """Retourne les chevaux avec un ELO brut significativement au-dessus de 1500,
-    en excluant ceux qui ont 0 courses."""
+    """Retourne les chevaux avec le badge ⚡ Crack (score ELO normalisé ≥ 85)
+    en excluant ceux qui ont 0 courses. Même logique que l'analyse admin."""
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
 
     try:
@@ -1143,54 +1143,58 @@ def get_crack_horses(date_str):
         return []
 
     cracks = []
-    # L'ELO par défaut est 1500. Un vrai crack doit avoir gagné au moins
-    # 60 points d'ELO grâce à ses performances réelles.
-    CRACK_ELO_MIN = 1560
+    CRACK_ELO_SCORE_MIN = 85  # Même seuil que le badge ⚡ Crack dans index.html
 
     for r in programme["programme"]["reunions"]:
         hippo = r["hippodrome"]["libelleCourt"]
         for c in r["courses"]:
             r_num = r["numOfficiel"]
             c_num = c["numOrdre"]
+            distance = c.get("distance")
+            discipline = c.get("discipline", "")
+            type_corde = c.get("corde", "")
             try:
                 parts = get_participants(date_str, r_num, c_num)
+                perfs = get_performances(date_str, r_num, c_num)
             except Exception:
                 continue
 
+            # Utiliser le même moteur d'analyse que l'admin pour avoir scores.elo
+            analyses = analyser_course_features(
+                parts, perfs, distance, discipline, hippo, type_corde,
+                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree)
+
             partants = [p for p in parts.get("participants", [])
                         if p.get("statut") == "PARTANT"]
+            nb_partants = len(partants)
 
-            # Si aucun partant → on saute
-            if not partants:
-                continue
-
-            for p in partants:
-                cheval = p.get("nom")
-                if not cheval:
-                    continue
-
-                nb_courses = p.get("nombreCourses", 0) or 0
+            for a in analyses:
+                nb_courses = a.get("nbCourses", 0) or 0
+                elo_score = a["scores"]["elo"]
 
                 # Exclure les chevaux avec 0 courses
                 if nb_courses == 0:
                     continue
 
-                raw_elo = elo.get(cheval, 1500)
-
-                # Le cheval doit avoir un ELO brut >= seuil
-                if raw_elo < CRACK_ELO_MIN:
+                # Même condition que le badge ⚡ Crack dans l'admin
+                if elo_score < CRACK_ELO_SCORE_MIN:
                     continue
 
-                rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+                rap = None
+                for p in partants:
+                    if p.get("numPmu") == a["numPmu"]:
+                        rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+                        break
                 cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
+
                 cracks.append({
-                    "numPmu": p.get("numPmu"),
-                    "cheval": cheval,
-                    "elo_rating": round(raw_elo, 0),
-                    "driver": p.get("driver") or "—",
-                    "entraineur": p.get("entraineur") or "—",
-                    "age": p.get("age"),
-                    "sexe": p.get("sexe"),
+                    "numPmu": a["numPmu"],
+                    "cheval": a["nom"],
+                    "elo_score": round(elo_score, 1),
+                    "driver": a["driver"],
+                    "entraineur": a["entraineur"],
+                    "age": a.get("age"),
+                    "sexe": a.get("sexe"),
                     "cote": cote,
                     "hippodrome": hippo,
                     "num_reunion": r_num,
@@ -1199,14 +1203,14 @@ def get_crack_horses(date_str):
                     "heure": datetime.fromtimestamp(
                         c["heureDepart"] / 1000
                     ).strftime("%H:%M") if c.get("heureDepart") else "",
-                    "discipline": c.get("discipline", ""),
-                    "distance": c.get("distance"),
-                    "nb_partants": len(partants),
+                    "discipline": discipline,
+                    "distance": distance,
+                    "nb_partants": nb_partants,
                     "nb_courses": nb_courses,
                 })
 
-    # Trier : d'abord par num_reunion, puis par num_course, puis par ELO décroissant
-    cracks.sort(key=lambda x: (x["num_reunion"], x["num_course"], -x["elo_rating"]))
+    # Trier : par num_reunion, puis num_course, puis score ELO décroissant
+    cracks.sort(key=lambda x: (x["num_reunion"], x["num_course"], -x["elo_score"]))
     return cracks
 
 
