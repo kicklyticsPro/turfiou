@@ -1043,7 +1043,7 @@ def backtest(days_back=7, use_ml=False):
 #  Crack horses (public API)
 # ============================================================
 def get_crack_horses(date_str):
-    """Retourne les chevaux avec score ELO >= 85 (mention Crack)."""
+    """Retourne les chevaux avec un ELO brut significativement au-dessus de 1500."""
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
 
     try:
@@ -1052,7 +1052,9 @@ def get_crack_horses(date_str):
         return []
 
     cracks = []
-    CRACK_THRESHOLD = 85
+    # L'ELO par défaut est 1500. Un vrai crack doit avoir gagné au moins
+    # 60 points d'ELO grâce à ses performances réelles.
+    CRACK_ELO_MIN = 1560
 
     for r in programme["programme"]["reunions"]:
         hippo = r["hippodrome"]["libelleCourt"]
@@ -1068,35 +1070,33 @@ def get_crack_horses(date_str):
                         if p.get("statut") == "PARTANT"]
             all_horses = [p.get("nom") for p in partants if p.get("nom")]
 
-            # Calculer les scores ELO de tous les partants de la course
-            race_scores = []
+            # Filtrer : le cheval doit avoir un ELO brut >= seuil
+            # ET être le meilleur ELO de sa course (pas juste au-dessus du seuil
+            # si toute la course l'est)
+            race_elos = []
             for p in partants:
                 cheval = p.get("nom")
                 if not cheval:
                     continue
-                elo_score = get_elo_score(cheval, elo, all_horses)
-                race_scores.append((p, cheval, elo_score))
+                raw_elo = elo.get(cheval, 1500)
+                race_elos.append((p, cheval, raw_elo))
 
-            # Si TOUS les chevaux n'ont jamais couru (ELO par défaut 1500),
-            # les scores sont sans valeur → on exclut
-            all_elos = [elo.get(h, 1500) for h in all_horses if h]
-            if all_elos and all(e == 1500 for e in all_elos):
+            # Si personne dans la course n'a d'historique → on saute
+            if not race_elos or all(e == 1500 for _, _, e in race_elos):
                 continue
 
-            # Si TOUS les chevaux de la course sont Crack,
-            # la course est homogène → on l'exclut
-            if race_scores and all(s >= CRACK_THRESHOLD for _, _, s in race_scores):
-                continue
+            # Trouver le meilleur ELO de la course
+            best_elo = max(e for _, _, e in race_elos)
 
-            # Sinon, ne garder que les vrais cracks qui se démarquent
-            for p, cheval, elo_score in race_scores:
-                if elo_score >= CRACK_THRESHOLD:
+            for p, cheval, raw_elo in race_elos:
+                # Le cheval doit : avoir un ELO brut élevé
+                # ET être le meilleur de sa course (ou à 5 pts du meilleur)
+                if raw_elo >= CRACK_ELO_MIN and (best_elo - raw_elo) <= 5:
                     rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
                     cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
                     cracks.append({
                         "cheval": cheval,
-                        "elo_score": round(elo_score, 1),
-                        "elo_rating": round(elo.get(cheval, 1500), 0),
+                        "elo_rating": round(raw_elo, 0),
                         "driver": p.get("driver") or "—",
                         "entraineur": p.get("entraineur") or "—",
                         "age": p.get("age"),
