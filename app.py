@@ -10,7 +10,8 @@ v4 nouveautés (par rapport à v3) :
   14. Tracking des paris réels (ROI réel)
 """
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for
+from functools import wraps
 from datetime import datetime, timedelta
 import requests
 import math
@@ -36,6 +37,18 @@ except:
     HAS_ADVANCED = False
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-secret-2026")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+
+
+def admin_required(f):
+    """Protège les routes admin avec un mot de passe session."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("admin"):
+            return redirect(url_for("login_page"))
+        return f(*args, **kwargs)
+    return decorated
 
 PMU_BASE = "https://offline.turfinfo.api.pmu.fr/rest/client/61/programme"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TurfAnalyzer/4.0)"}
@@ -1027,24 +1040,125 @@ def backtest(days_back=7, use_ml=False):
 
 
 # ============================================================
-#  ROUTES
+#  Crack horses (public API)
+# ============================================================
+def get_crack_horses(date_str):
+    """Retourne les chevaux avec score ELO >= 85 (mention Crack)."""
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
+
+    try:
+        programme = get_programme(date_str)
+    except Exception:
+        return []
+
+    cracks = []
+    CRACK_THRESHOLD = 85
+
+    for r in programme["programme"]["reunions"]:
+        hippo = r["hippodrome"]["libelleCourt"]
+        for c in r["courses"]:
+            r_num = r["numOfficiel"]
+            c_num = c["numOrdre"]
+            try:
+                parts = get_participants(date_str, r_num, c_num)
+            except Exception:
+                continue
+
+            partants = [p for p in parts.get("participants", [])
+                        if p.get("statut") == "PARTANT"]
+            all_horses = [p.get("nom") for p in partants if p.get("nom")]
+
+            for p in partants:
+                cheval = p.get("nom")
+                if not cheval:
+                    continue
+                elo_score = get_elo_score(cheval, elo, all_horses)
+                if elo_score >= CRACK_THRESHOLD:
+                    rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+                    cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
+                    cracks.append({
+                        "cheval": cheval,
+                        "elo_score": round(elo_score, 1),
+                        "elo_rating": round(elo.get(cheval, 1500), 0),
+                        "driver": p.get("driver") or "—",
+                        "entraineur": p.get("entraineur") or "—",
+                        "age": p.get("age"),
+                        "sexe": p.get("sexe"),
+                        "cote": cote,
+                        "hippodrome": hippo,
+                        "course": f"R{r_num}C{c_num}",
+                        "heure": datetime.fromtimestamp(
+                            c["heureDepart"] / 1000
+                        ).strftime("%H:%M") if c.get("heureDepart") else "",
+                        "discipline": c.get("discipline", ""),
+                        "distance": c.get("distance"),
+                        "nb_partants": len(partants),
+                    })
+    return cracks
+
+
+# ============================================================
+#  ROUTES PUBLIQUES (sans auth)
 # ============================================================
 @app.route("/")
-def home():
+def public_home():
+    return render_template("public.html")
+
+
+@app.route("/api/crack-horses")
+def api_crack_horses():
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    try:
+        cracks = get_crack_horses(date_str)
+        return jsonify({"date": date_str, "cracks": cracks})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+#  AUTH ADMIN
+# ============================================================
+@app.route("/login", methods=["GET", "POST"])
+def login_page():
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        if password == ADMIN_PASSWORD:
+            session["admin"] = True
+            return redirect(url_for("admin_home"))
+        error = "Mot de passe incorrect"
+    return render_template("admin_login.html", error=error)
+
+
+@app.route("/logout")
+def logout():
+    session.pop("admin", None)
+    return redirect(url_for("public_home"))
+
+
+# ============================================================
+#  ROUTES ADMIN (protégées)
+# ============================================================
+@app.route("/admin")
+@admin_required
+def admin_home():
     return render_template("index.html")
 
 
 @app.route("/backtest")
+@admin_required
 def backtest_page():
     return render_template("backtest.html")
 
 
 @app.route("/paris")
+@admin_required
 def paris_page():
     return render_template("paris.html")
 
 
 @app.route("/api/reunions")
+@admin_required
 def api_reunions():
     date_str = request.args.get("date") or fmt_date(datetime.now())
     try:
@@ -1070,6 +1184,7 @@ def api_reunions():
 
 
 @app.route("/api/course/<int:r_num>/<int:c_num>")
+@admin_required
 def api_course(r_num, c_num):
     date_str = request.args.get("date") or fmt_date(datetime.now())
     use_ml = request.args.get("ml") == "1"
@@ -1128,6 +1243,7 @@ def api_course(r_num, c_num):
 
 
 @app.route("/api/backtest")
+@admin_required
 def api_backtest():
     days = int(request.args.get("days", 7))
     use_ml = request.args.get("ml") == "1"
@@ -1139,6 +1255,7 @@ def api_backtest():
 
 
 @app.route("/api/train", methods=["POST"])
+@admin_required
 def api_train():
     days = int(request.args.get("days", 21))
     days = min(days, 30)
@@ -1156,6 +1273,7 @@ def api_train():
 
 
 @app.route("/api/team-stats")
+@admin_required
 def api_team_stats():
     team_stats, _, _, _, _, _ = compute_all_stats(max_days=HISTORY_DAYS)
     drivers = sorted(team_stats["drivers"].items(),
@@ -1176,6 +1294,7 @@ def api_team_stats():
 #  NEW v4 - Tracking des paris
 # ============================================================
 @app.route("/api/bets", methods=["GET"])
+@admin_required
 def api_bets_list():
     bets = bets_tracker.load_bets(BETS_FILE)
     stats = bets_tracker.compute_stats(bets)
@@ -1185,6 +1304,7 @@ def api_bets_list():
 
 
 @app.route("/api/bets", methods=["POST"])
+@admin_required
 def api_bets_add():
     data = request.get_json() or {}
     required = ["cheval", "cote", "mise"]
@@ -1203,6 +1323,7 @@ def api_bets_add():
 
 
 @app.route("/api/bets/<int:bet_id>", methods=["PUT"])
+@admin_required
 def api_bets_update(bet_id):
     data = request.get_json() or {}
     gagne = bool(data.get("gagne"))
@@ -1212,6 +1333,7 @@ def api_bets_update(bet_id):
 
 
 @app.route("/api/bets/<int:bet_id>", methods=["DELETE"])
+@admin_required
 def api_bets_delete(bet_id):
     bets_tracker.delete_bet(BETS_FILE, bet_id)
     return jsonify({"ok": True})
