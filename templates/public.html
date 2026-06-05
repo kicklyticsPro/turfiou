@@ -26,7 +26,7 @@
     color: #94a3b8; font-size: 13px; margin-top: 4px;
   }
   .container {
-    max-width: 800px; margin: 0 auto; padding: 20px 16px;
+    max-width: 860px; margin: 0 auto; padding: 20px 16px;
   }
   .date-bar {
     display: flex; justify-content: center; align-items: center;
@@ -43,72 +43,124 @@
   }
   .date-bar button:hover { background: #f59e0b; }
 
-  .crack-card {
-    background: rgba(30, 41, 59, 0.7);
-    border: 2px solid #facc15;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 14px;
-    position: relative;
-    transition: all .2s;
-    box-shadow: 0 0 20px rgba(250, 204, 21, 0.08);
+  /* ===== Réunion block ===== */
+  .reunion-block {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid #334155;
+    border-radius: 16px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
   }
-  .crack-card:hover {
-    border-color: #fbbf24;
-    box-shadow: 0 0 30px rgba(250, 204, 21, 0.15);
-    transform: translateY(-2px);
+  .reunion-header {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    padding: 14px 20px;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 2px solid #facc15;
+    flex-wrap: wrap; gap: 8px;
   }
-  .crack-card .crack-badge {
-    position: absolute; top: -10px; left: 18px;
+  .reunion-header .reunion-title {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .reunion-header .reunion-num {
     background: linear-gradient(135deg, #facc15, #f59e0b);
-    color: #0f172a; padding: 3px 12px; border-radius: 20px;
-    font-size: 11px; font-weight: 800; letter-spacing: 0.5px;
-  }
-  .crack-card .race-info {
-    display: flex; justify-content: space-between;
-    align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
-  }
-  .crack-card .race-info .race-tag {
-    background: #0f172a; color: #06b6d4; padding: 3px 10px;
-    border-radius: 6px; font-size: 12px; font-weight: 700;
-  }
-  .crack-card .race-info .hippo {
-    color: #94a3b8; font-size: 12px;
-  }
-  .crack-card .race-info .time {
-    color: #f59e0b; font-size: 13px; font-weight: 700;
-  }
-  .crack-card h2 {
-    font-size: 22px; margin-bottom: 6px;
-    color: #facc15;
-  }
-  .crack-card .details {
-    display: flex; gap: 16px; flex-wrap: wrap;
-    color: #94a3b8; font-size: 13px; margin-bottom: 8px;
-  }
-  .crack-card .details span strong { color: #e2e8f0; }
-  .crack-card .elo-block {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: rgba(250, 204, 21, 0.1);
-    border: 1px solid rgba(250, 204, 21, 0.3);
-    border-radius: 8px; padding: 6px 12px; margin-top: 4px;
-  }
-  .crack-card .elo-block .elo-label {
-    font-size: 10px; color: #94a3b8; text-transform: uppercase;
+    color: #0f172a; font-size: 13px; font-weight: 800;
+    padding: 4px 12px; border-radius: 20px;
     letter-spacing: 0.5px;
   }
-  .crack-card .elo-block .elo-val {
-    font-size: 20px; font-weight: 800;
+  .reunion-header .reunion-hippo {
+    font-size: 16px; font-weight: 700; color: #e2e8f0;
+  }
+  .reunion-header .reunion-count {
+    background: rgba(250, 204, 21, 0.15);
+    color: #facc15; font-size: 12px; font-weight: 700;
+    padding: 4px 12px; border-radius: 20px;
+  }
+  .reunion-body {
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  /* ===== Course séparateur ===== */
+  .course-sep {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 6px; margin-bottom: 2px;
+  }
+  .course-sep .course-label {
+    background: #0f172a; color: #06b6d4;
+    padding: 3px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 700;
+    white-space: nowrap;
+  }
+  .course-sep .course-infos {
+    color: #94a3b8; font-size: 12px;
+  }
+  .course-sep .course-heure {
+    color: #f59e0b; font-weight: 700; font-size: 12px;
+    margin-left: auto; white-space: nowrap;
+  }
+
+  /* ===== Crack card ===== */
+  .crack-card {
+    background: rgba(30, 41, 59, 0.7);
+    border: 1px solid rgba(250, 204, 21, 0.3);
+    border-radius: 12px;
+    padding: 14px 18px;
+    position: relative;
+    transition: all .2s;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+  }
+  .crack-card:hover {
+    border-color: #facc15;
+    box-shadow: 0 0 20px rgba(250, 204, 21, 0.12);
+    transform: translateY(-1px);
+  }
+  .crack-card .card-num {
+    background: linear-gradient(135deg, #facc15, #f59e0b);
+    color: #0f172a; width: 32px; height: 32px;
+    border-radius: 50%; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; font-weight: 800;
+    flex-shrink: 0;
+  }
+  .crack-card .card-main {
+    flex: 1; min-width: 150px;
+  }
+  .crack-card .card-main .card-nom {
+    font-size: 18px; font-weight: 700; color: #facc15;
+    margin-bottom: 4px;
+  }
+  .crack-card .card-main .card-details {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    color: #94a3b8; font-size: 12px;
+  }
+  .crack-card .card-main .card-details strong { color: #e2e8f0; }
+  .crack-card .card-right {
+    display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  }
+  .elo-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(250, 204, 21, 0.1);
+    border: 1px solid rgba(250, 204, 21, 0.25);
+    border-radius: 20px; padding: 5px 12px;
+  }
+  .elo-pill .elo-label {
+    font-size: 9px; color: #64748b; text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .elo-pill .elo-val {
+    font-size: 16px; font-weight: 800;
     background: linear-gradient(90deg, #facc15, #f59e0b);
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
   }
-  .crack-card .cote-tag {
-    display: inline-block; background: #1e40af; color: white;
-    padding: 3px 10px; border-radius: 5px; font-size: 13px;
-    font-weight: 700; margin-left: 10px;
+  .cote-pill {
+    background: #1e40af; color: white;
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 12px; font-weight: 700;
+    white-space: nowrap;
   }
 
+  /* ===== Empty / Loading ===== */
   .empty-state {
     text-align: center; padding: 60px 20px; color: #64748b;
   }
@@ -143,8 +195,10 @@
   .footer a:hover { color: #94a3b8; }
 
   @media (max-width: 600px) {
-    .crack-card h2 { font-size: 18px; }
-    .crack-card .details { gap: 8px; }
+    .crack-card { gap: 8px; padding: 12px 14px; }
+    .crack-card .card-main .card-nom { font-size: 15px; }
+    .crack-card .card-right { width: 100%; justify-content: flex-start; }
+    .reunion-header { padding: 12px 14px; }
   }
 </style>
 </head>
@@ -211,40 +265,98 @@ function renderCracks(data) {
     return;
   }
 
-  // Trier par ELO décroissant (déjà trié côté serveur, mais on s'assure)
-  cracks.sort((a, b) => b.elo_rating - a.elo_rating);
+  // Grouper par réunion (hippodrome + num_reunion)
+  const reunions = {};
+  cracks.forEach(c => {
+    const key = c.num_reunion;
+    if (!reunions[key]) {
+      reunions[key] = {
+        num_reunion: c.num_reunion,
+        hippodrome: c.hippodrome,
+        cracks: []
+      };
+    }
+    reunions[key].cracks.push(c);
+  });
+
+  // Trier les réunions par numéro
+  const sortedReunions = Object.values(reunions).sort((a, b) => a.num_reunion - b.num_reunion);
+
+  const totalCracks = cracks.length;
 
   let html = `
     <div class="summary-bar">
-      🏆 <strong>${cracks.length}</strong> cheval${cracks.length > 1 ? 'x' : ''} recommandé${cracks.length > 1 ? 's' : ''}
-      pour le <strong>${formatDate(data.date)}</strong>
+      🏆 <strong>${totalCracks}</strong> cheval${totalCracks > 1 ? 'x' : ''} Crack
+      réparti${totalCracks > 1 ? 's' : ''} dans <strong>${sortedReunions.length}</strong> réunion${sortedReunions.length > 1 ? 's' : ''}
+      — <strong>${formatDate(data.date)}</strong>
     </div>
   `;
 
-  cracks.forEach(c => {
+  sortedReunions.forEach(reu => {
+    const nb = reu.cracks.length;
     html += `
-      <div class="crack-card">
-        <span class="crack-badge">#${c.numPmu}</span>
-        <div class="race-info">
-          <span class="race-tag">${c.course}</span>
-          <span class="hippo">📍 ${c.hippodrome} — ${c.discipline || ''} ${c.distance ? c.distance + 'm' : ''}</span>
-          <span class="time">🕐 ${c.heure}</span>
+      <div class="reunion-block">
+        <div class="reunion-header">
+          <div class="reunion-title">
+            <span class="reunion-num">R${reu.num_reunion}</span>
+            <span class="reunion-hippo">📍 ${reu.hippodrome}</span>
+          </div>
+          <span class="reunion-count">${nb} crack${nb > 1 ? 's' : ''}</span>
         </div>
-        <h2>${c.cheval}
-          ${c.cote ? `<span class="cote-tag">Cote ${c.cote}</span>` : ''}
-        </h2>
-        <div class="details">
-          ${c.age ? `<span>🎂 <strong>${c.age} ans</strong></span>` : ''}
-          ${c.sexe ? `<span>${c.sexe === 'FEMELLES' ? '♀️' : (c.sexe === 'HONGRES' ? '骟' : '♂️')} <strong>${c.sexe}</strong></span>` : ''}
-          <span>🏇 <strong>${c.driver}</strong></span>
-          <span>👤 <strong>${c.entraineur}</strong></span>
-          <span>🐎 <strong>${c.nb_partants} partants</strong></span>
-          ${c.nb_courses ? `<span>📊 <strong>${c.nb_courses} courses</strong></span>` : ''}
-        </div>
-        <div class="elo-block">
-          <span class="elo-label">ELO brut</span>
-          <span class="elo-val">${c.elo_rating}</span>
-          <span style="font-size:11px;color:#94a3b8;">≥ ${1560} requis</span>
+        <div class="reunion-body">
+    `;
+
+    // Sous-grouper par course
+    const courses = {};
+    reu.cracks.forEach(c => {
+      const ck = c.num_course;
+      if (!courses[ck]) {
+        courses[ck] = { num_course: ck, infos: c, horses: [] };
+      }
+      courses[ck].horses.push(c);
+    });
+
+    const sortedCourses = Object.values(courses).sort((a, b) => a.num_course - b.num_course);
+
+    sortedCourses.forEach(cou => {
+      html += `
+          <div class="course-sep">
+            <span class="course-label">Course ${cou.num_course}</span>
+            <span class="course-infos">${cou.infos.discipline || ''} ${cou.infos.distance ? cou.infos.distance + 'm' : ''} — ${cou.infos.nb_partants} partants</span>
+            <span class="course-heure">🕐 ${cou.infos.heure || '—'}</span>
+          </div>
+      `;
+
+      // Trier les chevaux par ELO décroissant dans la course
+      cou.horses.sort((a, b) => b.elo_rating - a.elo_rating);
+
+      cou.horses.forEach(c => {
+        html += `
+          <div class="crack-card">
+            <div class="card-num">${c.numPmu}</div>
+            <div class="card-main">
+              <div class="card-nom">${c.cheval}</div>
+              <div class="card-details">
+                ${c.age ? `<span>🎂 <strong>${c.age} ans</strong></span>` : ''}
+                ${c.sexe ? `<span>${c.sexe === 'FEMELLES' ? '♀️' : (c.sexe === 'HONGRES' ? '骟' : '♂️')} <strong>${c.sexe}</strong></span>` : ''}
+                <span>🏇 <strong>${c.driver}</strong></span>
+                <span>👤 <strong>${c.entraineur}</strong></span>
+                ${c.nb_courses ? `<span>📊 <strong>${c.nb_courses} courses</strong></span>` : ''}
+              </div>
+            </div>
+            <div class="card-right">
+              <div class="elo-pill">
+                <span class="elo-label">ELO</span>
+                <span class="elo-val">${c.elo_rating}</span>
+              </div>
+              ${c.cote ? `<span class="cote-pill">Cote ${c.cote}</span>` : ''}
+            </div>
+          </div>
+        `;
+      });
+    });
+
+    html += `
         </div>
       </div>
     `;
@@ -254,7 +366,6 @@ function renderCracks(data) {
 }
 
 function formatDate(dateStr) {
-  // dateStr format: "05062026"
   if (dateStr.length === 8) {
     return `${dateStr.slice(0,2)}/${dateStr.slice(2,4)}/${dateStr.slice(4,8)}`;
   }
@@ -265,5 +376,5 @@ function formatDate(dateStr) {
 document.getElementById('datePicker').value = todayStr();
 loadCracks();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0702cb03e28d127',t:'MTc4MDY3Mjk2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
