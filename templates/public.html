@@ -80,7 +80,6 @@
   }
   .reunion-header.crack-style { border-bottom: 2px solid #facc15; }
   .reunion-header.base-style { border-bottom: 2px solid #10b981; }
-  .reunion-header.jour-style { border-bottom: 2px solid #ef4444; }
   .reunion-header .reunion-title { display: flex; align-items: center; gap: 10px; }
   .reunion-header .reunion-num {
     padding: 4px 12px; border-radius: 20px; font-size: 13px;
@@ -88,14 +87,12 @@
   }
   .reunion-header .reunion-num.crack { background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a; }
   .reunion-header .reunion-num.base { background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a; }
-  .reunion-header .reunion-num.jour { background: linear-gradient(135deg, #ef4444, #f59e0b); color: #fff; }
   .reunion-header .reunion-hippo { font-size: 15px; font-weight: 700; color: #e2e8f0; }
   .reunion-header .reunion-count {
     font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
   }
   .reunion-header .reunion-count.crack { background: rgba(250,204,21,0.15); color: #facc15; }
   .reunion-header .reunion-count.base { background: rgba(16,185,129,0.15); color: #10b981; }
-  .reunion-header .reunion-count.jour { background: rgba(239,68,68,0.15); color: #ef4444; }
   .reunion-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
   /* ===== Course séparateur ===== */
@@ -110,7 +107,6 @@
   }
   .course-sep .course-label.crack { color: #06b6d4; }
   .course-sep .course-label.base { color: #10b981; }
-  .course-sep .course-label.jour { color: #ef4444; }
   .course-sep .course-infos { color: #94a3b8; font-size: 12px; }
   .course-sep .course-heure { color: #f59e0b; font-weight: 700; font-size: 12px; margin-left: auto; white-space: nowrap; }
 
@@ -189,20 +185,18 @@
   .role-badge.crack-tag { background: rgba(250,204,21,0.2); color: #facc15; }
   .role-badge.rang-tag { background: rgba(239,68,68,0.15); color: #ef4444; }
 
-  /* ===== Course du Jour hero ===== */
+  /* ===== Jeux du Jour ===== */
   .jour-hero {
     background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(245,158,11,0.1));
     border: 1px solid rgba(239,68,68,0.3);
     border-radius: 14px; padding: 20px; margin-bottom: 16px; text-align: center;
   }
   .jour-hero .jour-title {
-    font-size: 24px; font-weight: 800; margin-bottom: 6px;
+    font-size: 22px; font-weight: 800; margin-bottom: 6px;
     background: linear-gradient(90deg, #ef4444, #f59e0b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   }
-  .jour-hero .jour-libelle {
-    color: #fbbf24; font-size: 14px; font-weight: 600; margin-bottom: 6px;
-  }
+  .jour-hero .jour-libelle { color: #fbbf24; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
   .jour-hero .jour-meta {
     display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
     color: #94a3b8; font-size: 13px; margin-bottom: 8px;
@@ -219,23 +213,50 @@
   .jour-hero .jour-stat .st-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
   .jour-hero .jour-stat .st-val { font-size: 15px; font-weight: 800; color: #ef4444; }
   .jour-hero .jour-stat .st-val.crack-val { color: #facc15; }
-  .jour-selection-label {
+
+  .jour-section-label {
     display: flex; align-items: center; gap: 8px;
     font-size: 13px; font-weight: 700; color: #e2e8f0;
-    margin: 16px 0 10px; padding: 8px 12px;
-    border-radius: 8px;
+    margin: 16px 0 10px; padding: 8px 12px; border-radius: 8px;
   }
-  .jour-selection-label.cracks-section {
+  .jour-section-label.cracks-section {
     background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2);
   }
-  .jour-selection-label.classement-section {
+  .jour-section-label.classement-section {
     background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15);
   }
-  .jour-selection-label .section-emoji { font-size: 16px; }
-  .jour-selection-label .section-count {
+  .jour-section-label .section-emoji { font-size: 16px; }
+  .jour-section-label .section-count {
     background: #334155; color: #94a3b8; padding: 1px 8px;
     border-radius: 10px; font-size: 11px; margin-left: 4px;
   }
+
+  /* ===== Course picker ===== */
+  .course-picker { margin-bottom: 16px; }
+  .course-picker .picker-label {
+    font-size: 12px; color: #94a3b8; margin-bottom: 8px;
+    text-align: center; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .picker-reu { margin-bottom: 10px; }
+  .picker-reu-title {
+    font-size: 11px; font-weight: 700; color: #06b6d4;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
+  }
+  .picker-courses { display: flex; flex-wrap: wrap; gap: 6px; }
+  .picker-btn {
+    background: #1e293b; color: #cbd5e1; border: 1px solid #334155;
+    padding: 7px 12px; border-radius: 8px; font-size: 12px;
+    cursor: pointer; transition: all .2s; text-align: left;
+    display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; min-width: 180px;
+  }
+  .picker-btn:hover { border-color: #ef4444; background: #263548; }
+  .picker-btn.active { background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444; }
+  .picker-btn .pb-info { display: flex; flex-direction: column; gap: 1px; }
+  .picker-btn .pb-name { font-weight: 600; }
+  .picker-btn .pb-meta { font-size: 10px; color: #94a3b8; }
+  .picker-btn.active .pb-meta { color: #ef4444; }
+  .picker-btn .pb-time { font-size: 11px; color: #f59e0b; font-weight: 700; white-space: nowrap; }
 
   /* ===== Empty / Loading ===== */
   .empty-state { text-align: center; padding: 50px 20px; color: #64748b; }
@@ -270,7 +291,7 @@
     .card-right { width: 100%; justify-content: flex-start; }
     .tabs { gap: 3px; padding: 10px 6px 0; }
     .tab-btn { font-size: 11px; padding: 7px 6px; }
-    .jour-hero .jour-title { font-size: 18px; }
+    .picker-btn { min-width: 140px; }
   }
 </style>
 </head>
@@ -290,7 +311,7 @@
     <span class="tab-count" id="countBase">—</span>
   </button>
   <button class="tab-btn" id="tabJour" onclick="switchTab('jour')">
-    <span class="tab-icon">🎯</span> Quinté
+    <span class="tab-icon">🎯</span> Jeux du Jour
     <span class="tab-count" id="countJour">—</span>
   </button>
 </div>
@@ -302,10 +323,7 @@
   </div>
 
   <div id="resultsBlock">
-    <div class="loading">
-      <div class="spinner"></div>
-      Chargement des pronostics…
-    </div>
+    <div class="loading"><div class="spinner"></div>Chargement des pronostics…</div>
   </div>
 </div>
 
@@ -316,7 +334,8 @@
 
 <script>
 let currentTab = 'crack';
-let cacheData = { crack: null, base: null, jour: null };
+let cacheData = { crack: null, base: null, jour: null, programme: null };
+let selectedR = null, selectedC = null;
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
@@ -336,30 +355,29 @@ async function loadAll() {
   block.innerHTML = '<div class="loading"><div class="spinner"></div>Analyse en cours… (1ère fois : 1-3 min)</div>';
 
   try {
-    const [resCrack, resBase, resJour] = await Promise.all([
+    const [resCrack, resBase, resProg] = await Promise.all([
       fetch(`/api/crack-horses?date=${dateApi}`).then(r => r.json()),
       fetch(`/api/super-base?date=${dateApi}`).then(r => r.json()),
-      fetch(`/api/course-du-jour?date=${dateApi}`).then(r => r.json())
+      fetch(`/api/programme-public?date=${dateApi}`).then(r => r.json())
     ]);
     if (resCrack.error) throw new Error(resCrack.error);
     if (resBase.error) throw new Error(resBase.error);
-    if (resJour.error) throw new Error(resJour.error);
+    if (resProg.error) throw new Error(resProg.error);
 
     cacheData.crack = resCrack;
     cacheData.base = resBase;
-    cacheData.jour = resJour;
+    cacheData.programme = resProg;
+    cacheData.jour = null;
+    selectedR = null; selectedC = null;
 
     document.getElementById('countCrack').textContent = (resCrack.cracks || []).length;
     document.getElementById('countBase').textContent = (resBase.bases || []).length;
-    const selCount = (resJour.selection || []).length;
-    document.getElementById('countJour').textContent = selCount > 0 ? selCount + ' chx' : '—';
+    document.getElementById('countJour').textContent = (resProg.reunions || []).reduce((n, r) => n + r.courses.length, 0) + ' chx';
 
     renderCurrent();
   } catch(e) {
     block.innerHTML = `<div class="empty-state">
-      <div class="emoji">⚠️</div>
-      <h2>Erreur</h2>
-      <p>${e.message}</p>
+      <div class="emoji">⚠️</div><h2>Erreur</h2><p>${e.message}</p>
     </div>`;
   }
 }
@@ -367,13 +385,12 @@ async function loadAll() {
 function renderCurrent() {
   if (currentTab === 'crack' && cacheData.crack) renderCracks(cacheData.crack);
   else if (currentTab === 'base' && cacheData.base) renderBases(cacheData.base);
-  else if (currentTab === 'jour' && cacheData.jour) renderJour(cacheData.jour);
+  else if (currentTab === 'jour' && cacheData.programme) renderJour();
 }
 
 function formatDate(dateStr) {
-  if (dateStr && dateStr.length === 8) {
+  if (dateStr && dateStr.length === 8)
     return `${dateStr.slice(0,2)}/${dateStr.slice(2,4)}/${dateStr.slice(4,8)}`;
-  }
   return dateStr || '';
 }
 
@@ -403,20 +420,15 @@ function renderCracks(data) {
   const cracks = data.cracks || [];
   if (!cracks.length) {
     block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div>
-      <h2>Aucun cheval Crack trouvé</h2>
-      <p>Pas de cheval avec un score ELO exceptionnel (≥ 85) pour cette date.</p>
-    </div>`;
+      <div class="emoji">🏇</div><h2>Aucun cheval Crack trouvé</h2>
+      <p>Pas de cheval avec un score ELO ≥ 85 pour cette date.</p></div>`;
     return;
   }
-
   const reunions = groupByReunion(cracks);
   let html = `<div class="summary-bar crack">
     ⚡ <strong class="crack">${cracks.length}</strong> cheval${cracks.length>1?'x':''} Crack
     dans <strong class="crack">${reunions.length}</strong> réunion${reunions.length>1?'s':''}
-    — <strong>${formatDate(data.date)}</strong>
-  </div>`;
-
+    — <strong>${formatDate(data.date)}</strong></div>`;
   reunions.forEach(reu => {
     html += `<div class="reunion-block">
       <div class="reunion-header crack-style">
@@ -425,17 +437,14 @@ function renderCracks(data) {
           <span class="reunion-hippo">📍 ${reu.hippodrome}</span>
         </div>
         <span class="reunion-count crack">${reu.items.length} crack${reu.items.length>1?'s':''}</span>
-      </div>
-      <div class="reunion-body">`;
-
+      </div><div class="reunion-body">`;
     const courses = groupByCourse(reu.items);
     courses.forEach(cou => {
       const ci = cou.info;
       html += `<div class="course-sep">
         <span class="course-label crack">Course ${cou.num_course}</span>
         <span class="course-infos">${ci.discipline||''} ${ci.distance?ci.distance+'m':''} — ${ci.nb_partants} partants</span>
-        <span class="course-heure">🕐 ${ci.heure||'—'}</span>
-      </div>`;
+        <span class="course-heure">🕐 ${ci.heure||'—'}</span></div>`;
       cou.items.sort((a, b) => b.elo_score - a.elo_score);
       cou.items.forEach(c => { html += horseCard(c, 'crack'); });
     });
@@ -450,20 +459,15 @@ function renderBases(data) {
   const bases = data.bases || [];
   if (!bases.length) {
     block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div>
-      <h2>Aucune course trouvée</h2>
-      <p>Pas de programme pour cette date.</p>
-    </div>`;
+      <div class="emoji">🏇</div><h2>Aucune course trouvée</h2>
+      <p>Pas de programme pour cette date.</p></div>`;
     return;
   }
-
   const reunions = groupByReunion(bases);
   let html = `<div class="summary-bar base">
     🏆 <strong class="base">${bases.length}</strong> sélection${bases.length>1?'s':''}
-    (1 par course) dans <strong class="base">${reunions.length}</strong> réunion${reunions.length>1?'s':''}
-    — <strong>${formatDate(data.date)}</strong>
-  </div>`;
-
+    dans <strong class="base">${reunions.length}</strong> réunion${reunions.length>1?'s':''}
+    — <strong>${formatDate(data.date)}</strong></div>`;
   reunions.forEach(reu => {
     html += `<div class="reunion-block">
       <div class="reunion-header base-style">
@@ -472,16 +476,13 @@ function renderBases(data) {
           <span class="reunion-hippo">📍 ${reu.hippodrome}</span>
         </div>
         <span class="reunion-count base">${reu.items.length} course${reu.items.length>1?'s':''}</span>
-      </div>
-      <div class="reunion-body">`;
-
+      </div><div class="reunion-body">`;
     reu.items.sort((a, b) => a.num_course - b.num_course);
     reu.items.forEach(c => {
       html += `<div class="course-sep">
         <span class="course-label base">Course ${c.num_course}</span>
         <span class="course-infos">${c.discipline||''} ${c.distance?c.distance+'m':''} — ${c.nb_partants} partants</span>
-        <span class="course-heure">🕐 ${c.heure||'—'}</span>
-      </div>`;
+        <span class="course-heure">🕐 ${c.heure||'—'}</span></div>`;
       html += horseCard(c, 'base');
     });
     html += `</div></div>`;
@@ -489,68 +490,113 @@ function renderBases(data) {
   block.innerHTML = html;
 }
 
-/* ===== RENDER QUINTÉ DU JOUR ===== */
-function renderJour(data) {
+/* ===== RENDER JEUX DU JOUR ===== */
+function renderJour() {
   const block = document.getElementById('resultsBlock');
-  const sel = data.selection || [];
-  const course = data.course;
-
-  if (!course || !sel.length) {
+  const prog = cacheData.programme;
+  if (!prog || !prog.reunions || !prog.reunions.length) {
     block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div>
-      <h2>Aucun Quinté trouvé</h2>
-      <p>Pas de course de Quinté programmée pour cette date.</p>
-    </div>`;
+      <div class="emoji">🏇</div><h2>Aucune course</h2>
+      <p>Pas de programme pour cette date.</p></div>`;
     return;
   }
 
-  const cracks = sel.filter(s => s.is_crack);
-  const others = sel.filter(s => !s.is_crack);
-
   let html = '';
 
-  // Hero
-  html += `<div class="jour-hero">
-    <div class="jour-title">🎯 Quinté du Jour — R${course.r_num}C${course.c_num}</div>
-    ${course.libelle ? `<div class="jour-libelle">${course.libelle}</div>` : ''}
-    <div class="jour-meta">
-      <span>📍 <strong>${course.hippodrome}</strong></span>
-      <span>🕐 <strong>${course.heure}</strong></span>
-      <span>🏁 <strong>${course.discipline}</strong></span>
-      <span>📏 <strong>${course.distance}m</strong></span>
-      <span>🐎 <strong>${course.nb_partants} partants</strong></span>
-    </div>
-    <div class="jour-stats">
-      <div class="jour-stat">
-        <span class="st-label">Sélection</span>
-        <span class="st-val">${sel.length} chevaux</span>
-      </div>
-      <div class="jour-stat">
-        <span class="st-label">Cracks</span>
-        <span class="st-val crack-val">${course.nb_cracks || 0}</span>
-      </div>
-    </div>
-  </div>`;
+  // Course picker
+  html += `<div class="course-picker">
+    <div class="picker-label">Sélectionnez une course</div>`;
+  prog.reunions.forEach(reu => {
+    html += `<div class="picker-reu">
+      <div class="picker-reu-title">R${reu.numReunion} · ${reu.hippodrome}</div>
+      <div class="picker-courses">`;
+    reu.courses.forEach(c => {
+      const isActive = selectedR === reu.numReunion && selectedC === c.numCourse;
+      html += `<button class="picker-btn${isActive?' active':''}"
+        onclick="selectCourse(${reu.numReunion}, ${c.numCourse})">
+        <div class="pb-info">
+          <span class="pb-name">C${c.numCourse} · ${(c.libelle||'').substring(0,22)}</span>
+          <span class="pb-meta">${c.discipline||''} ${c.distance?c.distance+'m':''} · ${c.nbPartants||'?'} partants</span>
+        </div>
+        <span class="pb-time">${c.heure}</span>
+      </button>`;
+    });
+    html += `</div></div>`;
+  });
+  html += `</div>`;
 
-  // Section Cracks
-  if (cracks.length) {
-    html += `<div class="jour-selection-label cracks-section">
-      <span class="section-emoji">⚡</span> Cracks
-      <span class="section-count">${cracks.length}</span>
-    </div>`;
-    cracks.forEach(c => { html += horseCard(c, 'jour'); });
-  }
+  // Sélection (si course choisie)
+  if (cacheData.jour && cacheData.jour.selection) {
+    const sel = cacheData.jour.selection;
+    const course = cacheData.jour.course;
 
-  // Section Classement
-  if (others.length) {
-    html += `<div class="jour-selection-label classement-section">
-      <span class="section-emoji">📊</span> Complémentaires (classement)
-      <span class="section-count">${others.length}</span>
+    const cracks = sel.filter(s => s.is_crack);
+    const others = sel.filter(s => !s.is_crack);
+
+    html += `<div class="jour-hero">
+      <div class="jour-title">🎯 R${course.r_num}C${course.c_num}</div>
+      ${course.libelle ? `<div class="jour-libelle">${course.libelle}</div>` : ''}
+      <div class="jour-meta">
+        <span>📍 <strong>${course.hippodrome}</strong></span>
+        <span>🕐 <strong>${course.heure}</strong></span>
+        <span>🏁 <strong>${course.discipline}</strong></span>
+        <span>📏 <strong>${course.distance}m</strong></span>
+        <span>🐎 <strong>${course.nb_partants} partants</strong></span>
+      </div>
+      <div class="jour-stats">
+        <div class="jour-stat">
+          <span class="st-label">Sélection</span>
+          <span class="st-val">${sel.length} chevaux</span>
+        </div>
+        <div class="jour-stat">
+          <span class="st-label">Cracks</span>
+          <span class="st-val crack-val">${course.nb_cracks || 0}</span>
+        </div>
+      </div>
     </div>`;
-    others.forEach(c => { html += horseCard(c, 'jour'); });
+
+    if (cracks.length) {
+      html += `<div class="jour-section-label cracks-section">
+        <span class="section-emoji">⚡</span> Cracks
+        <span class="section-count">${cracks.length}</span></div>`;
+      cracks.forEach(c => { html += horseCard(c, 'jour'); });
+    }
+    if (others.length) {
+      html += `<div class="jour-section-label classement-section">
+        <span class="section-emoji">📊</span> Complémentaires
+        <span class="section-count">${others.length}</span></div>`;
+      others.forEach(c => { html += horseCard(c, 'jour'); });
+    }
   }
 
   block.innerHTML = html;
+}
+
+async function selectCourse(r, c) {
+  selectedR = r; selectedC = c;
+
+  // Réafficher le picker tout de suite (avec le bouton actif)
+  renderJour();
+
+  // Charger la sélection
+  const dateVal = document.getElementById('datePicker').value;
+  const dateApi = toApiDate(dateVal);
+
+  // Insérer un loader dans la zone résultat
+  const heroZone = document.querySelector('.jour-hero');
+  if (heroZone) heroZone.style.opacity = '0.4';
+
+  try {
+    const res = await fetch(`/api/course-du-jour?date=${dateApi}&r=${r}&c=${c}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    cacheData.jour = data;
+    document.getElementById('countJour').textContent = (data.selection || []).length;
+    renderJour();
+  } catch(e) {
+    if (heroZone) heroZone.style.opacity = '1';
+    alert('Erreur : ' + e.message);
+  }
 }
 
 /* ===== Generic horse card ===== */
@@ -560,20 +606,15 @@ function horseCard(c, style) {
     : (style === 'jour' ? `<span class="role-badge rang-tag">#${c.rang || '?'}</span>` : '');
 
   const chancePill = c.chance !== undefined
-    ? `<div class="score-pill ${style}">
-        <span class="pill-label">Chance</span>
-        <span class="pill-val ${style}">${c.chance}%</span>
-      </div>` : '';
+    ? `<div class="score-pill ${style}"><span class="pill-label">Chance</span>
+       <span class="pill-val ${style}">${c.chance}%</span></div>` : '';
 
   const eloPill = c.elo_score !== undefined
-    ? `<div class="score-pill ${style}">
-        <span class="pill-label">ELO</span>
-        <span class="pill-val ${style}">${c.elo_score}</span>
-      </div>` : '';
+    ? `<div class="score-pill ${style}"><span class="pill-label">ELO</span>
+       <span class="pill-val ${style}">${c.elo_score}</span></div>` : '';
 
   const stats = c.nb_courses
     ? `<span>📊 <strong>${c.nb_courses}c ${c.nb_victoires||0}V ${c.nb_places||0}P</strong></span>` : '';
-
   const gains = c.gains_carriere
     ? `<span>💰 <strong>${c.gains_carriere.toLocaleString()}€</strong></span>` : '';
 
@@ -591,9 +632,7 @@ function horseCard(c, style) {
       ${c.musique?`<span class="card-musique">${c.musique}</span>`:''}
     </div>
     <div class="card-right">
-      ${roleBadge}
-      ${chancePill}
-      ${eloPill}
+      ${roleBadge}${chancePill}${eloPill}
       ${c.cote?`<span class="cote-pill">Cote ${c.cote}</span>`:''}
       ${c.value_bet?`<span class="value-badge">⭐ VALUE</span>`:''}
     </div>
@@ -604,5 +643,5 @@ function horseCard(c, style) {
 document.getElementById('datePicker').value = todayStr();
 loadAll();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a07095a928ff009e',t:'MTc4MDY3NzI2NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
