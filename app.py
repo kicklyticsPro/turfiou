@@ -1305,136 +1305,8 @@ def get_super_base(date_str):
 
 
 # ============================================================
-#  Course du Jour (public API) — Quinté du jour
+#  Jeux du Jour (public API)
 # ============================================================
-def get_course_du_jour(date_str):
-    """Sélectionne la course du Quinté, puis retourne les cracks
-    + les meilleurs du classement pour arriver à 7 chevaux."""
-    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
-
-    try:
-        programme = get_programme(date_str)
-    except Exception:
-        return None
-
-    # Trouver la course du Quinté
-    quinte_meta = None
-    for r in programme["programme"]["reunions"]:
-        hippo = r["hippodrome"]["libelleCourt"]
-        for c in r["courses"]:
-            r_num = r["numOfficiel"]
-            c_num = c["numOrdre"]
-            # Le Quinté est identifié par le champ resume dans le libellé
-            # ou par la discipline + conditions. On cherche le mot "quinté"
-            libelle = (c.get("libelle") or "").lower()
-            libelle_court = (c.get("libelleCourt") or "").lower()
-            conditions = (c.get("conditions") or "").lower()
-            # Vérifier via le critère quinté
-            is_quinte = False
-
-            # Méthode 1 : prixPension ou mention quinté dans les champs texte
-            if "quinte" in libelle or "quinte" in libelle_court or "quinte" in conditions:
-                is_quinte = True
-
-            # Méthode 2 : champ betTypes ou prixPension
-            bet_types = c.get("betTypes", [])
-            if isinstance(bet_types, list):
-                for bt in bet_types:
-                    bt_name = ""
-                    if isinstance(bt, str):
-                        bt_name = bt.lower()
-                    elif isinstance(bt, dict):
-                        bt_name = (bt.get("code") or bt.get("libelle") or "").lower()
-                    if "quinte" in bt_name:
-                        is_quinte = True
-                        break
-
-            # Méthode 3 : catégorie quinté
-            categorie = (c.get("categorie") or "").lower() if isinstance(c.get("categorie"), str) else ""
-            if "quinte" in categorie:
-                is_quinte = True
-
-            if is_quinte:
-                quinte_meta = {
-                    "r_num": r_num, "c_num": c_num,
-                    "hippodrome": hippo,
-                    "discipline": c.get("discipline", ""),
-                    "distance": c.get("distance"),
-                    "type_corde": c.get("corde", ""),
-                    "heure": datetime.fromtimestamp(
-                        c["heureDepart"] / 1000
-                    ).strftime("%H:%M") if c.get("heureDepart") else "",
-                    "libelle": c.get("libelle") or c.get("libelleCourt") or "",
-                }
-                break
-        if quinte_meta:
-            break
-
-    if not quinte_meta:
-        return None
-
-    # Analyser la course du quinté
-    try:
-        parts = get_participants(date_str, quinte_meta["r_num"], quinte_meta["c_num"])
-        perfs = get_performances(date_str, quinte_meta["r_num"], quinte_meta["c_num"])
-    except Exception:
-        return None
-
-    analyses = analyser_course(
-        parts, perfs,
-        quinte_meta["distance"], quinte_meta["discipline"],
-        quinte_meta["hippodrome"], quinte_meta["type_corde"],
-        team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
-        use_ml=False, capital=100)
-
-    if len(analyses) < 3:
-        return None
-
-    nb_partants = len([p for p in parts.get("participants", [])
-                        if p.get("statut") == "PARTANT"])
-
-    # Construire la sélection de 7 chevaux :
-    # D'abord les cracks, puis les meilleurs du classement dans l'ordre
-    SELECTION_SIZE = 7
-
-    # Identifier les cracks (ELO ≥ 85, > 0 courses)
-    crack_nums = set()
-    for a in analyses:
-        if (a["scores"]["elo"] >= 85
-                and (a.get("nbCourses", 0) or 0) > 0):
-            crack_nums.add(a["numPmu"])
-
-    # Construire la liste : cracks d'abord (dans l'ordre du classement),
-    # puis les autres dans l'ordre du classement, jusqu'à 7
-    selection = []
-    seen = set()
-
-    # Pass 1 : les cracks dans l'ordre du classement algo
-    for a in analyses:
-        if a["numPmu"] in crack_nums and a["numPmu"] not in seen:
-            if (a.get("nbCourses", 0) or 0) > 0:
-                seen.add(a["numPmu"])
-                selection.append(_selection_entry(a, is_crack=True))
-
-    # Pass 2 : le reste dans l'ordre du classement
-    for a in analyses:
-        if a["numPmu"] not in seen:
-            if (a.get("nbCourses", 0) or 0) > 0:
-                seen.add(a["numPmu"])
-                selection.append(_selection_entry(a, is_crack=False))
-
-    # Couper à 7
-    selection = selection[:SELECTION_SIZE]
-
-    quinte_meta["nb_partants"] = nb_partants
-    quinte_meta["nb_cracks"] = len(crack_nums)
-
-    return {
-        "meta": quinte_meta,
-        "selection": selection,
-    }
-
-
 def _selection_entry(a, is_crack=False):
     return {
         "numPmu": a["numPmu"],
@@ -1459,6 +1331,99 @@ def _selection_entry(a, is_crack=False):
     }
 
 
+def get_selection_course(date_str, r_num, c_num):
+    """Retourne une sélection de 7 chevaux pour une course donnée :
+    d'abord les cracks (ELO ≥ 85), puis le classement algo."""
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
+
+    try:
+        prog = get_programme(date_str)
+    except Exception:
+        return None
+
+    # Trouver les infos de la course
+    hippodrome = None
+    discipline = None
+    distance = None
+    type_corde = None
+    heure = ""
+    libelle = ""
+
+    for r in prog["programme"]["reunions"]:
+        if r["numOfficiel"] == r_num:
+            hippodrome = r["hippodrome"]["libelleCourt"]
+            for c in r["courses"]:
+                if c["numOrdre"] == c_num:
+                    discipline = c.get("discipline", "")
+                    distance = c.get("distance")
+                    type_corde = c.get("corde", "")
+                    heure = (datetime.fromtimestamp(c["heureDepart"] / 1000)
+                             .strftime("%H:%M") if c.get("heureDepart") else "")
+                    libelle = c.get("libelle") or c.get("libelleCourt") or ""
+                    break
+
+    if hippodrome is None:
+        return None
+
+    try:
+        parts = get_participants(date_str, r_num, c_num)
+        perfs = get_performances(date_str, r_num, c_num)
+    except Exception:
+        return None
+
+    analyses = analyser_course(
+        parts, perfs, distance, discipline, hippodrome, type_corde,
+        team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
+        use_ml=False, capital=100)
+
+    if not analyses:
+        return None
+
+    nb_partants = len([p for p in parts.get("participants", [])
+                        if p.get("statut") == "PARTANT"])
+
+    SELECTION_SIZE = 7
+
+    # Identifier les cracks
+    crack_nums = set()
+    for a in analyses:
+        if a["scores"]["elo"] >= 85 and (a.get("nbCourses", 0) or 0) > 0:
+            crack_nums.add(a["numPmu"])
+
+    # Pass 1 : cracks dans l'ordre du classement
+    # Pass 2 : le reste dans l'ordre du classement
+    selection = []
+    seen = set()
+
+    for a in analyses:
+        if a["numPmu"] in crack_nums and a["numPmu"] not in seen:
+            if (a.get("nbCourses", 0) or 0) > 0:
+                seen.add(a["numPmu"])
+                selection.append(_selection_entry(a, is_crack=True))
+
+    for a in analyses:
+        if a["numPmu"] not in seen:
+            if (a.get("nbCourses", 0) or 0) > 0:
+                seen.add(a["numPmu"])
+                selection.append(_selection_entry(a, is_crack=False))
+
+    selection = selection[:SELECTION_SIZE]
+
+    return {
+        "course": {
+            "r_num": r_num, "c_num": c_num,
+            "hippodrome": hippodrome,
+            "discipline": discipline,
+            "distance": distance,
+            "heure": heure,
+            "libelle": libelle,
+            "nb_partants": nb_partants,
+            "nb_cracks": len(crack_nums),
+        },
+        "selection": selection,
+    }
+
+
 # ============================================================
 #  ROUTES PUBLIQUES (sans auth)
 # ============================================================
@@ -1477,6 +1442,33 @@ def api_crack_horses():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/programme-public")
+def api_programme_public():
+    """Liste des courses du jour (public, sans auth)."""
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    try:
+        prog = get_programme(date_str)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    out = []
+    for r in prog["programme"]["reunions"]:
+        out.append({
+            "numReunion": r["numOfficiel"],
+            "hippodrome": r["hippodrome"]["libelleCourt"],
+            "courses": [{
+                "numCourse": c["numOrdre"],
+                "libelle": c.get("libelle") or c.get("libelleCourt") or "",
+                "discipline": c.get("discipline"),
+                "distance": c.get("distance"),
+                "heure": datetime.fromtimestamp(
+                    c["heureDepart"] / 1000
+                ).strftime("%H:%M") if c.get("heureDepart") else "",
+                "nbPartants": c.get("nombreDeclaresPartants"),
+            } for c in r["courses"]],
+        })
+    return jsonify({"date": date_str, "reunions": out})
+
+
 @app.route("/api/super-base")
 def api_super_base():
     date_str = request.args.get("date") or fmt_date(datetime.now())
@@ -1490,11 +1482,16 @@ def api_super_base():
 @app.route("/api/course-du-jour")
 def api_course_du_jour():
     date_str = request.args.get("date") or fmt_date(datetime.now())
+    r_num = int(request.args.get("r", 0))
+    c_num = int(request.args.get("c", 0))
+    if not r_num or not c_num:
+        return jsonify({"error": "Paramètres r et c requis"}), 400
     try:
-        result = get_course_du_jour(date_str)
+        result = get_selection_course(date_str, r_num, c_num)
         if result is None:
-            return jsonify({"date": date_str, "course": None, "selection": []})
-        return jsonify({"date": date_str, "course": result["meta"], "selection": result["selection"]})
+            return jsonify({"error": "Course introuvable"}), 404
+        return jsonify({"date": date_str, "course": result["course"],
+                        "selection": result["selection"]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
