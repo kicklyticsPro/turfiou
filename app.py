@@ -1305,6 +1305,145 @@ def get_super_base(date_str):
 
 
 # ============================================================
+#  Course du Jour (public API)
+# ============================================================
+def get_course_du_jour(date_str):
+    """Sélectionne la course avec la plus forte somme de chance des 3 premiers,
+    puis retourne le top 3 + les cracks de cette course comme sélection."""
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
+
+    try:
+        programme = get_programme(date_str)
+    except Exception:
+        return None
+
+    best_course = None
+    best_score = 0
+    best_analyses = []
+    best_meta = None
+
+    for r in programme["programme"]["reunions"]:
+        hippo = r["hippodrome"]["libelleCourt"]
+        for c in r["courses"]:
+            r_num = r["numOfficiel"]
+            c_num = c["numOrdre"]
+            distance = c.get("distance")
+            discipline = c.get("discipline", "")
+            type_corde = c.get("corde", "")
+            try:
+                parts = get_participants(date_str, r_num, c_num)
+                perfs = get_performances(date_str, r_num, c_num)
+            except Exception:
+                continue
+
+            analyses = analyser_course(
+                parts, perfs, distance, discipline, hippo, type_corde,
+                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
+                use_ml=False, capital=100)
+
+            if len(analyses) < 3:
+                continue
+
+            # Somme des chances des 3 premiers
+            top3_sum = sum(a.get("chance", 0) for a in analyses[:3])
+
+            if top3_sum > best_score:
+                best_score = top3_sum
+                best_analyses = analyses
+                best_meta = {
+                    "r_num": r_num, "c_num": c_num,
+                    "hippodrome": hippo, "discipline": discipline,
+                    "distance": distance, "type_corde": type_corde,
+                    "heure": datetime.fromtimestamp(
+                        c["heureDepart"] / 1000
+                    ).strftime("%H:%M") if c.get("heureDepart") else "",
+                    "nb_partants": len([p for p in parts.get("participants", [])
+                                        if p.get("statut") == "PARTANT"]),
+                    "top3_sum": round(top3_sum, 2),
+                }
+
+    if not best_meta:
+        return None
+
+    # Construire la sélection : top 3 + cracks
+    partants = best_analyses
+    selection = []
+    seen_nums = set()
+
+    # Ajouter le top 3
+    for i, a in enumerate(partants[:3]):
+        nb_courses = a.get("nbCourses", 0) or 0
+        if nb_courses == 0:
+            continue
+        seen_nums.add(a["numPmu"])
+        selection.append({
+            "numPmu": a["numPmu"],
+            "cheval": a["nom"],
+            "chance": a.get("chance", 0),
+            "elo_score": a["scores"]["elo"],
+            "forme": a["scores"]["forme"],
+            "driver": a["driver"],
+            "entraineur": a["entraineur"],
+            "age": a.get("age"),
+            "sexe": a.get("sexe"),
+            "cote": a.get("cote"),
+            "musique": a.get("musique", ""),
+            "nb_courses": nb_courses,
+            "nb_victoires": a.get("nbVictoires", 0),
+            "nb_places": a.get("nbPlaces", 0),
+            "gains_carriere": a.get("gainsCarriere", 0),
+            "edge": a.get("edge", 0),
+            "value_bet": a.get("valueBet", False),
+            "rang": i + 1,
+            "is_crack": a["scores"]["elo"] >= 85,
+            "role": "top3",
+        })
+
+    # Ajouter les cracks qui ne sont pas déjà dans le top 3
+    for a in partants:
+        if a["numPmu"] in seen_nums:
+            continue
+        nb_courses = a.get("nbCourses", 0) or 0
+        if nb_courses == 0:
+            continue
+        if a["scores"]["elo"] < 85:
+            continue
+
+        seen_nums.add(a["numPmu"])
+        selection.append({
+            "numPmu": a["numPmu"],
+            "cheval": a["nom"],
+            "chance": a.get("chance", 0),
+            "elo_score": a["scores"]["elo"],
+            "forme": a["scores"]["forme"],
+            "driver": a["driver"],
+            "entraineur": a["entraineur"],
+            "age": a.get("age"),
+            "sexe": a.get("sexe"),
+            "cote": a.get("cote"),
+            "musique": a.get("musique", ""),
+            "nb_courses": nb_courses,
+            "nb_victoires": a.get("nbVictoires", 0),
+            "nb_places": a.get("nbPlaces", 0),
+            "gains_carriere": a.get("gainsCarriere", 0),
+            "edge": a.get("edge", 0),
+            "value_bet": a.get("valueBet", False),
+            "rang": a.get("rang", 0),
+            "is_crack": True,
+            "role": "crack",
+        })
+
+    # Trier : top3 d'abord (par rang), puis cracks (par elo_score desc)
+    selection.sort(key=lambda x: (0 if x["role"] == "top3" else 1,
+                                   x.get("rang", 99) if x["role"] == "top3" else -x["elo_score"]))
+
+    return {
+        "meta": best_meta,
+        "selection": selection,
+    }
+
+
+# ============================================================
 #  ROUTES PUBLIQUES (sans auth)
 # ============================================================
 @app.route("/")
@@ -1328,6 +1467,18 @@ def api_super_base():
     try:
         bases = get_super_base(date_str)
         return jsonify({"date": date_str, "bases": bases})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/course-du-jour")
+def api_course_du_jour():
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    try:
+        result = get_course_du_jour(date_str)
+        if result is None:
+            return jsonify({"date": date_str, "course": None, "selection": []})
+        return jsonify({"date": date_str, "course": result["meta"], "selection": result["selection"]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
