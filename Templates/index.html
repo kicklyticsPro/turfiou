@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PMU Predictor 🐎</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface2: #22263a;
+    --border: #2e3248;
+    --gold: #f5c842;
+    --gold2: #e6a817;
+    --green: #2ecc71;
+    --blue: #4a9eff;
+    --red: #e74c3c;
+    --orange: #f39c12;
+    --text: #e8eaf0;
+    --muted: #8892a4;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; min-height: 100vh; }
+
+  /* ── Header */
+  header {
+    background: linear-gradient(135deg, #1a1d27, #0f1117);
+    border-bottom: 2px solid var(--gold);
+    padding: 18px 32px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  header h1 { font-size: 1.6rem; color: var(--gold); letter-spacing: 1px; }
+  header span { color: var(--muted); font-size: 0.9rem; }
+
+  /* ── Layout */
+  .container { max-width: 1300px; margin: 0 auto; padding: 24px 20px; }
+
+  /* ── Panel sélection */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin-bottom: 24px;
+  }
+  .panel h2 { font-size: 1rem; color: var(--gold); margin-bottom: 16px; text-transform: uppercase; letter-spacing: 1px; }
+
+  .form-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .form-group input, .form-group select {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 14px;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    min-width: 160px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  .form-group input:focus, .form-group select:focus { border-color: var(--gold); }
+  .form-group select option { background: var(--surface2); }
+
+  .btn {
+    padding: 10px 24px;
+    border-radius: 6px;
+    border: none;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+  }
+  .btn-gold { background: var(--gold); color: #1a1d27; }
+  .btn-gold:hover { background: var(--gold2); transform: translateY(-1px); }
+  .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); }
+  .btn-outline:hover { border-color: var(--gold); color: var(--gold); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  /* ── Loader */
+  .loader { display: none; align-items: center; gap: 10px; color: var(--muted); font-size: 0.9rem; margin-top: 12px; }
+  .loader.active { display: flex; }
+  .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--gold); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Erreur */
+  .alert { padding: 12px 18px; border-radius: 6px; margin-bottom: 16px; font-size: 0.9rem; }
+  .alert-error { background: rgba(231,76,60,0.15); border: 1px solid rgba(231,76,60,0.4); color: #ff6b6b; }
+  .alert-info { background: rgba(74,158,255,0.1); border: 1px solid rgba(74,158,255,0.3); color: #7cc3ff; }
+
+  /* ── Recommandations */
+  .reco-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 28px; }
+
+  .reco-card {
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 18px 20px;
+    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+  }
+  .reco-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .reco-card.gagnant::before { background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+  .reco-card.place::before { background: linear-gradient(90deg, var(--green), #27ae60); }
+  .reco-card.outsider::before { background: linear-gradient(90deg, var(--blue), #2980b9); }
+
+  .reco-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 8px; }
+  .reco-num { display: inline-block; background: var(--gold); color: #1a1d27; font-weight: 800; font-size: 1.1rem; width: 32px; height: 32px; line-height: 32px; text-align: center; border-radius: 50%; margin-right: 10px; }
+  .reco-nom { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+  .reco-score { font-size: 2rem; font-weight: 800; color: var(--gold); margin-top: 10px; }
+  .reco-score span { font-size: 0.85rem; color: var(--muted); font-weight: 400; margin-left: 4px; }
+  .reco-sub { font-size: 0.8rem; color: var(--muted); margin-top: 4px; }
+  .reco-prob { margin-top: 8px; }
+  .prob-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .prob-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+  .gagnant .prob-fill { background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+  .place .prob-fill { background: linear-gradient(90deg, var(--green), #27ae60); }
+  .outsider .prob-fill { background: linear-gradient(90deg, var(--blue), #2980b9); }
+  .prob-text { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+
+  .places-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+  .place-item { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; }
+
+  /* ── Tableau classement */
+  .table-wrapper { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  thead tr { background: var(--surface2); border-bottom: 2px solid var(--border); }
+  th { padding: 10px 12px; text-align: left; color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.5px; white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background 0.15s; }
+  tbody tr:hover { background: var(--surface2); }
+  tbody tr.top1 { background: rgba(245,200,66,0.07); }
+  tbody tr.top2 { background: rgba(46,204,113,0.05); }
+  tbody tr.top3 { background: rgba(46,204,113,0.03); }
+  td { padding: 10px 12px; vertical-align: middle; }
+
+  .badge-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 28px; height: 28px; border-radius: 50%;
+    font-weight: 700; font-size: 0.85rem;
+    background: var(--surface2); color: var(--text); border: 1px solid var(--border);
+  }
+  .badge-num.r1 { background: var(--gold); color: #1a1d27; border-color: var(--gold); }
+  .badge-num.r2 { background: var(--green); color: #fff; border-color: var(--green); }
+  .badge-num.r3 { background: var(--orange); color: #fff; border-color: var(--orange); }
+
+  .cheval-nom { font-weight: 600; color: var(--text); }
+  .cheval-sub { font-size: 0.75rem; color: var(--muted); }
+  .cote-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.8rem; font-weight: 600;
+    background: rgba(74,158,255,0.15); color: var(--blue); border: 1px solid rgba(74,158,255,0.3);
+  }
+
+  .score-bar-cell { min-width: 120px; }
+  .score-mini-bar { height: 5px; background: var(--border); border-radius: 3px; margin-top: 4px; overflow: hidden; }
+  .score-mini-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), var(--gold2)); }
+
+  .score-val { font-weight: 700; }
+  .score-val.high { color: var(--gold); }
+  .score-val.med { color: var(--orange); }
+  .score-val.low { color: var(--muted); }
+
+  /* ── Détail scores */
+  .details-grid { display: flex; gap: 6px; flex-wrap: wrap; }
+  .detail-chip {
+    font-size: 0.72rem; padding: 2px 7px; border-radius: 12px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .detail-chip.good { border-color: rgba(46,204,113,0.4); color: var(--green); background: rgba(46,204,113,0.08); }
+  .detail-chip.avg { border-color: rgba(243,156,18,0.4); color: var(--orange); background: rgba(243,156,18,0.08); }
+  .detail-chip.bad { border-color: rgba(231,76,60,0.3); color: #ff8080; background: rgba(231,76,60,0.08); }
+
+  /* ── Poids critères */
+  .poids-grid { display: flex; gap: 12px; flex-wrap: wrap; }
+  .poids-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--muted); }
+  .poids-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
+
+  /* ── Musique */
+  .musique-str { font-family: monospace; font-size: 0.8rem; color: var(--muted); letter-spacing: 1px; }
+
+  /* ── Section titre */
+  .section-title {
+    font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;
+    color: var(--gold); margin-bottom: 14px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Résumé course */
+  .course-meta { display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; }
+  .meta-item { display: flex; flex-direction: column; gap: 2px; }
+  .meta-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.5px; }
+  .meta-val { font-size: 1rem; font-weight: 600; color: var(--text); }
+
+  #results { display: none; }
+
+  @media (max-width: 768px) {
+    header { padding: 14px 16px; }
+    .container { padding: 16px 12px; }
+    .form-row { flex-direction: column; }
+    .form-group input, .form-group select { min-width: unset; width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🐎 PMU Predictor</h1>
+    <span>Analyse multi-critères des partants</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Sélection course -->
+  <div class="panel">
+    <h2>📅 Sélection de la course</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="inputDate">
+      </div>
+      <div class="form-group">
+        <label>Réunion</label>
+        <select id="selectReunion">
+          <option value="">— Charger le programme —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Course</label>
+        <select id="selectCourse" disabled>
+          <option value="">— Choisir une réunion —</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <button class="btn btn-outline" id="btnProgramme">📋 Programme</button>
+        <button class="btn btn-gold" id="btnAnalyse" disabled>🔍 Analyser</button>
+      </div>
+    </div>
+    <div class="loader" id="loader">
+      <div class="spinner"></div>
+      <span id="loaderText">Chargement…</span>
+    </div>
+    <div id="alertBox"></div>
+  </div>
+
+  <!-- Résultats -->
+  <div id="results">
+
+    <!-- Méta course -->
+    <div class="panel" id="courseMeta"></div>
+
+    <!-- Recommandations -->
+    <div class="panel">
+      <h2>🏆 Recommandations</h2>
+      <div class="reco-grid" id="recoGrid"></div>
+    </div>
+
+    <!-- Classement complet -->
+    <div class="panel">
+      <h2>📊 Classement complet</h2>
+      <div class="table-wrapper">
+        <table id="tableClassement">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>N°</th>
+              <th>Cheval</th>
+              <th>Jockey / Entraîneur</th>
+              <th>Pedigree</th>
+              <th>Musique</th>
+              <th>Cote</th>
+              <th>Score total</th>
+              <th>Détail critères</th>
+            </tr>
+          </thead>
+          <tbody id="tbodyClassement"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Poids des critères -->
+    <div class="panel">
+      <h2>⚖️ Pondération des critères</h2>
+      <div class="poids-grid" id="poidsGrid"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ─── State ──────────────────────────────────────────────────────────────────
+let programme = null;
+let distanceCourse = 2000;
+
+// ─── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  const today = new Date().toISOString().split("T")[0];
+  document.getElementById("inputDate").value = today;
+
+  document.getElementById("btnProgramme").addEventListener("click", chargerProgramme);
+  document.getElementById("btnAnalyse").addEventListener("click", lancerAnalyse);
+  document.getElementById("selectReunion").addEventListener("change", onReunionChange);
+});
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function showLoader(msg = "Chargement…") {
+  document.getElementById("loader").classList.add("active");
+  document.getElementById("loaderText").textContent = msg;
+}
+function hideLoader() {
+  document.getElementById("loader").classList.remove("active");
+}
+function showAlert(msg, type = "error") {
+  document.getElementById("alertBox").innerHTML =
+    `<div class="alert alert-${type}">${msg}</div>`;
+}
+function clearAlert() {
+  document.getElementById("alertBox").innerHTML = "";
+}
+
+// ─── Programme ──────────────────────────────────────────────────────────────
+async function chargerProgramme() {
+  clearAlert();
+  const d = document.getElementById("inputDate").value;
+  showLoader("Récupération du programme PMU…");
+  document.getElementById("btnProgramme").disabled = true;
+
+  try {
+    const res = await fetch(`/api/programme?date=${d}`);
+    const data = await res.json();
+    if (data.error) { showAlert(data.error); return; }
+
+    programme = data;
+    const sel = document.getElementById("selectReunion");
+    sel.innerHTML = `<option value="">— Choisir une réunion —</option>`;
+    data.reunions.forEach(r => {
+      const opt = document.createElement("option");
+      opt.value = r.num;
+      opt.textContent = `R${r.num} — ${r.hippodrome} (${r.discipline})`;
+      opt.dataset.courses = JSON.stringify(r.courses);
+      sel.appendChild(opt);
+    });
+    showAlert(`✅ ${data.reunions.length} réunion(s) chargée(s)`, "info");
+  } catch(e) {
+    showAlert("Erreur réseau : " + e.message);
+  } finally {
+    hideLoader();
+    document.getElementById("btnProgramme").disabled = false;
+  }
+}
+
+function onReunionChange() {
+  const sel = document.getElementById("selectReunion");
+  const opt = sel.options[sel.selectedIndex];
+  const selC = document.getElementById("selectCourse");
+  const btnA = document.getElementById("btnAnalyse");
+
+  selC.innerHTML = `<option value="">— Choisir une course —</option>`;
+  selC.disabled = true;
+  btnA.disabled = true;
+
+  if (!opt.dataset.courses) return;
+  const courses = JSON.parse(opt.dataset.courses);
+  courses.forEach(c => {
+    const o = document.createElement("option");
+    o.value = c.num;
+    const heure = c.heure ? ` ${formatHeure(c.heure)}` : "";
+    o.textContent = `C${c.num} — ${c.libelle}${heure} (${c.distance}m)`;
+    o.dataset.distance = c.distance;
+    selC.appendChild(o);
+  });
+  selC.disabled = false;
+
+  selC.addEventListener("change", () => {
+    const cOpt = selC.options[selC.selectedIndex];
+    btnA.disabled = !cOpt.value;
+    if (cOpt.dataset.distance) distanceCourse = parseInt(cOpt.dataset.distance);
+  }, { once: false });
+}
+
+function formatHeure(ts) {
+  if (!ts) return "";
+  if (typeof ts === "string" && ts.includes(":")) return ts;
+  const d = new Date(ts);
+  if (isNaN(d)) return "";
+  return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+}
+
+// ─── Analyse ────────────────────────────────────────────────────────────────
+async function lancerAnalyse() {
+  clearAlert();
+  const d = document.getElementById("inputDate").value;
+  const r = document.getElementById("selectReunion").value;
+  const c = document.getElementById("selectCourse").value;
+
+  if (!r || !c) { showAlert("Sélectionnez une réunion et une course."); return; }
+
+  showLoader("Analyse des partants en cours…");
+  document.getElementById("btnAnalyse").disabled = true;
+  document.getElementById("results").style.display = "none";
+
+  try {
+    const res = await fetch(`/api/analyse?date=${d}&r=${r}&c=${c}&distance=${distanceCourse}`);
+    const data = await res.json();
+    if (data.error) { showAlert(data.error); return; }
+    afficherResultats(data);
+  } catch(e) {
+    showAlert("Erreur lors de l'analyse : " + e.message);
+  } finally {
+    hideLoader();
+    document.getElementById("btnAnalyse").disabled = false;
+  }
+}
+
+// ─── Affichage ──────────────────────────────────────────────────────────────
+function afficherResultats(data) {
+  const { classement, recommandations, meta, poids_criteres } = data;
+  document.getElementById("results").style.display = "block";
+
+  // Méta
+  document.getElementById("courseMeta").innerHTML = `
+    <div class="section-title">ℹ️ Informations course</div>
+    <div class="course-meta">
+      <div class="meta-item"><span class="meta-label">Date</span><span class="meta-val">${meta.date}</span></div>
+      <div class="meta-item"><span class="meta-label">Réunion</span><span class="meta-val">R${meta.reunion}</span></div>
+      <div class="meta-item"><span class="meta-label">Course</span><span class="meta-val">C${meta.course}</span></div>
+      <div class="meta-item"><span class="meta-label">Distance</span><span class="meta-val">${meta.distance} m</span></div>
+      <div class="meta-item"><span class="meta-label">Partants</span><span class="meta-val">${meta.nb_partants}</span></div>
+    </div>`;
+
+  // Recommandations
+  const g = recommandations.gagnant;
+  const places = recommandations.places;
+  const outsider = recommandations.outsider;
+
+  let recoHtml = `
+    <div class="reco-card gagnant">
+      <div class="reco-label">🥇 Favori</div>
+      <div><span class="reco-num">${g.num}</span><span class="reco-nom">${g.nom}</span></div>
+      <div class="reco-score">${g.score_total}<span>pts</span></div>
+      <div class="reco-sub">Jockey : ${g.jockey || "—"}</div>
+      <div class="reco-prob">
+        <div class="prob-bar"><div class="prob-fill" style="width:${g.probabilite}%"></div></div>
+        <div class="prob-text">Probabilité estimée : ${g.probabilite}%</div>
+      </div>
+    </div>
+
+    <div class="reco-card place">
+      <div class="reco-label">🎯 Top 3 pour les places</div>
+      <div class="places-list">
+        ${places.map((p, i) => `
+          <div class="place-item">
+            <span class="badge-num r${i+1}">${p.num}</span>
+            <span>${p.nom}</span>
+            <span style="margin-left:auto;color:var(--muted);font-size:0.8rem">${p.score_total} pts</span>
+          </div>`).join("")}
+      </div>
+    </div>`;
+
+  if (outsider) {
+    recoHtml += `
+      <div class="reco-card outsider">
+        <div class="reco-label">💡 Outsider à surveiller</div>
+        <div><span class="reco-num" style="background:var(--blue)">${outsider.num}</span><span class="reco-nom">${outsider.nom}</span></div>
+        <div class="reco-score" style="color:var(--blue)">${outsider.score_total}<span>pts</span></div>
+        <div class="reco-sub">Cote : ${outsider.cote ? outsider.cote + "€" : "—"} | Jockey : ${outsider.jockey || "—"}</div>
+      </div>`;
+  }
+
+  document.getElementById("recoGrid").innerHTML = recoHtml;
+
+  // Tableau
+  const tbody = document.getElementById("tbodyClassement");
+  tbody.innerHTML = "";
+  const maxScore = classement[0]?.score_total || 100;
+
+  classement.forEach(c => {
+    const tr = document.createElement("tr");
+    if (c.rang === 1) tr.classList.add("top1");
+    else if (c.rang === 2) tr.classList.add("top2");
+    else if (c.rang === 3) tr.classList.add("top3");
+
+    const scoreClass = c.score_total >= 35 ? "high" : c.score_total >= 22 ? "med" : "low";
+    const pct = Math.round((c.score_total / maxScore) * 100);
+
+    tr.innerHTML = `
+      <td><span class="badge-num ${c.rang<=3?'r'+c.rang:''}">${c.rang}</span></td>
+      <td><strong>${c.num}</strong></td>
+      <td>
+        <div class="cheval-nom">${c.nom}</div>
+        <div class="cheval-sub">${c.age || "?"}a ${c.sexe || ""} • ${c.poids ? c.poids+"kg" : "?kg"} • Corde ${c.corde || "?"}</div>
+      </td>
+      <td>
+        <div style="font-size:0.85rem">${c.jockey || "—"}</div>
+        <div class="cheval-sub">${c.entraineur || "—"}</div>
+      </td>
+      <td>
+        <div style="font-size:0.82rem">${c.pere ? "♂ "+c.pere : "—"}</div>
+        <div class="cheval-sub">${c.mere ? "♀ "+c.mere : ""}</div>
+      </td>
+      <td><span class="musique-str">${c.musique || "—"}</span></td>
+      <td>${c.cote ? `<span class="cote-badge">${c.cote}€</span>` : "—"}</td>
+      <td class="score-bar-cell">
+        <span class="score-val ${scoreClass}">${c.score_total}</span>
+        <div class="score-mini-bar"><div class="score-mini-fill" style="width:${pct}%"></div></div>
+      </td>
+      <td>
+        <div class="details-grid">
+          ${Object.entries(c.scores).map(([k, v]) => {
+            const cls = v >= 50 ? "good" : v >= 30 ? "avg" : "bad";
+            const labels = {forme_cheval:"Forme",stats_jockey:"Jockey",stats_entraineur:"Entr.",corde_distance:"Corde",poids:"Poids",gains:"Gains"};
+            return `<span class="detail-chip ${cls}">${labels[k]||k}: ${v}</span>`;
+          }).join("")}
+        </div>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+
+  // Poids critères
+  const labels = {forme_cheval:"Forme cheval",stats_jockey:"Jockey",stats_entraineur:"Entraîneur",corde_distance:"Corde/Distance",poids:"Poids",gains:"Gains carrière"};
+  const colors = ["#f5c842","#4a9eff","#2ecc71","#e67e22","#e74c3c","#9b59b6"];
+  document.getElementById("poidsGrid").innerHTML = Object.entries(poids_criteres).map(([k,v],i) => `
+    <div class="poids-item">
+      <div class="poids-dot" style="background:${colors[i%colors.length]}"></div>
+      <span>${labels[k]||k} : <strong style="color:var(--text)">${v}%</strong></span>
+    </div>`).join("");
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+</script>
+</body>
+</html>
