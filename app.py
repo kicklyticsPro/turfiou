@@ -1133,7 +1133,8 @@ def bilan(days_back=7, use_ml=False):
 #  Crack horses (public API)
 # ============================================================
 def get_crack_horses(date_str):
-    """Retourne les chevaux avec un ELO brut significativement au-dessus de 1500."""
+    """Retourne les chevaux avec un ELO brut significativement au-dessus de 1500,
+    en excluant ceux qui ont 0 courses."""
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats()
 
     try:
@@ -1158,50 +1159,52 @@ def get_crack_horses(date_str):
 
             partants = [p for p in parts.get("participants", [])
                         if p.get("statut") == "PARTANT"]
-            all_horses = [p.get("nom") for p in partants if p.get("nom")]
 
-            # Filtrer : le cheval doit avoir un ELO brut >= seuil
-            # ET être le meilleur ELO de sa course (pas juste au-dessus du seuil
-            # si toute la course l'est)
-            race_elos = []
+            # Si aucun partant → on saute
+            if not partants:
+                continue
+
             for p in partants:
                 cheval = p.get("nom")
                 if not cheval:
                     continue
+
+                nb_courses = p.get("nombreCourses", 0) or 0
+
+                # Exclure les chevaux avec 0 courses
+                if nb_courses == 0:
+                    continue
+
                 raw_elo = elo.get(cheval, 1500)
-                race_elos.append((p, cheval, raw_elo))
 
-            # Si personne dans la course n'a d'historique → on saute
-            if not race_elos or all(e == 1500 for _, _, e in race_elos):
-                continue
+                # Le cheval doit avoir un ELO brut >= seuil
+                if raw_elo < CRACK_ELO_MIN:
+                    continue
 
-            # Trouver le meilleur ELO de la course
-            best_elo = max(e for _, _, e in race_elos)
+                rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+                cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
+                cracks.append({
+                    "numPmu": p.get("numPmu"),
+                    "cheval": cheval,
+                    "elo_rating": round(raw_elo, 0),
+                    "driver": p.get("driver") or "—",
+                    "entraineur": p.get("entraineur") or "—",
+                    "age": p.get("age"),
+                    "sexe": p.get("sexe"),
+                    "cote": cote,
+                    "hippodrome": hippo,
+                    "course": f"R{r_num}C{c_num}",
+                    "heure": datetime.fromtimestamp(
+                        c["heureDepart"] / 1000
+                    ).strftime("%H:%M") if c.get("heureDepart") else "",
+                    "discipline": c.get("discipline", ""),
+                    "distance": c.get("distance"),
+                    "nb_partants": len(partants),
+                    "nb_courses": nb_courses,
+                })
 
-            for p, cheval, raw_elo in race_elos:
-                # Le cheval doit : avoir un ELO brut élevé
-                # ET être le meilleur de sa course (ou à 5 pts du meilleur)
-                if raw_elo >= CRACK_ELO_MIN and (best_elo - raw_elo) <= 5:
-                    rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
-                    cote = float(rap["rapport"]) if rap and rap.get("rapport") else None
-                    cracks.append({
-                        "numPmu": p.get("numPmu"),
-                        "cheval": cheval,
-                        "elo_rating": round(raw_elo, 0),
-                        "driver": p.get("driver") or "—",
-                        "entraineur": p.get("entraineur") or "—",
-                        "age": p.get("age"),
-                        "sexe": p.get("sexe"),
-                        "cote": cote,
-                        "hippodrome": hippo,
-                        "course": f"R{r_num}C{c_num}",
-                        "heure": datetime.fromtimestamp(
-                            c["heureDepart"] / 1000
-                        ).strftime("%H:%M") if c.get("heureDepart") else "",
-                        "discipline": c.get("discipline", ""),
-                        "distance": c.get("distance"),
-                        "nb_partants": len(partants),
-                    })
+    # Trier par ELO décroissant
+    cracks.sort(key=lambda x: -x["elo_rating"])
     return cracks
 
 
