@@ -24,6 +24,33 @@
   }
   header p { color: #94a3b8; font-size: 12px; margin-top: 2px; }
 
+  /* ===== ML Status ===== */
+  .ml-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    margin-top: 6px; font-size: 11px; padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .ml-status.ok {
+    background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);
+    color: #10b981;
+  }
+  .ml-status.training {
+    background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
+    color: #f59e0b;
+    animation: blink 1.5s infinite;
+  }
+  .ml-status.error, .ml-status.none {
+    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
+    color: #ef4444;
+  }
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+  .ml-status .ml-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+  }
+  .ml-status.ok .ml-dot { background: #10b981; }
+  .ml-status.training .ml-dot { background: #f59e0b; }
+  .ml-status.error .ml-dot, .ml-status.none .ml-dot { background: #ef4444; }
+
   /* ===== Onglets ===== */
   .tabs {
     display: flex; justify-content: center; gap: 4px;
@@ -299,6 +326,10 @@
 <header>
   <h1>⚡ Turfiou — Pronostics IA</h1>
   <p>Analyse hippique par intelligence artificielle</p>
+  <div id="mlStatus" class="ml-status none">
+    <span class="ml-dot"></span>
+    <span id="mlStatusText">Chargement…</span>
+  </div>
 </header>
 
 <div class="tabs">
@@ -639,9 +670,43 @@ function horseCard(c, style) {
   </div>`;
 }
 
+// ===== ML Status =====
+async function loadMLStatus() {
+  try {
+    const res = await fetch('/api/ml-status');
+    const data = await res.json();
+    const el = document.getElementById('mlStatus');
+    const txt = document.getElementById('mlStatusText');
+
+    if (data.status === 'ok') {
+      el.className = 'ml-status ok';
+      const ts = data.finished_at ? new Date(data.finished_at) : null;
+      const timeStr = ts ? ts.toLocaleDateString('fr-FR') + ' à ' + ts.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '';
+      const source = data.source === 'manual' ? 'Manuel' : 'Auto 5h00';
+      txt.textContent = `🧠 Maj ML OK — ${source} — ${timeStr}`;
+    } else if (data.status === 'training') {
+      el.className = 'ml-status training';
+      const ts = data.started_at ? new Date(data.started_at) : null;
+      const since = ts ? ts.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '';
+      txt.textContent = `🧠 Entraînement en cours… (depuis ${since})`;
+      // Re-check dans 30s
+      setTimeout(loadMLStatus, 30000);
+    } else if (data.status === 'error') {
+      el.className = 'ml-status error';
+      txt.textContent = `🧠 Maj ML échouée — ${data.error || 'erreur'}`;
+    } else {
+      el.className = 'ml-status none';
+      txt.textContent = '🧠 Aucun modèle ML — résultats heuristiques';
+    }
+  } catch(e) {
+    document.getElementById('mlStatusText').textContent = '🧠 Statut ML indisponible';
+  }
+}
+
 // Init
 document.getElementById('datePicker').value = todayStr();
+loadMLStatus();
 loadAll();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0759c1effc3d0ac',t:'MTc4MDcyOTk1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
