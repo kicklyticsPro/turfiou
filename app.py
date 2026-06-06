@@ -71,6 +71,7 @@ ML_MODEL_FILE = os.path.join(CACHE_DIR, "ml_ensemble_v4.pkl")        # NEW v4 : 
 ML_MODEL_FILE_V5 = os.path.join(CACHE_DIR, "ml_advanced_v5.pkl")     # NEW v5
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
+ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
 
 WINDOW_SHORT = 30
 HISTORY_DAYS = 180
@@ -1755,5 +1756,119 @@ def api_bets_delete(bet_id):
     return jsonify({"ok": True})
 
 
+# ============================================================
+#  Auto-train ML + Status (public)
+# ============================================================
+import threading
+import json as _json
+
+ML_AUTO_TRAIN_HOUR = 5
+ML_AUTO_TRAIN_MIN = 0
+ML_AUTO_PARAMS = {
+    "model_type": "ensemble",
+    "days_back": 30,
+    "n_trees_gbm": 100,
+    "n_trees_rf": 50,
+}
+
+
+def _save_ml_status(status_dict):
+    try:
+        with open(ML_STATUS_FILE, "w") as f:
+            _json.dump(status_dict, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _load_ml_status():
+    try:
+        if os.path.exists(ML_STATUS_FILE):
+            with open(ML_STATUS_FILE, "r") as f:
+                return _json.load(f)
+    except Exception:
+        pass
+    return None
+
+
+def _run_auto_train():
+    """Exécute l'entraînement ML en arrière-plan."""
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+    print(f"[Auto-Train] Démarrage — {now_str}")
+    _save_ml_status({
+        "status": "training",
+        "started_at": datetime.now().isoformat(),
+        "params": ML_AUTO_PARAMS,
+    })
+    try:
+        info = train_ml_model(
+            days_back=ML_AUTO_PARAMS["days_back"],
+            n_trees_gbm=ML_AUTO_PARAMS["n_trees_gbm"],
+            n_trees_rf=ML_AUTO_PARAMS["n_trees_rf"],
+            model_type=ML_AUTO_PARAMS["model_type"],
+        )
+        if info:
+            _save_ml_status({
+                "status": "ok",
+                "finished_at": datetime.now().isoformat(),
+                "params": ML_AUTO_PARAMS,
+                "result": {k: str(v) for k, v in info.items()},
+            })
+            print(f"[Auto-Train] ✅ Terminé — {info}")
+        else:
+            _save_ml_status({
+                "status": "error",
+                "finished_at": datetime.now().isoformat(),
+                "error": "Pas assez de données",
+            })
+            print("[Auto-Train] ❌ Pas assez de données")
+    except Exception as e:
+        _save_ml_status({
+            "status": "error",
+            "finished_at": datetime.now().isoformat(),
+            "error": str(e),
+        })
+        print(f"[Auto-Train] ❌ Erreur : {e}")
+
+
+def _scheduler_loop():
+    """Boucle en arrière-plan qui déclenche l'entraînement à 5h00."""
+    trained_today = None
+    while True:
+        now = datetime.now()
+        today_key = now.strftime("%Y-%m-%d")
+        if (now.hour == ML_AUTO_TRAIN_HOUR and now.minute == ML_AUTO_TRAIN_MIN
+                and trained_today != today_key):
+            trained_today = today_key
+            _run_auto_train()
+        # Réinitialiser le flag à minuit
+        if now.hour == 0 and now.minute == 0:
+            trained_today = None
+        import time
+        time.sleep(30)
+
+
+def start_auto_train_scheduler():
+    """Lance le scheduler en arrière-plan."""
+    t = threading.Thread(target=_scheduler_loop, daemon=True)
+    t.start()
+    print(f"[Auto-Train] Planificateur actif — entraînement quotidien à {ML_AUTO_TRAIN_HOUR:02d}:{ML_AUTO_TRAIN_MIN:02d}")
+
+
+@app.route("/api/ml-status")
+def api_ml_status():
+    """Statut public de la dernière mise à jour ML."""
+    status = _load_ml_status()
+    if status is None:
+        # Vérifier si un modèle existe déjà (entraîné manuellement)
+        ml = load_ml_model()
+        if ml:
+            return jsonify({"status": "ok", "source": "manual",
+                            "message": "Modèle chargé (entraînement manuel)"})
+        return jsonify({"status": "none", "source": "none",
+                        "message": "Aucun modèle entraîné"})
+    return jsonify(status)
+
+
 if __name__ == "__main__":
+    start_auto_train_scheduler()
     app.run(host="0.0.0.0", port=5000, debug=False)
