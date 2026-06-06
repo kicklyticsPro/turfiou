@@ -1159,10 +1159,11 @@ def get_crack_horses(date_str):
             except Exception:
                 continue
 
-            # Utiliser le même moteur d'analyse que l'admin pour avoir scores.elo
-            analyses = analyser_course_features(
+            # Utiliser le moteur complet avec ML
+            analyses = analyser_course(
                 parts, perfs, distance, discipline, hippo, type_corde,
-                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree)
+                team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
+                use_ml=True, capital=100)
 
             partants = [p for p in parts.get("participants", [])
                         if p.get("statut") == "PARTANT"]
@@ -1246,11 +1247,11 @@ def get_super_base(date_str):
             except Exception:
                 continue
 
-            # Analyse complète (sans ML) pour avoir le classement
+            # Analyse complète avec ML pour avoir le classement
             analyses = analyser_course(
                 parts, perfs, distance, discipline, hippo, type_corde,
                 team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
-                use_ml=False, capital=100)
+                use_ml=True, capital=100)
 
             if not analyses:
                 continue
@@ -1377,7 +1378,7 @@ def get_selection_course(date_str, r_num, c_num):
     analyses = analyser_course(
         parts, perfs, distance, discipline, hippodrome, type_corde,
         team_stats, horse_stats, elo, elo_hist, horse_races, pedigree,
-        use_ml=False, capital=100)
+        use_ml=True, capital=100)
 
     if not analyses:
         return None
