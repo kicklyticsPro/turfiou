@@ -1390,32 +1390,15 @@ def get_selection_course(date_str, r_num, c_num):
     nb_partants = len([p for p in parts.get("participants", [])
                         if p.get("statut") == "PARTANT"])
 
+    # Prendre les 7 premiers du classement
     SELECTION_SIZE = 7
 
-    # Identifier les cracks
-    crack_nums = set()
-    for a in analyses:
-        if a["scores"]["elo"] >= 85 and (a.get("nbCourses", 0) or 0) > 0:
-            crack_nums.add(a["numPmu"])
-
-    # Pass 1 : cracks dans l'ordre du classement
-    # Pass 2 : le reste dans l'ordre du classement
     selection = []
-    seen = set()
-
     for a in analyses:
-        if a["numPmu"] in crack_nums and a["numPmu"] not in seen:
-            if (a.get("nbCourses", 0) or 0) > 0:
-                seen.add(a["numPmu"])
-                selection.append(_selection_entry(a, is_crack=True))
-
-    for a in analyses:
-        if a["numPmu"] not in seen:
-            if (a.get("nbCourses", 0) or 0) > 0:
-                seen.add(a["numPmu"])
-                selection.append(_selection_entry(a, is_crack=False))
-
-    selection = selection[:SELECTION_SIZE]
+        if (a.get("nbCourses", 0) or 0) > 0:
+            selection.append(_selection_entry(a, is_crack=a["scores"]["elo"] >= 85))
+            if len(selection) >= SELECTION_SIZE:
+                break
 
     return {
         "course": {
@@ -1426,7 +1409,6 @@ def get_selection_course(date_str, r_num, c_num):
             "heure": heure,
             "libelle": libelle,
             "nb_partants": nb_partants,
-            "nb_cracks": len(crack_nums),
         },
         "selection": selection,
     }
