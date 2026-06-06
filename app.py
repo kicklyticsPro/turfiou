@@ -883,7 +883,8 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     total_intr = sum(scores_intr) or 1
     proba_intr = [s / total_intr * 100 for s in scores_intr]
 
-    chances_heur = [0.55 * proba_marche_list[i] + 0.45 * proba_intr[i]
+    # Heuristique : 50% marché (cotes) / 50% intrinsèque (stats)
+    chances_heur = [0.50 * proba_marche_list[i] + 0.50 * proba_intr[i]
                     for i in range(len(analyses))]
     total = sum(chances_heur) or 1
     chances_heur = [c / total * 100 for c in chances_heur]
@@ -899,7 +900,9 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
 
     for i, a in enumerate(analyses):
         if chances_ml:
-            a["chance"] = round(0.5 * chances_heur[i] + 0.5 * chances_ml[i], 2)
+            # Avec ML : 20% heuristique (dont 50% cotes) + 80% ML
+            # → poids effectif des cotes ≈ 20% × 50% = ~10%
+            a["chance"] = round(0.2 * chances_heur[i] + 0.8 * chances_ml[i], 2)
             a["chanceML"] = round(chances_ml[i], 2)
         else:
             a["chance"] = round(chances_heur[i], 2)
