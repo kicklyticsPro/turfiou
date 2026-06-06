@@ -23,30 +23,15 @@
     -webkit-text-fill-color: transparent;
   }
   header p { color: #94a3b8; font-size: 12px; margin-top: 2px; }
-
-  /* ===== ML Status ===== */
   .ml-status {
     display: inline-flex; align-items: center; gap: 6px;
-    margin-top: 6px; font-size: 11px; padding: 3px 10px;
-    border-radius: 20px;
+    margin-top: 6px; font-size: 11px; padding: 3px 10px; border-radius: 20px;
   }
-  .ml-status.ok {
-    background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3);
-    color: #10b981;
-  }
-  .ml-status.training {
-    background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3);
-    color: #f59e0b;
-    animation: blink 1.5s infinite;
-  }
-  .ml-status.error, .ml-status.none {
-    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3);
-    color: #ef4444;
-  }
+  .ml-status.ok { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #10b981; }
+  .ml-status.training { background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); color: #f59e0b; animation: blink 1.5s infinite; }
+  .ml-status.error, .ml-status.none { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #ef4444; }
   @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
-  .ml-status .ml-dot {
-    width: 7px; height: 7px; border-radius: 50%;
-  }
+  .ml-status .ml-dot { width: 7px; height: 7px; border-radius: 50%; }
   .ml-status.ok .ml-dot { background: #10b981; }
   .ml-status.training .ml-dot { background: #f59e0b; }
   .ml-status.error .ml-dot, .ml-status.none .ml-dot { background: #ef4444; }
@@ -77,7 +62,6 @@
   .tab-btn.active-base .tab-count { background: #10b981; color: #0f172a; }
   .tab-btn.active-jour .tab-count { background: #ef4444; color: #fff; }
 
-  /* ===== Container ===== */
   .container { max-width: 860px; margin: 0 auto; padding: 0 16px 20px; }
   .date-bar {
     display: flex; justify-content: center; align-items: center;
@@ -94,11 +78,10 @@
   }
   .date-bar button:hover { background: #f59e0b; }
 
-  /* ===== Réunion block ===== */
+  /* ===== Réunion block (cracks/base) ===== */
   .reunion-block {
-    background: rgba(15, 23, 42, 0.6);
-    border-radius: 16px; margin-bottom: 20px; overflow: hidden;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.2);
+    background: rgba(15, 23, 42, 0.6); border-radius: 16px;
+    margin-bottom: 20px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.2);
   }
   .reunion-header {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
@@ -115,29 +98,19 @@
   .reunion-header .reunion-num.crack { background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a; }
   .reunion-header .reunion-num.base { background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a; }
   .reunion-header .reunion-hippo { font-size: 15px; font-weight: 700; color: #e2e8f0; }
-  .reunion-header .reunion-count {
-    font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px;
-  }
+  .reunion-header .reunion-count { font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 20px; }
   .reunion-header .reunion-count.crack { background: rgba(250,204,21,0.15); color: #facc15; }
   .reunion-header .reunion-count.base { background: rgba(16,185,129,0.15); color: #10b981; }
   .reunion-body { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 
-  /* ===== Course séparateur ===== */
-  .course-sep {
-    display: flex; align-items: center; gap: 10px;
-    margin-top: 4px; margin-bottom: 2px;
-  }
-  .course-sep .course-label {
-    padding: 3px 12px; border-radius: 6px;
-    font-size: 12px; font-weight: 700; white-space: nowrap;
-    background: #0f172a;
-  }
+  .course-sep { display: flex; align-items: center; gap: 10px; margin-top: 4px; margin-bottom: 2px; }
+  .course-sep .course-label { padding: 3px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; white-space: nowrap; background: #0f172a; }
   .course-sep .course-label.crack { color: #06b6d4; }
   .course-sep .course-label.base { color: #10b981; }
   .course-sep .course-infos { color: #94a3b8; font-size: 12px; }
   .course-sep .course-heure { color: #f59e0b; font-weight: 700; font-size: 12px; margin-left: auto; white-space: nowrap; }
 
-  /* ===== Horse card ===== */
+  /* ===== Horse card (cracks/base) ===== */
   .horse-card {
     border-radius: 12px; padding: 14px 18px; position: relative;
     transition: all .2s; display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
@@ -147,26 +120,14 @@
   .horse-card.crack:hover { border-color: #facc15; box-shadow: 0 0 20px rgba(250,204,21,0.12); }
   .horse-card.base { background: rgba(30,41,59,0.7); border: 1px solid rgba(16,185,129,0.3); }
   .horse-card.base:hover { border-color: #10b981; box-shadow: 0 0 20px rgba(16,185,129,0.12); }
-  .horse-card.jour { background: rgba(30,41,59,0.7); border: 1px solid rgba(239,68,68,0.3); }
-  .horse-card.jour:hover { border-color: #ef4444; box-shadow: 0 0 20px rgba(239,68,68,0.12); }
-
-  .card-num {
-    width: 34px; height: 34px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 14px; font-weight: 800; flex-shrink: 0;
-  }
+  .card-num { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 800; flex-shrink: 0; }
   .card-num.crack { background: linear-gradient(135deg, #facc15, #f59e0b); color: #0f172a; }
   .card-num.base { background: linear-gradient(135deg, #10b981, #06b6d4); color: #0f172a; }
-  .card-num.jour { background: linear-gradient(135deg, #ef4444, #f59e0b); color: #fff; }
   .card-main { flex: 1; min-width: 140px; }
   .card-main .card-nom { font-size: 17px; font-weight: 700; margin-bottom: 3px; }
   .card-main .card-nom.crack { color: #facc15; }
   .card-main .card-nom.base { color: #10b981; }
-  .card-main .card-nom.jour { color: #ef4444; }
-  .card-main .card-details {
-    display: flex; gap: 10px; flex-wrap: wrap;
-    color: #94a3b8; font-size: 12px;
-  }
+  .card-main .card-details { display: flex; gap: 10px; flex-wrap: wrap; color: #94a3b8; font-size: 12px; }
   .card-main .card-details strong { color: #e2e8f0; }
   .card-main .card-musique {
     font-family: 'Courier New', monospace; background: #0f172a;
@@ -175,139 +136,65 @@
     max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .card-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
-
-  .score-pill {
-    display: inline-flex; align-items: center; gap: 5px;
-    border-radius: 20px; padding: 5px 10px;
-  }
+  .score-pill { display: inline-flex; align-items: center; gap: 5px; border-radius: 20px; padding: 5px 10px; }
   .score-pill.crack { background: rgba(250,204,21,0.1); border: 1px solid rgba(250,204,21,0.25); }
   .score-pill.base { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25); }
-  .score-pill.jour { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); }
   .score-pill .pill-label { font-size: 9px; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
   .score-pill .pill-val { font-size: 15px; font-weight: 800; }
-  .score-pill .pill-val.crack {
-    background: linear-gradient(90deg, #facc15, #f59e0b);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .score-pill .pill-val.base {
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .score-pill .pill-val.jour {
-    background: linear-gradient(90deg, #ef4444, #f59e0b);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .cote-pill {
-    background: #1e40af; color: white; padding: 4px 10px;
-    border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap;
-  }
-  .value-badge {
-    background: #f59e0b; color: #0f172a; padding: 3px 8px;
-    border-radius: 20px; font-size: 10px; font-weight: 800; white-space: nowrap;
-  }
-  .role-badge {
-    padding: 3px 8px; border-radius: 20px; font-size: 10px;
-    font-weight: 800; white-space: nowrap;
-  }
+  .score-pill .pill-val.crack { background: linear-gradient(90deg, #facc15, #f59e0b); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .score-pill .pill-val.base { background: linear-gradient(90deg, #10b981, #06b6d4); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .cote-pill { background: #1e40af; color: white; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+  .value-badge { background: #f59e0b; color: #0f172a; padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 800; white-space: nowrap; }
+  .role-badge { padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 800; white-space: nowrap; }
   .role-badge.crack-tag { background: rgba(250,204,21,0.2); color: #facc15; }
-  .role-badge.rang-tag { background: rgba(239,68,68,0.15); color: #ef4444; }
 
-  /* ===== Jeux du Jour ===== */
-  .jour-hero {
-    background: linear-gradient(135deg, rgba(239,68,68,0.15), rgba(245,158,11,0.1));
-    border: 1px solid rgba(239,68,68,0.3);
-    border-radius: 14px; padding: 20px; margin-bottom: 16px; text-align: center;
+  /* ===== Jeux du Jour — lignes compactes ===== */
+  .jour-summary {
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 10px; padding: 12px 18px; margin-bottom: 14px;
+    text-align: center; font-size: 13px; color: #94a3b8;
   }
-  .jour-hero .jour-title {
-    font-size: 22px; font-weight: 800; margin-bottom: 6px;
-    background: linear-gradient(90deg, #ef4444, #f59e0b);
-    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .jour-hero .jour-libelle { color: #fbbf24; font-size: 14px; font-weight: 600; margin-bottom: 6px; }
-  .jour-hero .jour-meta {
-    display: flex; justify-content: center; gap: 16px; flex-wrap: wrap;
-    color: #94a3b8; font-size: 13px; margin-bottom: 8px;
-  }
-  .jour-hero .jour-meta strong { color: #e2e8f0; }
-  .jour-hero .jour-stats {
-    display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 8px;
-  }
-  .jour-hero .jour-stat {
-    display: inline-flex; align-items: center; gap: 5px;
-    background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25);
-    border-radius: 20px; padding: 5px 12px;
-  }
-  .jour-hero .jour-stat .st-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
-  .jour-hero .jour-stat .st-val { font-size: 15px; font-weight: 800; color: #ef4444; }
-  .jour-hero .jour-stat .st-val.crack-val { color: #facc15; }
-
-  .jour-section-label {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 13px; font-weight: 700; color: #e2e8f0;
-    margin: 16px 0 10px; padding: 8px 12px; border-radius: 8px;
-  }
-  .jour-section-label.cracks-section {
-    background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2);
-  }
-  .jour-section-label.classement-section {
-    background: rgba(148,163,184,0.08); border: 1px solid rgba(148,163,184,0.15);
-  }
-  .jour-section-label .section-emoji { font-size: 16px; }
-  .jour-section-label .section-count {
-    background: #334155; color: #94a3b8; padding: 1px 8px;
-    border-radius: 10px; font-size: 11px; margin-left: 4px;
-  }
-
-  /* ===== Course picker ===== */
-  .course-picker { margin-bottom: 16px; }
-  .course-picker .picker-label {
-    font-size: 12px; color: #94a3b8; margin-bottom: 8px;
-    text-align: center; text-transform: uppercase; letter-spacing: 0.5px;
-  }
-  .picker-reu { margin-bottom: 10px; }
-  .picker-reu-title {
-    font-size: 11px; font-weight: 700; color: #06b6d4;
-    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;
-  }
-  .picker-courses { display: flex; flex-wrap: wrap; gap: 6px; }
-  .picker-btn {
-    background: #1e293b; color: #cbd5e1; border: 1px solid #334155;
-    padding: 7px 12px; border-radius: 8px; font-size: 12px;
-    cursor: pointer; transition: all .2s; text-align: left;
+  .jour-summary strong { color: #ef4444; }
+  .jour-list { display: flex; flex-direction: column; gap: 6px; }
+  .jour-row {
+    background: rgba(30,41,59,0.7); border: 1px solid rgba(239,68,68,0.15);
+    border-radius: 10px; padding: 12px 16px;
     display: flex; justify-content: space-between; align-items: center;
-    gap: 8px; min-width: 180px;
+    flex-wrap: wrap; gap: 8px; transition: all .2s;
   }
-  .picker-btn:hover { border-color: #ef4444; background: #263548; }
-  .picker-btn.active { background: rgba(239,68,68,0.15); border-color: #ef4444; color: #ef4444; }
-  .picker-btn .pb-info { display: flex; flex-direction: column; gap: 1px; }
-  .picker-btn .pb-name { font-weight: 600; }
-  .picker-btn .pb-meta { font-size: 10px; color: #94a3b8; }
-  .picker-btn.active .pb-meta { color: #ef4444; }
-  .picker-btn .pb-time { font-size: 11px; color: #f59e0b; font-weight: 700; white-space: nowrap; }
+  .jour-row:hover { border-color: #ef4444; box-shadow: 0 0 14px rgba(239,68,68,0.1); }
+  .jour-row .row-left { display: flex; align-items: center; gap: 10px; }
+  .jour-row .row-race {
+    background: linear-gradient(135deg, #ef4444, #f59e0b);
+    color: #fff; padding: 3px 10px; border-radius: 6px;
+    font-size: 11px; font-weight: 800; white-space: nowrap;
+  }
+  .jour-row .row-hippo { font-size: 12px; color: #94a3b8; }
+  .jour-row .row-heure { font-size: 11px; color: #f59e0b; font-weight: 700; }
+  .jour-row .row-numeros {
+    font-size: 18px; font-weight: 800; letter-spacing: 1px;
+    background: linear-gradient(90deg, #ef4444, #f59e0b);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .jour-row .row-meta { font-size: 10px; color: #64748b; }
+  .jour-row .row-meta strong { color: #94a3b8; }
+  .jour-row .row-right { text-align: right; }
+  .jour-row .row-disc { font-size: 11px; color: #64748b; }
 
-  /* ===== Empty / Loading ===== */
+  /* ===== Loading / Empty / Footer ===== */
   .empty-state { text-align: center; padding: 50px 20px; color: #64748b; }
   .empty-state .emoji { font-size: 50px; margin-bottom: 14px; }
   .empty-state h2 { color: #e2e8f0; font-size: 18px; margin-bottom: 6px; }
   .empty-state p { font-size: 13px; line-height: 1.6; }
-
   .loading { text-align: center; padding: 50px 20px; color: #94a3b8; }
-  .spinner {
-    border: 3px solid #334155; border-top: 3px solid #facc15;
-    border-radius: 50%; width: 34px; height: 34px;
-    animation: spin 1s linear infinite; margin: 0 auto 14px;
-  }
+  .spinner { border: 3px solid #334155; border-top: 3px solid #facc15; border-radius: 50%; width: 34px; height: 34px; animation: spin 1s linear infinite; margin: 0 auto 14px; }
   @keyframes spin { 100% { transform: rotate(360deg); } }
-
-  .summary-bar {
-    border-radius: 10px; padding: 10px 16px; margin-bottom: 16px;
-    text-align: center; font-size: 13px;
-  }
+  .summary-bar { border-radius: 10px; padding: 10px 16px; margin-bottom: 16px; text-align: center; font-size: 13px; }
   .summary-bar.crack { background: rgba(250,204,21,0.08); border: 1px solid rgba(250,204,21,0.2); }
   .summary-bar.base { background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2); }
   .summary-bar strong.crack { color: #facc15; }
   .summary-bar strong.base { color: #10b981; }
-
   .footer { text-align: center; padding: 24px 20px; color: #475569; font-size: 11px; }
   .footer a { color: #64748b; text-decoration: none; }
   .footer a:hover { color: #94a3b8; }
@@ -318,7 +205,8 @@
     .card-right { width: 100%; justify-content: flex-start; }
     .tabs { gap: 3px; padding: 10px 6px 0; }
     .tab-btn { font-size: 11px; padding: 7px 6px; }
-    .picker-btn { min-width: 140px; }
+    .jour-row { flex-direction: column; align-items: flex-start; }
+    .jour-row .row-right { text-align: left; }
   }
 </style>
 </head>
@@ -326,10 +214,7 @@
 <header>
   <h1>⚡ Turfiou — Pronostics IA</h1>
   <p>Analyse hippique par intelligence artificielle</p>
-  <div id="mlStatus" class="ml-status none">
-    <span class="ml-dot"></span>
-    <span id="mlStatusText">Chargement…</span>
-  </div>
+  <div id="mlStatus" class="ml-status none"><span class="ml-dot"></span><span id="mlStatusText">Chargement…</span></div>
 </header>
 
 <div class="tabs">
@@ -352,9 +237,8 @@
     <input type="date" id="datePicker">
     <button onclick="loadAll()">🔍 Chercher</button>
   </div>
-
   <div id="resultsBlock">
-    <div class="loading"><div class="spinner"></div>Chargement des pronostics…</div>
+    <div class="loading"><div class="spinner"></div>Chargement…</div>
   </div>
 </div>
 
@@ -366,7 +250,6 @@
 <script>
 let currentTab = 'crack';
 let cacheData = { crack: null, base: null, jour: null, programme: null };
-let selectedR = null, selectedC = null;
 
 function todayStr() { return new Date().toISOString().slice(0,10); }
 function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
@@ -398,18 +281,27 @@ async function loadAll() {
     cacheData.crack = resCrack;
     cacheData.base = resBase;
     cacheData.programme = resProg;
-    cacheData.jour = null;
-    selectedR = null; selectedC = null;
+
+    // Charger les sélections pour toutes les courses (en parallèle)
+    const jourPromises = [];
+    (resProg.reunions || []).forEach(reu => {
+      reu.courses.forEach(c => {
+        jourPromises.push(
+          fetch(`/api/course-du-jour?date=${dateApi}&r=${reu.numReunion}&c=${c.numCourse}`)
+            .then(r => r.json()).catch(() => null)
+        );
+      });
+    });
+    const jourResults = await Promise.all(jourPromises);
+    cacheData.jour = jourResults.filter(r => r && r.selection && r.selection.length > 0);
 
     document.getElementById('countCrack').textContent = (resCrack.cracks || []).length;
     document.getElementById('countBase').textContent = (resBase.bases || []).length;
-    document.getElementById('countJour').textContent = (resProg.reunions || []).reduce((n, r) => n + r.courses.length, 0) + ' chx';
+    document.getElementById('countJour').textContent = cacheData.jour.length + ' sel.';
 
     renderCurrent();
   } catch(e) {
-    block.innerHTML = `<div class="empty-state">
-      <div class="emoji">⚠️</div><h2>Erreur</h2><p>${e.message}</p>
-    </div>`;
+    block.innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><h2>Erreur</h2><p>${e.message}</p></div>`;
   }
 }
 
@@ -420,8 +312,7 @@ function renderCurrent() {
 }
 
 function formatDate(dateStr) {
-  if (dateStr && dateStr.length === 8)
-    return `${dateStr.slice(0,2)}/${dateStr.slice(2,4)}/${dateStr.slice(4,8)}`;
+  if (dateStr && dateStr.length === 8) return `${dateStr.slice(0,2)}/${dateStr.slice(2,4)}/${dateStr.slice(4,8)}`;
   return dateStr || '';
 }
 
@@ -450,30 +341,19 @@ function renderCracks(data) {
   const block = document.getElementById('resultsBlock');
   const cracks = data.cracks || [];
   if (!cracks.length) {
-    block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div><h2>Aucun cheval Crack trouvé</h2>
-      <p>Pas de cheval avec un score ELO ≥ 85 pour cette date.</p></div>`;
+    block.innerHTML = `<div class="empty-state"><div class="emoji">🏇</div><h2>Aucun cheval Crack</h2><p>Score ELO ≥ 85 non atteint.</p></div>`;
     return;
   }
   const reunions = groupByReunion(cracks);
-  let html = `<div class="summary-bar crack">
-    ⚡ <strong class="crack">${cracks.length}</strong> cheval${cracks.length>1?'x':''} Crack
-    dans <strong class="crack">${reunions.length}</strong> réunion${reunions.length>1?'s':''}
-    — <strong>${formatDate(data.date)}</strong></div>`;
+  let html = `<div class="summary-bar crack">⚡ <strong class="crack">${cracks.length}</strong> cheval${cracks.length>1?'x':''} Crack dans <strong class="crack">${reunions.length}</strong> réunion${reunions.length>1?'s':''} — <strong>${formatDate(data.date)}</strong></div>`;
   reunions.forEach(reu => {
-    html += `<div class="reunion-block">
-      <div class="reunion-header crack-style">
-        <div class="reunion-title">
-          <span class="reunion-num crack">R${reu.num_reunion}</span>
-          <span class="reunion-hippo">📍 ${reu.hippodrome}</span>
-        </div>
-        <span class="reunion-count crack">${reu.items.length} crack${reu.items.length>1?'s':''}</span>
-      </div><div class="reunion-body">`;
+    html += `<div class="reunion-block"><div class="reunion-header crack-style">
+      <div class="reunion-title"><span class="reunion-num crack">R${reu.num_reunion}</span><span class="reunion-hippo">📍 ${reu.hippodrome}</span></div>
+      <span class="reunion-count crack">${reu.items.length} crack${reu.items.length>1?'s':''}</span></div><div class="reunion-body">`;
     const courses = groupByCourse(reu.items);
     courses.forEach(cou => {
       const ci = cou.info;
-      html += `<div class="course-sep">
-        <span class="course-label crack">Course ${cou.num_course}</span>
+      html += `<div class="course-sep"><span class="course-label crack">Course ${cou.num_course}</span>
         <span class="course-infos">${ci.discipline||''} ${ci.distance?ci.distance+'m':''} — ${ci.nb_partants} partants</span>
         <span class="course-heure">🕐 ${ci.heure||'—'}</span></div>`;
       cou.items.sort((a, b) => b.elo_score - a.elo_score);
@@ -489,29 +369,18 @@ function renderBases(data) {
   const block = document.getElementById('resultsBlock');
   const bases = data.bases || [];
   if (!bases.length) {
-    block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div><h2>Aucune course trouvée</h2>
-      <p>Pas de programme pour cette date.</p></div>`;
+    block.innerHTML = `<div class="empty-state"><div class="emoji">🏇</div><h2>Aucune course</h2></div>`;
     return;
   }
   const reunions = groupByReunion(bases);
-  let html = `<div class="summary-bar base">
-    🏆 <strong class="base">${bases.length}</strong> sélection${bases.length>1?'s':''}
-    dans <strong class="base">${reunions.length}</strong> réunion${reunions.length>1?'s':''}
-    — <strong>${formatDate(data.date)}</strong></div>`;
+  let html = `<div class="summary-bar base">🏆 <strong class="base">${bases.length}</strong> sélection${bases.length>1?'s':''} dans <strong class="base">${reunions.length}</strong> réunion${reunions.length>1?'s':''} — <strong>${formatDate(data.date)}</strong></div>`;
   reunions.forEach(reu => {
-    html += `<div class="reunion-block">
-      <div class="reunion-header base-style">
-        <div class="reunion-title">
-          <span class="reunion-num base">R${reu.num_reunion}</span>
-          <span class="reunion-hippo">📍 ${reu.hippodrome}</span>
-        </div>
-        <span class="reunion-count base">${reu.items.length} course${reu.items.length>1?'s':''}</span>
-      </div><div class="reunion-body">`;
+    html += `<div class="reunion-block"><div class="reunion-header base-style">
+      <div class="reunion-title"><span class="reunion-num base">R${reu.num_reunion}</span><span class="reunion-hippo">📍 ${reu.hippodrome}</span></div>
+      <span class="reunion-count base">${reu.items.length} course${reu.items.length>1?'s':''}</span></div><div class="reunion-body">`;
     reu.items.sort((a, b) => a.num_course - b.num_course);
     reu.items.forEach(c => {
-      html += `<div class="course-sep">
-        <span class="course-label base">Course ${c.num_course}</span>
+      html += `<div class="course-sep"><span class="course-label base">Course ${c.num_course}</span>
         <span class="course-infos">${c.discipline||''} ${c.distance?c.distance+'m':''} — ${c.nb_partants} partants</span>
         <span class="course-heure">🕐 ${c.heure||'—'}</span></div>`;
       html += horseCard(c, 'base');
@@ -524,130 +393,54 @@ function renderBases(data) {
 /* ===== RENDER JEUX DU JOUR ===== */
 function renderJour() {
   const block = document.getElementById('resultsBlock');
-  const prog = cacheData.programme;
-  if (!prog || !prog.reunions || !prog.reunions.length) {
-    block.innerHTML = `<div class="empty-state">
-      <div class="emoji">🏇</div><h2>Aucune course</h2>
-      <p>Pas de programme pour cette date.</p></div>`;
+  const sel = cacheData.jour || [];
+
+  if (!sel.length) {
+    block.innerHTML = `<div class="empty-state"><div class="emoji">🏇</div><h2>Aucune sélection</h2><p>Pas de programme ou analyse en cours.</p></div>`;
     return;
   }
 
-  let html = '';
+  let html = `<div class="jour-summary">
+    🎯 <strong>${sel.length}</strong> sélection${sel.length>1?'s':''} — Top 7 par course — <strong>${formatDate(cacheData.programme.date)}</strong>
+  </div>`;
 
-  // Course picker
-  html += `<div class="course-picker">
-    <div class="picker-label">Sélectionnez une course</div>`;
-  prog.reunions.forEach(reu => {
-    html += `<div class="picker-reu">
-      <div class="picker-reu-title">R${reu.numReunion} · ${reu.hippodrome}</div>
-      <div class="picker-courses">`;
-    reu.courses.forEach(c => {
-      const isActive = selectedR === reu.numReunion && selectedC === c.numCourse;
-      html += `<button class="picker-btn${isActive?' active':''}"
-        onclick="selectCourse(${reu.numReunion}, ${c.numCourse})">
-        <div class="pb-info">
-          <span class="pb-name">C${c.numCourse} · ${(c.libelle||'').substring(0,22)}</span>
-          <span class="pb-meta">${c.discipline||''} ${c.distance?c.distance+'m':''} · ${c.nbPartants||'?'} partants</span>
-        </div>
-        <span class="pb-time">${c.heure}</span>
-      </button>`;
-    });
-    html += `</div></div>`;
+  html += '<div class="jour-list">';
+  sel.sort((a, b) => {
+    const ar = a.course ? a.course.r_num : 0, br = b.course ? b.course.r_num : 0;
+    const ac = a.course ? a.course.c_num : 0, bc = b.course ? b.course.c_num : 0;
+    return ar - br || ac - bc;
   });
-  html += `</div>`;
 
-  // Sélection (si course choisie)
-  if (cacheData.jour && cacheData.jour.selection) {
-    const sel = cacheData.jour.selection;
-    const course = cacheData.jour.course;
+  sel.forEach(item => {
+    const c = item.course;
+    const s = item.selection;
+    const nums = s.map(h => h.numPmu).join('-');
+    const disc = `${c.discipline||''} ${c.distance?c.distance+'m':''}`;
+    const meta = `${c.nb_partants} partants` + (s[0] ? ` · Chance #1 : ${s[0].chance}%` : '');
 
-    const cracks = sel.filter(s => s.is_crack);
-    const others = sel.filter(s => !s.is_crack);
-
-    html += `<div class="jour-hero">
-      <div class="jour-title">🎯 R${course.r_num}C${course.c_num}</div>
-      ${course.libelle ? `<div class="jour-libelle">${course.libelle}</div>` : ''}
-      <div class="jour-meta">
-        <span>📍 <strong>${course.hippodrome}</strong></span>
-        <span>🕐 <strong>${course.heure}</strong></span>
-        <span>🏁 <strong>${course.discipline}</strong></span>
-        <span>📏 <strong>${course.distance}m</strong></span>
-        <span>🐎 <strong>${course.nb_partants} partants</strong></span>
+    html += `<div class="jour-row">
+      <div class="row-left">
+        <span class="row-race">R${c.r_num}C${c.c_num}</span>
+        <span class="row-hippo">📍 ${c.hippodrome}</span>
+        <span class="row-heure">🕐 ${c.heure}</span>
       </div>
-      <div class="jour-stats">
-        <div class="jour-stat">
-          <span class="st-label">Sélection</span>
-          <span class="st-val">${sel.length} chevaux</span>
-        </div>
-        <div class="jour-stat">
-          <span class="st-label">Cracks</span>
-          <span class="st-val crack-val">${course.nb_cracks || 0}</span>
-        </div>
+      <div class="row-right">
+        <div class="row-numeros">${nums}</div>
+        <div class="row-meta">${disc} · <strong>${meta}</strong></div>
       </div>
     </div>`;
+  });
 
-    if (cracks.length) {
-      html += `<div class="jour-section-label cracks-section">
-        <span class="section-emoji">⚡</span> Cracks
-        <span class="section-count">${cracks.length}</span></div>`;
-      cracks.forEach(c => { html += horseCard(c, 'jour'); });
-    }
-    if (others.length) {
-      html += `<div class="jour-section-label classement-section">
-        <span class="section-emoji">📊</span> Complémentaires
-        <span class="section-count">${others.length}</span></div>`;
-      others.forEach(c => { html += horseCard(c, 'jour'); });
-    }
-  }
-
+  html += '</div>';
   block.innerHTML = html;
 }
 
-async function selectCourse(r, c) {
-  selectedR = r; selectedC = c;
-
-  // Réafficher le picker tout de suite (avec le bouton actif)
-  renderJour();
-
-  // Charger la sélection
-  const dateVal = document.getElementById('datePicker').value;
-  const dateApi = toApiDate(dateVal);
-
-  // Insérer un loader dans la zone résultat
-  const heroZone = document.querySelector('.jour-hero');
-  if (heroZone) heroZone.style.opacity = '0.4';
-
-  try {
-    const res = await fetch(`/api/course-du-jour?date=${dateApi}&r=${r}&c=${c}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    cacheData.jour = data;
-    document.getElementById('countJour').textContent = (data.selection || []).length;
-    renderJour();
-  } catch(e) {
-    if (heroZone) heroZone.style.opacity = '1';
-    alert('Erreur : ' + e.message);
-  }
-}
-
-/* ===== Generic horse card ===== */
+/* ===== Generic horse card (cracks/base) ===== */
 function horseCard(c, style) {
-  const roleBadge = c.is_crack
-    ? `<span class="role-badge crack-tag">⚡ Crack</span>`
-    : (style === 'jour' ? `<span class="role-badge rang-tag">#${c.rang || '?'}</span>` : '');
-
-  const chancePill = c.chance !== undefined
-    ? `<div class="score-pill ${style}"><span class="pill-label">Chance</span>
-       <span class="pill-val ${style}">${c.chance}%</span></div>` : '';
-
   const eloPill = c.elo_score !== undefined
-    ? `<div class="score-pill ${style}"><span class="pill-label">ELO</span>
-       <span class="pill-val ${style}">${c.elo_score}</span></div>` : '';
-
-  const stats = c.nb_courses
-    ? `<span>📊 <strong>${c.nb_courses}c ${c.nb_victoires||0}V ${c.nb_places||0}P</strong></span>` : '';
-  const gains = c.gains_carriere
-    ? `<span>💰 <strong>${c.gains_carriere.toLocaleString()}€</strong></span>` : '';
+    ? `<div class="score-pill ${style}"><span class="pill-label">ELO</span><span class="pill-val ${style}">${c.elo_score}</span></div>` : '';
+  const stats = c.nb_courses ? `<span>📊 <strong>${c.nb_courses}c ${c.nb_victoires||0}V ${c.nb_places||0}P</strong></span>` : '';
+  const gains = c.gains_carriere ? `<span>💰 <strong>${c.gains_carriere.toLocaleString()}€</strong></span>` : '';
 
   return `<div class="horse-card ${style}">
     <div class="card-num ${style}">${c.numPmu}</div>
@@ -663,21 +456,20 @@ function horseCard(c, style) {
       ${c.musique?`<span class="card-musique">${c.musique}</span>`:''}
     </div>
     <div class="card-right">
-      ${roleBadge}${chancePill}${eloPill}
+      ${c.is_crack?`<span class="role-badge crack-tag">⚡ Crack</span>`:''}
+      ${eloPill}
       ${c.cote?`<span class="cote-pill">Cote ${c.cote}</span>`:''}
-      ${c.value_bet?`<span class="value-badge">⭐ VALUE</span>`:''}
     </div>
   </div>`;
 }
 
-// ===== ML Status =====
+/* ===== ML Status ===== */
 async function loadMLStatus() {
   try {
     const res = await fetch('/api/ml-status');
     const data = await res.json();
     const el = document.getElementById('mlStatus');
     const txt = document.getElementById('mlStatusText');
-
     if (data.status === 'ok') {
       el.className = 'ml-status ok';
       const ts = data.finished_at ? new Date(data.finished_at) : null;
@@ -689,7 +481,6 @@ async function loadMLStatus() {
       const ts = data.started_at ? new Date(data.started_at) : null;
       const since = ts ? ts.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'}) : '';
       txt.textContent = `🧠 Entraînement en cours… (depuis ${since})`;
-      // Re-check dans 30s
       setTimeout(loadMLStatus, 30000);
     } else if (data.status === 'error') {
       el.className = 'ml-status error';
@@ -708,5 +499,5 @@ document.getElementById('datePicker').value = todayStr();
 loadMLStatus();
 loadAll();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0759c1effc3d0ac',t:'MTc4MDcyOTk1OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a075b4abeb1f6af3',t:'MTc4MDczMDk2Mw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
