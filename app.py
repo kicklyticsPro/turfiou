@@ -1207,6 +1207,9 @@ def get_crack_horses(date_str):
                     "distance": distance,
                     "nb_partants": nb_partants,
                     "nb_courses": nb_courses,
+                    "nb_victoires": a.get("nbVictoires", 0),
+                    "nb_places": a.get("nbPlaces", 0),
+                    "gains_carriere": a.get("gainsCarriere", 0),
                 })
 
     # Trier : par num_reunion, puis num_course, puis score ELO décroissant
