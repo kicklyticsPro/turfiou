@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Turf Analyzer v4 — Pronostics IA Pro</title>
+<title>Turf Analyzer v6 — Pronostics IA Pro</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -25,6 +25,8 @@
   }
   .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
     border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .badge-ml-top4 { background: #06b6d4; color: white; padding: 2px 6px;
+    border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 4px; }
   .nav-links { display: flex; gap: 8px; }
   .nav-links a {
     color: #94a3b8; text-decoration: none; font-size: 13px;
@@ -244,6 +246,7 @@
   .score-item.elo .val { color: #facc15; font-weight: 800; }
   .score-item.new .val { color: #34d399; }
   .score-item.v4 .val { color: #fb923c; }
+  .score-item.v6 .val { color: #38bdf8; }
 
   .loading { text-align: center; padding: 50px; color: #94a3b8; }
   .spinner {
@@ -293,7 +296,7 @@
 </head>
 <body>
 <header>
-  <h1>🐎 Turf Analyzer<span class="version-tag">v4</span></h1>
+  <h1>🐎 Turf Analyzer<span class="version-tag">v6</span></h1>
   <div class="nav-links">
     <a href="/admin" class="active">Analyse</a>
     <a href="/backtest">Backtest & ML</a>
@@ -326,8 +329,8 @@
   <main class="main" id="mainContent">
     <div class="placeholder">
       <div class="emoji">🏇</div>
-      <h2>Turf Analyzer v4</h2>
-      <p>Algorithme à <strong>23 features</strong> + Ensemble GBM+RandomForest + Kelly Criterion</p>
+      <h2>Turf Analyzer v6</h2>
+      <p>Algorithme à <strong>41 features</strong> + Dual Model Win/Top4 + Stacking (LGBM+CatBoost+HGB+RF+LR) + Kelly</p>
       <p style="font-size:13px; margin-top:10px;">Sélectionnez une course pour analyser.</p>
       <p style="font-size:11px; margin-top:8px; color:#10b981;">📊 Backtest 280 courses — top1: <strong>63%</strong> | top3: <strong>90%</strong> | Kelly ROI: <strong>+365%</strong></p>
       <p style="font-size:10px; margin-top:6px; color:#94a3b8;">⚠️ Résultats mesurés en backtest — performance réelle moindre</p>
@@ -442,6 +445,7 @@ function renderCourse(data) {
     <div class="course-header">
       <h2>${course.libelle}
         ${ml_active ? '<span class="badge-ml">🧠 ML</span>' : ''}
+        ${data.ml_top4_active ? '<span class="badge-ml-top4">🎯 Top4</span>' : ''}
         ${live ? '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>' : ''}
       </h2>
       <div class="meta">
@@ -487,6 +491,15 @@ function renderCourse(data) {
     if (a.scores.repos >= 80) badges.push('<span class="badge good">😌 Repos</span>');
     if (a.scores.pedigree >= 70) badges.push(`<span class="badge" style="background:#a855f7;color:white;">🧬 Lignée</span>`);
     if (a.scores.corde >= 65) badges.push('<span class="badge good">📍 Bonne corde</span>');
+    // NEW v6 badges
+    if (a.scores.driver_hippo >= 70) badges.push('<span class="badge" style="background:#0ea5e9;color:white;">🏠 Expert local</span>');
+    if (a.scores.regularite >= 75) badges.push('<span class="badge good">📊 Régulier</span>');
+    if (a.scores.regularite <= 30) badges.push('<span class="badge warn">📊 Irrégulier</span>');
+    if (a.scores.equip_change >= 60) badges.push('<span class="badge" style="background:#f97316;color:white;">🔧 Équip.</span>');
+    if (a.scores.chimie_driver >= 70) badges.push('<span class="badge" style="background:#ec4899;color:white;">🤝 Chimie</span>');
+    if (a.scores.gains_trend >= 70) badges.push('<span class="badge good">📈 Prog. gains</span>');
+    if (a.scores.gains_trend <= 30) badges.push('<span class="badge warn">📉 Régr. gains</span>');
+    if (a.scores.perf_terrain >= 70) badges.push('<span class="badge good">🌍 Terrain ✓</span>');
 
     const classes = ['horse', topClass, isWinner?'winner':'', isValueBet?'value-bet':''].filter(x=>x).join(' ');
 
@@ -527,7 +540,7 @@ function renderCourse(data) {
           ${a.chanceTop4 ? `
           <div class="top4-block">
             <div class="top4-pct">${a.chanceTop4}%</div>
-            <div class="top4-label">Chance Top 4</div>
+            <div class="top4-label">Chance Top 4${a.chanceTop4ML ? ' <small style="color:#a78bfa;">(ML ' + Math.round(a.chanceTop4ML) + '%)</small>' : ''}</div>
             <div class="top4-bar"><div style="width:${Math.min(a.chanceTop4*1.25, 100)}%"></div></div>
           </div>` : ''}
         </div>
@@ -549,6 +562,17 @@ function renderCourse(data) {
           <div class="score-item v4"><div class="lbl">Corde</div><div class="val">${a.scores.corde}</div></div>
           <div class="score-item v4"><div class="lbl">Équip</div><div class="val">${a.scores.equipment}</div></div>
           <div class="score-item v4"><div class="lbl">Profil</div><div class="val">${a.scores.profile_match}</div></div>
+          <div class="score-item v6"><div class="lbl">🏠Dr/Hippo</div><div class="val">${a.scores.driver_hippo||50}</div></div>
+          <div class="score-item v6"><div class="lbl">📊Régul.</div><div class="val">${a.scores.regularite||50}</div></div>
+          <div class="score-item v6"><div class="lbl">🔧Chgt</div><div class="val">${a.scores.equip_change||50}</div></div>
+          <div class="score-item v6"><div class="lbl">⚔️Attaq</div><div class="val">${a.scores.style_attaquant||50}</div></div>
+          <div class="score-item v6"><div class="lbl">🏃Finish</div><div class="val">${a.scores.style_finisseur||50}</div></div>
+          <div class="score-item v6"><div class="lbl">📈TrGains</div><div class="val">${a.scores.gains_trend||50}</div></div>
+          <div class="score-item v6"><div class="lbl">📅J Repos</div><div class="val">${a.scores.jours_derniere||50}</div></div>
+          <div class="score-item v6"><div class="lbl">🔄Nb/Mois</div><div class="val">${a.scores.nb_courses_mois||50}</div></div>
+          <div class="score-item v6"><div class="lbl">🌍Terrain</div><div class="val">${a.scores.perf_terrain||50}</div></div>
+          <div class="score-item v6"><div class="lbl">📍Corde+</div><div class="val">${a.scores.corde_avantage||50}</div></div>
+          <div class="score-item v6"><div class="lbl">🤝Chimie</div><div class="val">${a.scores.chimie_driver||50}</div></div>
         </div>
       </div>
     `;
@@ -556,8 +580,8 @@ function renderCourse(data) {
 
   html += `</div>
     <div class="disclaimer">
-      ⚠️ Algorithme v4 : 23 features, Ensemble GBM+Random Forest, calibration isotone, Kelly Criterion.
-      ${ml_active ? 'Mode ML actif (50% heuristique + 50% Ensemble).' : ''}
+      ⚠️ Algorithme v6 : 41 features, Dual Model Win/Top4, Stacking (LGBM+CatBoost+HGB+RF+LR), Kelly Criterion.
+      ${ml_active ? 'Mode ML actif (20% heuristique + 80% ML).' : ''}
       Le jeu peut être addictif : <a href="https://www.joueurs-info-service.fr/" style="color:#fbbf24;">joueurs-info-service.fr</a>
     </div>
   `;
@@ -609,5 +633,5 @@ async function confirmBet() {
 document.getElementById('datePicker').value = todayStr();
 loadReunions();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08236c41cce6f33',t:'MTc4MDg2MjEyMQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

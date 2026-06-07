@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Backtest & ML — Turf Analyzer v4</title>
+  <title>Backtest & ML — Turf Analyzer v6</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -106,7 +106,7 @@
 </head>
 <body>
 <header>
-  <h1>🐎 Turf Analyzer — Backtest & ML <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v4</span></h1>
+  <h1>🐎 Turf Analyzer — Backtest & ML <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
   <div class="nav-links">
     <a href="/admin">Analyse</a>
     <a href="/backtest" class="active">Backtest & ML</a>
@@ -119,20 +119,19 @@
 <div class="container">
   <!-- ML Training -->
   <div class="section">
-    <h2>🧠 Modèle ML v4 (Ensemble GBM + Random Forest)</h2>
+    <h2>🧠 Modèle ML v6 — Dual Win + Top 4</h2>
     <p>
-      Entraîne un <strong>ensemble</strong> de deux modèles : Gradient Boosting (capture non-linéarités)
-      + Random Forest (réduit la variance). Combiné avec calibration isotone.
-      Utilise <strong>23 features</strong> (marché, forme, carrière, gains, driver, entraîneur,
-      distance, cheval, Elo, âge, repos, tendance, confrontations,
-      <strong>pedigree</strong>, <strong>corde</strong>, <strong>équipements</strong>, <strong>profil</strong>, etc.).
+      Entraîne <strong>2 modèles en parallèle</strong> :<br>
+      🔵 <strong>WIN</strong> — y=1 si gagnant (~8% positifs, classement)<br>
+      🟢 <strong>TOP4</strong> — y=1 si ≤4e place (~40% positifs, placement, plus stable)<br>
+      Utilise <strong>41 features</strong> incluant driver/hippodrome, régularité, chimie, terrain, etc.
+      Stacking de 5 modèles (LGBM+CatBoost+HGB+RF+LR) avec TimeSeriesSplit.
     </p>
     <div class="controls">
       <label>Type :
         <select id="trainType">
-          <option value="ensemble" selected>Ensemble (recommandé)</option>
-          <option value="gbm">GBM seul</option>
-          <option value="rf">Random Forest seul</option>
+          <option value="advanced" selected>Stacking avancé (recommandé)</option>
+          <option value="ensemble">Ensemble NumPy (fallback)</option>
         </select>
       </label>
       <label>Jours :
@@ -143,21 +142,7 @@
           <option value="30">30</option>
         </select>
       </label>
-      <label>Arbres GBM :
-        <select id="trainTreesGbm">
-          <option value="30">30</option>
-          <option value="50" selected>50</option>
-          <option value="100">100</option>
-        </select>
-      </label>
-      <label>Arbres RF :
-        <select id="trainTreesRf">
-          <option value="20">20</option>
-          <option value="30" selected>30</option>
-          <option value="50">50</option>
-        </select>
-      </label>
-      <button class="purple" onclick="trainModel()">🚀 Entraîner</button>
+      <button class="purple" onclick="trainModel()">🚀 Entraîner les 2 modèles</button>
     </div>
     <div id="trainResult"></div>
   </div>
@@ -198,21 +183,22 @@
 <script>
 async function trainModel() {
   const days = document.getElementById('trainDays').value;
-  const trees_gbm = document.getElementById('trainTreesGbm').value;
-  const trees_rf = document.getElementById('trainTreesRf').value;
   const type = document.getElementById('trainType').value;
   const res_div = document.getElementById('trainResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement Ensemble en cours… (1-3 min)</div>';
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement Dual Win + Top4 en cours… (2-5 min)</div>';
   try {
-    const res = await fetch(`/api/train?days=${days}&trees_gbm=${trees_gbm}&trees_rf=${trees_rf}&type=${type}`, {method:'POST'});
+    const res = await fetch(`/api/train?days=${days}&type=${type}`, {method:'POST'});
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+    const models = data.models_trained ? data.models_trained.join(' + ') : type;
     res_div.innerHTML = `
       <div class="success">
-        ✅ Modèle <strong>${data.model_type}</strong> entraîné !<br>
-        📊 ${data.n_samples} échantillons | GBM: ${data.n_trees_gbm} arbres | RF: ${data.n_trees_rf} arbres<br>
+        ✅ Modèles <strong>${models}</strong> entraînés !<br>
+        📊 ${data.n_samples} échantillons |
+        🔵 WIN: ${data.win_positives} positifs (${(data.win_positives/data.n_samples*100).toFixed(1)}%) |
+        🟢 TOP4: ${data.top4_positives} positifs (${(data.top4_positives/data.n_samples*100).toFixed(1)}%)<br>
         🕐 ${new Date(data.trained_at).toLocaleString('fr-FR')}<br>
-        <small style="color:#94a3b8;">Mode ML disponible sur la page Analyse.</small>
+        <small style="color:#94a3b8;">Mode ML disponible sur la page Analyse. Coche 🧠 ML + 🎯 Top4.</small>
       </div>
     `;
   } catch(e) {
@@ -265,6 +251,23 @@ function renderBacktest(d) {
       <div class="stat-card ${kCls}"><div class="value">${d.kelly_profit>0?'+':''}${d.kelly_profit}€</div><div class="label">Profit</div></div>
       <div class="stat-card ${kCls}"><div class="value">${d.kelly_roi>0?'+':''}${d.kelly_roi}%</div><div class="label">ROI Kelly</div></div>
     </div>
+
+    ${d.top4_ml_accuracy != null ? `
+    <h3 style="margin:18px 0 8px;color:#06b6d4;font-size:14px;">🎯 Modèle Top 4 ML</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.top4_ml_accuracy}%</div><div class="label">Accuracy Top 4</div></div>
+      <div class="stat-card"><div class="value">${d.top1_top4_rate}%</div><div class="label">#1 dans Top 4</div></div>
+      <div class="stat-card"><div class="value">${d.top4_ml_total}</div><div class="label">Prédictions Top4</div></div>
+      <div class="stat-card"><div class="value">${d.top4_ml_hit}</div><div class="label">Hits Top4</div></div>
+    </div>
+    ${d.top4_by_confidence ? `
+    <div style="margin-top:10px;font-size:12px;color:#94a3b8;">
+      <strong>Par confiance :</strong>
+      ${d.top4_by_confidence.high && d.top4_by_confidence.high.total > 0 ? `🟢 Haute (≥60%): ${d.top4_by_confidence.high.accuracy}% (${d.top4_by_confidence.high.total} prédictions)` : ''}
+      ${d.top4_by_confidence.medium && d.top4_by_confidence.medium.total > 0 ? ` | 🟡 Moyenne (35-60%): ${d.top4_by_confidence.medium.accuracy}% (${d.top4_by_confidence.medium.total})` : ''}
+      ${d.top4_by_confidence.low && d.top4_by_confidence.low.total > 0 ? ` | 🔴 Basse (<35%): ${d.top4_by_confidence.low.accuracy}% (${d.top4_by_confidence.low.total})` : ''}
+    </div>` : ''}
+    ` : ''}
   `;
 
   if (d.value_bets && d.value_bets.length) {
@@ -326,5 +329,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08236d7196b6f33',t:'MTc4MDg2MjEyNA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
