@@ -1096,6 +1096,10 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     for rank, a in enumerate(analyses, 1):
         a["rang"] = rank
 
+    # Supprimer les données internes non JSON-sérialisables
+    for a in analyses:
+        a.pop("_perfs_detail", None)
+
     return analyses
 
 
