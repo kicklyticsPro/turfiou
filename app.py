@@ -1,7 +1,25 @@
 """
-Turf Analyzer v4 - Analyse hippique PMU professionnelle
+Turf Analyzer v6 - Analyse hippique PMU professionnelle
 
-v4 nouveautés (par rapport à v3) :
+v6 nouveautés (par rapport à v5) :
+  12 nouvelles features ML (27 → 41 features) :
+    - Taux driver/hippodrome spécifique          🔴 Fort
+    - Indice de régularité (variance places)      🔴 Fort
+    - Changement d'équipement détecté             🟡 Moyen
+    - Style de course (attaquant/finisseur)       🟡 Moyen
+    - Tendance des gains sur 5 courses            🟡 Moyen
+    - Jours depuis dernière course (raw)          🟢 Léger
+    - Nombre de courses ce mois                   🟢 Léger
+    - Performance terrain historique              🟡 Moyen
+    - Avantage corde historique                   🟢 Léger
+    - Chimie cheval/driver actuel                 🟡 Moyen
+    + 2 interactions : régularité×forme, driver_hippo×terrain
+
+v5 nouveautés :
+  9.  Ensemble Stacking (LGBM+CatBoost+HGB+RF+LR)
+  10. Calibration auto Platt/Isotone
+
+v4 nouveautés :
   9.  Ensemble GBM + Random Forest
   10. Features pedigree (père/mère) + corde + équipements
   11. Détection de profils (attaquant/finisseur/fragile) via commentaires
@@ -26,7 +44,10 @@ from lib.ml_models import (GradientBoosting, RandomForest, Ensemble,
 from lib.kelly import kelly_amount, kelly_fraction, expected_value, expected_roi
 from lib.features_v4 import (build_pedigree_stats, get_pedigree_score,
                               get_corde_score, get_equipment_score,
-                              detect_profile, get_profile_match_score)
+                              detect_profile, get_profile_match_score,
+                              compute_gains_trend, compute_terrain_perf,
+                              detect_equipment_change, compute_days_since_last,
+                              compute_nb_courses_recent, compute_corde_avantage)
 from lib import bets_tracker
 
 # NEW v5 - modèle avancé
@@ -574,11 +595,27 @@ def featurize(p, nb_partants):
         p["bonus"].get("deferre", 0),
         p.get("age") or 5,
         1 if p.get("sexe") == "FEMELLES" else 0,
-        # NEW v5 interactions
+        # v5 interactions
         forme * elo / 100,  # forme × elo
         driver * s.get("entraineur", 50) / 100,  # team synergy
         marche * s.get("cheval_stats", 50) / 100,  # marché vs stats (neutralisé)
         abs(forme - 50),  # écart à la moyenne (forme extrême)
+        # NEW v6 — 12 features avancées
+        s.get("driver_hippo", 50),       # 🔴 Taux driver/hippodrome
+        s.get("regularite", 50),         # 🔴 Indice de régularité
+        s.get("equip_change", 50),       # 🟡 Changement d'équipement
+        s.get("style_attaquant", 50),    # 🟡 Style attaquant
+        s.get("style_finisseur", 50),    # 🟡 Style finisseur
+        s.get("style_fragile", 50),      # 🟡 Penal fragile
+        s.get("gains_trend", 50),        # 🟡 Tendance des gains
+        s.get("jours_derniere", 50),     # 🟢 Jours depuis dernière course
+        s.get("nb_courses_mois", 50),    # 🟢 Nb courses ce mois
+        s.get("perf_terrain", 50),       # 🟡 Performance terrain
+        s.get("corde_avantage", 50),     # 🟢 Avantage corde historique
+        s.get("chimie_driver", 50),      # 🟡 Chimie cheval/driver
+        # NEW v6 — interactions
+        s.get("regularite", 50) * forme / 100,  # régularité × forme = fiabilité
+        s.get("driver_hippo", 50) * s.get("perf_terrain", 50) / 100,  # expertise locale × terrain
     ]
 
 
@@ -587,7 +624,13 @@ FEATURE_NAMES = ["marche","forme","carriere","gains","driver","entraineur",
                  "elo_trend","confrontation","pedigree","corde","equipment",
                  "profile_match","nb_partants","inv_cote",
                  "bonus_team","bonus_deferre","age_raw","is_female",
-                 "forme_x_elo","team_synergy","marche_x_stats","forme_extreme"]
+                 "forme_x_elo","team_synergy","marche_x_stats","forme_extreme",
+                 # v6
+                 "driver_hippo","regularite","equip_change",
+                 "style_attaquant","style_finisseur","style_fragile",
+                 "gains_trend","jours_derniere","nb_courses_mois",
+                 "perf_terrain","corde_avantage","chimie_driver",
+                 "regularite_x_forme","driver_hippo_x_terrain"]
 
 
 def load_ml_model():
@@ -661,7 +704,8 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         analyses = analyser_course_features(parts, perfs, distance, discipline,
                                              hippodrome, type_corde,
                                              team_stats, horse_stats,
-                                             elo, elo_hist, horse_races, pedigree)
+                                             elo, elo_hist, horse_races, pedigree,
+                                             terrain=None)
         nb = len(analyses)
         for a in analyses:
             X.append(featurize(a, nb))
@@ -870,7 +914,8 @@ def compute_placement_probability(a, nb_partants):
 def analyser_course_features(participants_data, perfs_data, distance, discipline,
                               hippodrome, type_corde,
                               team_stats, horse_stats, elo,
-                              elo_hist=None, horse_races=None, pedigree=None):
+                              elo_hist=None, horse_races=None, pedigree=None,
+                              terrain=None):
     parts = [p for p in participants_data.get("participants", [])
              if p.get("statut") == "PARTANT"]
     if not parts:
@@ -945,6 +990,44 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
         profile = detect_profile(perfs_detail)
         s_profile_match = get_profile_match_score(profile, distance, nb_partants)
 
+        # ===========================================================
+        #  NEW v6 — Features avancées pour le ML
+        # ===========================================================
+
+        # 🔴 Taux driver/hippodrome spécifique
+        driver_hippo_data = team_stats.get("drivers_hippo", {}).get(driver, {}).get(hippodrome) if driver and hippodrome else None
+        s_driver_hippo = get_bucket_score(driver_hippo_data, min_courses=3) or 50
+
+        # 🔴 Indice de régularité (déjà calculé via compute_regularity, stocké dans s_regularity)
+        # s_regularity est calculé ci-dessous avec top4 — on l'ajoute aussi aux scores ML
+
+        # 🟡 Changement d'équipement (signal d'intention)
+        s_equip_change = detect_equipment_change(perfs_detail, p.get("oeilleres"), p.get("deferre"))
+
+        # 🟡 Style de course — scores bruts du profil
+        s_style_attaquant = profile.get("attaquant", 50)
+        s_style_finisseur = profile.get("finisseur", 50)
+        s_style_fragile = profile.get("fragile", 50)
+
+        # 🟡 Tendance des gains sur 5 dernières courses
+        s_gains_trend = compute_gains_trend(perfs_detail)
+
+        # 🟢 Jours depuis dernière course (score normalisé)
+        s_jours_derniere = compute_days_since_last(perfs_detail)
+
+        # 🟢 Nombre de courses ce mois (fatigue cumulative)
+        s_nb_courses_mois = compute_nb_courses_recent(perfs_detail)
+
+        # 🟡 Performance terrain (affinité historique)
+        s_perf_terrain = compute_terrain_perf(perfs_detail)
+
+        # 🟢 Avantage corde spécifique (historique par position de départ)
+        s_corde_avantage = compute_corde_avantage(perfs_detail)
+
+        # 🟡 Chimie cheval/driver actuel (taux de réussite spécifique)
+        chimie_data = horse_stats.get("with_driver", {}).get(cheval, {}).get(driver) if cheval and driver else None
+        s_chimie_driver = get_bucket_score(chimie_data, min_courses=2) or 50
+
         # === SCORE TOP 4 (logique indépendante du gagnant) ===
         s_top4_rate = compute_top4_rate(perfs_detail)
         s_regularity = compute_regularity(perfs_detail)
@@ -991,6 +1074,19 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
                 "corde": round(s_corde, 1),
                 "equipment": round(s_equipment, 1),
                 "profile_match": round(s_profile_match, 1),
+                # NEW v6 features
+                "driver_hippo": round(s_driver_hippo, 1),
+                "regularite": round(s_regularity, 1),
+                "equip_change": round(s_equip_change, 1),
+                "style_attaquant": round(s_style_attaquant, 1),
+                "style_finisseur": round(s_style_finisseur, 1),
+                "style_fragile": round(s_style_fragile, 1),
+                "gains_trend": round(s_gains_trend, 1),
+                "jours_derniere": round(s_jours_derniere, 1),
+                "nb_courses_mois": round(s_nb_courses_mois, 1),
+                "perf_terrain": round(s_perf_terrain, 1),
+                "corde_avantage": round(s_corde_avantage, 1),
+                "chimie_driver": round(s_chimie_driver, 1),
             },
             "top4": {
                 "rate": round(s_top4_rate, 1) if s_top4_rate is not None else None,
@@ -1009,35 +1105,52 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
                     discipline=None, hippodrome=None, type_corde=None,
                     team_stats=None, horse_stats=None, elo=None,
                     elo_hist=None, horse_races=None, pedigree=None,
-                    use_ml=False, capital=100):
+                    use_ml=False, capital=100, terrain=None):
     analyses = analyser_course_features(participants_data, perfs_data, distance,
                                          discipline, hippodrome, type_corde,
                                          team_stats, horse_stats, elo,
-                                         elo_hist, horse_races, pedigree)
+                                         elo_hist, horse_races, pedigree,
+                                         terrain=terrain)
     if not analyses:
         return []
 
-    # Score intrinsèque v4 (17 composantes) — SEUL utilisé pour le classement
+    # Score intrinsèque v6 (29 composantes) — SEUL utilisé pour le classement
     scores_intr = []
     for a in analyses:
-        s = (0.15 * a["scores"]["forme"] +
-             0.08 * a["scores"]["carriere"] +
-             0.07 * a["scores"]["gains"] +
-             0.09 * a["scores"]["driver"] +
-             0.06 * a["scores"]["entraineur"] +
-             0.07 * a["scores"]["distance"] +
-             0.09 * a["scores"]["cheval_stats"] +
-             0.11 * a["scores"]["elo"] +
-             0.04 * a["scores"]["age_sexe"] +
-             0.04 * a["scores"]["repos"] +
-             0.05 * a["scores"]["elo_trend"] +
-             0.03 * a["scores"]["confrontation"] +
-             0.06 * a["scores"]["pedigree"] +
-             0.03 * a["scores"]["corde"] +
-             0.02 * a["scores"]["equipment"] +
-             0.01 * a["scores"]["profile_match"] +
-             a["bonus"]["team"] + a["bonus"]["deferre"])
-        scores_intr.append(max(s, 1))
+        s = a["scores"]
+        # --- Anciennes features (poids ajustés pour laisser place aux nouvelles) ---
+        s_val = (
+            0.12 * s["forme"] +              # était 0.15
+            0.06 * s["carriere"] +           # était 0.08
+            0.05 * s["gains"] +              # était 0.07
+            0.07 * s["driver"] +             # était 0.09
+            0.04 * s["entraineur"] +         # était 0.06
+            0.05 * s["distance"] +           # était 0.07
+            0.07 * s["cheval_stats"] +       # était 0.09
+            0.08 * s["elo"] +                # était 0.11
+            0.03 * s["age_sexe"] +           # était 0.04
+            0.03 * s["repos"] +              # était 0.04
+            0.04 * s["elo_trend"] +          # était 0.05
+            0.02 * s["confrontation"] +      # était 0.03
+            0.04 * s["pedigree"] +           # était 0.06
+            0.02 * s["corde"] +              # était 0.03
+            0.01 * s["equipment"] +          # était 0.02
+            0.01 * s["profile_match"] +      # était 0.01
+            # --- NEW v6 features ---
+            0.05 * s.get("driver_hippo", 50) +      # 🔴 Fort : taux driver/hippo
+            0.06 * s.get("regularite", 50) +        # 🔴 Fort : indice régularité
+            0.02 * s.get("equip_change", 50) +      # 🟡 Moyen : changement équipement
+            0.02 * s.get("style_attaquant", 50) +   # 🟡 Moyen : style meneur
+            0.02 * s.get("style_finisseur", 50) +   # 🟡 Moyen : style finisseur
+            0.02 * s.get("gains_trend", 50) +       # 🟡 Moyen : tendance gains
+            0.01 * s.get("jours_derniere", 50) +    # 🟢 Léger : fraîcheur
+            0.01 * s.get("nb_courses_mois", 50) +   # 🟢 Léger : fatigue
+            0.02 * s.get("perf_terrain", 50) +      # 🟡 Moyen : perf terrain
+            0.01 * s.get("corde_avantage", 50) +    # 🟢 Léger : avantage corde
+            0.02 * s.get("chimie_driver", 50) +     # 🟡 Moyen : chimie cheval/driver
+            a["bonus"]["team"] + a["bonus"]["deferre"]
+        )
+        scores_intr.append(max(s_val, 1))
 
     total_intr = sum(scores_intr) or 1
     proba_intr = [s / total_intr * 100 for s in scores_intr]
@@ -1753,12 +1866,14 @@ def api_course(r_num, c_num):
                 if c["numOrdre"] == c_num:
                     discipline = c.get("discipline")
                     type_corde = c.get("corde", "")
+                    terrain = c.get("natureTerrain") or c.get("terrain") or None
                     course_info = {
                         "libelle": c.get("libelle"),
                         "discipline": discipline,
                         "distance": c.get("distance"),
                         "specialite": c.get("specialite"),
                         "corde": type_corde,
+                        "terrain": terrain,
                         "heure": datetime.fromtimestamp(c["heureDepart"] / 1000).strftime("%H:%M") if c.get("heureDepart") else "",
                         "montantPrix": c.get("montantPrix"),
                         "nbPartants": c.get("nombreDeclaresPartants"),
@@ -1773,7 +1888,8 @@ def api_course(r_num, c_num):
                                 discipline, hippodrome, type_corde,
                                 team_stats, horse_stats, elo, elo_hist,
                                 horse_races, pedigree, use_ml=use_ml,
-                                capital=capital)
+                                capital=capital,
+                                terrain=terrain)
 
     return jsonify({
         "date": date_str, "reunion": reunion_info, "course": course_info,
