@@ -823,9 +823,10 @@ def predict_ml(features, model, calibration=None):
 #  Probabilité INDIVIDUELLE ABSOLUE (pas de normalisation)
 # ============================================================
 def compute_top4_rate(perfs_detail):
-    """Taux historique de courses terminées dans les 4 premiers."""
+    """Taux historique de courses terminées dans les 4 premiers.
+    Retourne toujours un float (0.0 si pas de données)."""
     if not perfs_detail:
-        return None
+        return 0.0
     top4 = 0
     total = 0
     for course in perfs_detail[:12]:
@@ -837,14 +838,15 @@ def compute_top4_rate(perfs_detail):
                     if place <= 4:
                         top4 += 1
     if total == 0:
-        return None
+        return 0.0
     return (top4 / total) * 100
 
 
 def compute_avg_place(perfs_detail):
-    """Place moyenne sur les 10 dernières courses (arrivée connue)."""
+    """Place moyenne sur les 10 dernières courses (arrivée connue).
+    Retourne toujours un float (0.0 si pas de données)."""
     if not perfs_detail:
-        return None
+        return 0.0
     places = []
     for course in perfs_detail[:10]:
         for p in course.get("participants", []):
@@ -854,7 +856,7 @@ def compute_avg_place(perfs_detail):
                     places.append(place)
                 break
     if not places:
-        return None
+        return 0.0
     return sum(places) / len(places)
 
 
@@ -886,15 +888,15 @@ def compute_placement_probability(a, nb_partants):
     2. Petits ajustements pour les conditions du jour (±5-10%)
     3. Pénalité forte si manque de données
     """
-    top4_rate = a.get("top4", {}).get("rate")  # % réel de top4 historique
+    top4_rate = a.get("top4", {}).get("rate", 0.0) or 0.0
     nb_courses = a.get("nbCourses", 0) or 0
     proba = None
     
     # === ÉTAPE 1 : Base = taux historique réel ===
-    if top4_rate is not None and nb_courses >= 8:
+    if top4_rate > 0 and nb_courses >= 8:
         # Assez de données → on se fie au taux réel
         proba = top4_rate
-    elif top4_rate is not None and nb_courses >= 3:
+    elif top4_rate > 0 and nb_courses >= 3:
         # Quelques données → confiance modérée, on tire vers la moyenne théorique
         theorique = (4 / max(nb_partants, 8)) * 100
         confiance = nb_courses / 8  # 0.375 à 1.0
@@ -1006,88 +1008,104 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
         mere = p.get("nomMere")
 
         perfs_detail = perfs_by_num.get(p.get("numPmu"), [])
-        s_forme = score_forme_enrichi(perfs_detail)
 
-        if nb_courses >= 3:
-            s_carriere = min(100, (nb_vict / nb_courses) * 250 + (nb_place / nb_courses) * 80)
-        elif nb_courses > 0:
-            s_carriere = min(100, (nb_vict / nb_courses) * 200 + 20)
-        else:
-            s_carriere = 25
+        try:
+            s_forme = score_forme_enrichi(perfs_detail)
 
-        gains = p.get("gainsParticipant", {}) or {}
-        gains_carriere = gains.get("gainsCarriere", 0) or 0
-        if nb_courses > 0:
-            gain_moyen = gains_carriere / nb_courses / 100
-            s_gains = min(100, 15 * math.log10(max(gain_moyen, 1) + 1))
-        else:
-            s_gains = 25
+            if nb_courses >= 3:
+                s_carriere = min(100, (nb_vict / nb_courses) * 250 + (nb_place / nb_courses) * 80)
+            elif nb_courses > 0:
+                s_carriere = min(100, (nb_vict / nb_courses) * 200 + 20)
+            else:
+                s_carriere = 25
 
-        s_driver = get_team_score_multi(driver, "drivers", team_stats, discipline, hippodrome)
-        s_entraineur = get_team_score_multi(entr, "entraineurs", team_stats, discipline)
-        s_cheval = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats)
-        s_elo = get_elo_score(cheval, elo, all_horses)
-        s_distance = score_distance(perfs_detail, distance)
-        s_age_sexe = get_age_sexe_score(p.get("age"), p.get("sexe"))
-        s_repos = get_repos_score(cheval, today_ts, horse_races or {})
-        s_elo_trend = get_elo_trend_score(cheval, elo_hist or {}, elo.get(cheval, 1500))
-        adversaires = [h for h in all_horses if h and h != cheval]
-        s_confrontation = get_confrontation_score(cheval, adversaires, horse_races or {}, elo)
+            gains = p.get("gainsParticipant", {}) or {}
+            gains_carriere = gains.get("gainsCarriere", 0) or 0
+            if nb_courses > 0:
+                gain_moyen = gains_carriere / nb_courses / 100
+                s_gains = min(100, 15 * math.log10(max(gain_moyen, 1) + 1))
+            else:
+                s_gains = 25
 
-        # NEW v4 : pedigree
-        s_pedigree = get_pedigree_score(pere, mere, pedigree.get("peres", {}), pedigree.get("meres", {}))
-        # NEW v4 : corde
-        s_corde = get_corde_score(p.get("numPmu"), nb_partants, type_corde, discipline)
-        # NEW v4 : equipment
-        s_equipment = get_equipment_score(p.get("oeilleres"), p.get("deferre"))
-        # NEW v4 : profile match
-        profile = detect_profile(perfs_detail)
-        s_profile_match = get_profile_match_score(profile, distance, nb_partants)
+            s_driver = get_team_score_multi(driver, "drivers", team_stats, discipline, hippodrome)
+            s_entraineur = get_team_score_multi(entr, "entraineurs", team_stats, discipline)
+            s_cheval = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats)
+            s_elo = get_elo_score(cheval, elo, all_horses)
+            s_distance = score_distance(perfs_detail, distance)
+            s_age_sexe = get_age_sexe_score(p.get("age"), p.get("sexe"))
+            s_repos = get_repos_score(cheval, today_ts, horse_races or {})
+            s_elo_trend = get_elo_trend_score(cheval, elo_hist or {}, elo.get(cheval, 1500))
+            adversaires = [h for h in all_horses if h and h != cheval]
+            s_confrontation = get_confrontation_score(cheval, adversaires, horse_races or {}, elo)
 
-        # ===========================================================
-        #  NEW v6 — Features avancées pour le ML
-        # ===========================================================
+            # NEW v4 : pedigree
+            s_pedigree = get_pedigree_score(pere, mere, pedigree.get("peres", {}), pedigree.get("meres", {}))
+            # NEW v4 : corde
+            s_corde = get_corde_score(p.get("numPmu"), nb_partants, type_corde, discipline)
+            # NEW v4 : equipment
+            s_equipment = get_equipment_score(p.get("oeilleres"), p.get("deferre"))
+            # NEW v4 : profile match
+            profile = detect_profile(perfs_detail)
+            s_profile_match = get_profile_match_score(profile, distance, nb_partants)
 
-        # 🔴 Taux driver/hippodrome spécifique
-        driver_hippo_data = team_stats.get("drivers_hippo", {}).get(driver, {}).get(hippodrome) if driver and hippodrome else None
-        s_driver_hippo = get_bucket_score(driver_hippo_data, min_courses=3) or 50
+            # ===========================================================
+            #  NEW v6 — Features avancées pour le ML
+            # ===========================================================
 
-        # 🔴 Indice de régularité (déjà calculé via compute_regularity, stocké dans s_regularity)
-        # s_regularity est calculé ci-dessous avec top4 — on l'ajoute aussi aux scores ML
+            # 🔴 Taux driver/hippodrome spécifique
+            driver_hippo_data = team_stats.get("drivers_hippo", {}).get(driver, {}).get(hippodrome) if driver and hippodrome else None
+            s_driver_hippo = get_bucket_score(driver_hippo_data, min_courses=3) or 50
 
-        # 🟡 Changement d'équipement (signal d'intention)
-        s_equip_change = detect_equipment_change(perfs_detail, p.get("oeilleres"), p.get("deferre"))
+            # 🟡 Changement d'équipement (signal d'intention)
+            s_equip_change = detect_equipment_change(perfs_detail, p.get("oeilleres"), p.get("deferre"))
 
-        # 🟡 Style de course — scores bruts du profil
-        s_style_attaquant = profile.get("attaquant", 50)
-        s_style_finisseur = profile.get("finisseur", 50)
-        s_style_fragile = profile.get("fragile", 50)
+            # 🟡 Style de course — scores bruts du profil
+            s_style_attaquant = profile.get("attaquant", 50)
+            s_style_finisseur = profile.get("finisseur", 50)
+            s_style_fragile = profile.get("fragile", 50)
 
-        # 🟡 Tendance des gains sur 5 dernières courses
-        s_gains_trend = compute_gains_trend(perfs_detail)
+            # 🟡 Tendance des gains sur 5 dernières courses
+            s_gains_trend = compute_gains_trend(perfs_detail)
 
-        # 🟢 Jours depuis dernière course (score normalisé)
-        s_jours_derniere = compute_days_since_last(perfs_detail)
+            # 🟢 Jours depuis dernière course (score normalisé)
+            s_jours_derniere = compute_days_since_last(perfs_detail)
 
-        # 🟢 Nombre de courses ce mois (fatigue cumulative)
-        s_nb_courses_mois = compute_nb_courses_recent(perfs_detail)
+            # 🟢 Nombre de courses ce mois (fatigue cumulative)
+            s_nb_courses_mois = compute_nb_courses_recent(perfs_detail)
 
-        # 🟡 Performance terrain (affinité historique)
-        s_perf_terrain = compute_terrain_perf(perfs_detail)
+            # 🟡 Performance terrain (affinité historique)
+            s_perf_terrain = compute_terrain_perf(perfs_detail)
 
-        # 🟢 Avantage corde spécifique (historique par position de départ)
-        s_corde_avantage = compute_corde_avantage(perfs_detail)
+            # 🟢 Avantage corde spécifique (historique par position de départ)
+            s_corde_avantage = compute_corde_avantage(perfs_detail)
 
-        # 🟡 Chimie cheval/driver actuel (taux de réussite spécifique)
-        chimie_data = horse_stats.get("with_driver", {}).get(cheval, {}).get(driver) if cheval and driver else None
-        s_chimie_driver = get_bucket_score(chimie_data, min_courses=2) or 50
+            # 🟡 Chimie cheval/driver actuel (taux de réussite spécifique)
+            chimie_data = horse_stats.get("with_driver", {}).get(cheval, {}).get(driver) if cheval and driver else None
+            s_chimie_driver = get_bucket_score(chimie_data, min_courses=2) or 50
 
-        # === SCORE TOP 4 (logique indépendante du gagnant) ===
-        s_top4_rate = compute_top4_rate(perfs_detail)
-        s_regularity = compute_regularity(perfs_detail)
-        # Un cheval qui finit souvent placé + régulier = bon top 4
-        # On pondère : taux top4 (60%) + régularité (40%)
-        s_top4_raw = 0.60 * s_top4_rate + 0.40 * s_regularity
+            # === SCORE TOP 4 (logique indépendante du gagnant) ===
+            s_top4_rate = compute_top4_rate(perfs_detail) or 0.0
+            s_regularity = compute_regularity(perfs_detail)
+            # Un cheval qui finit souvent placé + régulier = bon top 4
+            # On pondère : taux top4 (60%) + régularité (40%)
+            s_top4_raw = 0.60 * s_top4_rate + 0.40 * s_regularity
+
+        except Exception as e:
+            # 🛡️ Un cheval ne doit jamais crasher toute la course
+            print(f"[WARN] Erreur scoring {cheval or '?'}: {e}")
+            s_forme = 50; s_carriere = 25; s_gains = 25
+            s_driver = 50; s_entraineur = 50; s_cheval = 50
+            s_elo = 50; s_distance = 50; s_age_sexe = 50; s_repos = 50
+            s_elo_trend = 50; s_confrontation = 50
+            s_pedigree = 50; s_corde = 50; s_equipment = 50; s_profile_match = 50
+            s_driver_hippo = 50; s_regularity = 50.0; s_equip_change = 50.0
+            s_style_attaquant = 50; s_style_finisseur = 50; s_style_fragile = 50
+            s_gains_trend = 50.0; s_jours_derniere = 50; s_nb_courses_mois = 50
+            s_perf_terrain = 50.0; s_corde_avantage = 50; s_chimie_driver = 50
+            s_top4_rate = 0.0; s_top4_raw = 20.0
+            profile = {"attaquant": 50, "finisseur": 50, "fragile": 50, "regulier": 50}
+            gains = p.get("gainsParticipant", {}) or {}
+            gains_carriere = gains.get("gainsCarriere", 0) or 0
 
         bonus_team = 0
         if driver and entr and driver == entr: bonus_team = 3
@@ -1112,40 +1130,40 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
             "profile": profile,
             "scores": {
                 "marche": round(proba_marche[i], 1),
-                "forme": round(s_forme, 1),
-                "carriere": round(s_carriere, 1),
-                "gains": round(s_gains, 1),
-                "driver": round(s_driver, 1),
-                "entraineur": round(s_entraineur, 1),
-                "distance": round(s_distance, 1),
-                "cheval_stats": round(s_cheval, 1),
-                "elo": round(s_elo, 1),
-                "age_sexe": round(s_age_sexe, 1),
-                "repos": round(s_repos, 1),
-                "elo_trend": round(s_elo_trend, 1),
-                "confrontation": round(s_confrontation, 1),
-                "pedigree": round(s_pedigree, 1),
-                "corde": round(s_corde, 1),
-                "equipment": round(s_equipment, 1),
-                "profile_match": round(s_profile_match, 1),
+                "forme": round(float(s_forme or 50), 1),
+                "carriere": round(float(s_carriere or 25), 1),
+                "gains": round(float(s_gains or 25), 1),
+                "driver": round(float(s_driver or 50), 1),
+                "entraineur": round(float(s_entraineur or 50), 1),
+                "distance": round(float(s_distance or 50), 1),
+                "cheval_stats": round(float(s_cheval or 50), 1),
+                "elo": round(float(s_elo or 50), 1),
+                "age_sexe": round(float(s_age_sexe or 50), 1),
+                "repos": round(float(s_repos or 50), 1),
+                "elo_trend": round(float(s_elo_trend or 50), 1),
+                "confrontation": round(float(s_confrontation or 50), 1),
+                "pedigree": round(float(s_pedigree or 50), 1),
+                "corde": round(float(s_corde or 50), 1),
+                "equipment": round(float(s_equipment or 50), 1),
+                "profile_match": round(float(s_profile_match or 50), 1),
                 # NEW v6 features
-                "driver_hippo": round(s_driver_hippo, 1),
-                "regularite": round(s_regularity, 1),
-                "equip_change": round(s_equip_change, 1),
-                "style_attaquant": round(s_style_attaquant, 1),
-                "style_finisseur": round(s_style_finisseur, 1),
-                "style_fragile": round(s_style_fragile, 1),
-                "gains_trend": round(s_gains_trend, 1),
-                "jours_derniere": round(s_jours_derniere, 1),
-                "nb_courses_mois": round(s_nb_courses_mois, 1),
-                "perf_terrain": round(s_perf_terrain, 1),
-                "corde_avantage": round(s_corde_avantage, 1),
-                "chimie_driver": round(s_chimie_driver, 1),
+                "driver_hippo": round(float(s_driver_hippo or 50), 1),
+                "regularite": round(float(s_regularity or 50), 1),
+                "equip_change": round(float(s_equip_change or 50), 1),
+                "style_attaquant": round(float(s_style_attaquant or 50), 1),
+                "style_finisseur": round(float(s_style_finisseur or 50), 1),
+                "style_fragile": round(float(s_style_fragile or 50), 1),
+                "gains_trend": round(float(s_gains_trend or 50), 1),
+                "jours_derniere": round(float(s_jours_derniere or 50), 1),
+                "nb_courses_mois": round(float(s_nb_courses_mois or 50), 1),
+                "perf_terrain": round(float(s_perf_terrain or 50), 1),
+                "corde_avantage": round(float(s_corde_avantage or 50), 1),
+                "chimie_driver": round(float(s_chimie_driver or 50), 1),
             },
             "top4": {
-                "rate": round(s_top4_rate, 1) if s_top4_rate is not None else None,
-                "regularity": round(s_regularity, 1),
-                "raw": round(s_top4_raw, 1),
+                "rate": round(float(s_top4_rate or 0), 1),
+                "regularity": round(float(s_regularity or 50), 1),
+                "raw": round(float(s_top4_raw or 20), 1),
             },
             "bonus": {"team": bonus_team, "deferre": bonus_deferre},
             "_perfs_detail": perfs_detail,  # pour calcul Top 4
@@ -1168,40 +1186,41 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     if not analyses:
         return []
 
-    # Score intrinsèque v6 (29 composantes) — SEUL utilisé pour le classement
+    # Score intrinsèque v6 (29 composantes) — None-safe
     scores_intr = []
     for a in analyses:
         s = a["scores"]
-        # --- Anciennes features (poids ajustés pour laisser place aux nouvelles) ---
+        # Helper: float-safe avec fallback 50
+        def _f(key, default=50.0):
+            return float(s.get(key) or default)
         s_val = (
-            0.12 * s["forme"] +              # était 0.15
-            0.06 * s["carriere"] +           # était 0.08
-            0.05 * s["gains"] +              # était 0.07
-            0.07 * s["driver"] +             # était 0.09
-            0.04 * s["entraineur"] +         # était 0.06
-            0.05 * s["distance"] +           # était 0.07
-            0.07 * s["cheval_stats"] +       # était 0.09
-            0.08 * s["elo"] +                # était 0.11
-            0.03 * s["age_sexe"] +           # était 0.04
-            0.03 * s["repos"] +              # était 0.04
-            0.04 * s["elo_trend"] +          # était 0.05
-            0.02 * s["confrontation"] +      # était 0.03
-            0.04 * s["pedigree"] +           # était 0.06
-            0.02 * s["corde"] +              # était 0.03
-            0.01 * s["equipment"] +          # était 0.02
-            0.01 * s["profile_match"] +      # était 0.01
-            # --- NEW v6 features ---
-            0.05 * s.get("driver_hippo", 50) +      # 🔴 Fort : taux driver/hippo
-            0.06 * s.get("regularite", 50) +        # 🔴 Fort : indice régularité
-            0.02 * s.get("equip_change", 50) +      # 🟡 Moyen : changement équipement
-            0.02 * s.get("style_attaquant", 50) +   # 🟡 Moyen : style meneur
-            0.02 * s.get("style_finisseur", 50) +   # 🟡 Moyen : style finisseur
-            0.02 * s.get("gains_trend", 50) +       # 🟡 Moyen : tendance gains
-            0.01 * s.get("jours_derniere", 50) +    # 🟢 Léger : fraîcheur
-            0.01 * s.get("nb_courses_mois", 50) +   # 🟢 Léger : fatigue
-            0.02 * s.get("perf_terrain", 50) +      # 🟡 Moyen : perf terrain
-            0.01 * s.get("corde_avantage", 50) +    # 🟢 Léger : avantage corde
-            0.02 * s.get("chimie_driver", 50) +     # 🟡 Moyen : chimie cheval/driver
+            0.12 * _f("forme") +
+            0.06 * _f("carriere", 25) +
+            0.05 * _f("gains", 25) +
+            0.07 * _f("driver") +
+            0.04 * _f("entraineur") +
+            0.05 * _f("distance") +
+            0.07 * _f("cheval_stats") +
+            0.08 * _f("elo") +
+            0.03 * _f("age_sexe") +
+            0.03 * _f("repos") +
+            0.04 * _f("elo_trend") +
+            0.02 * _f("confrontation") +
+            0.04 * _f("pedigree") +
+            0.02 * _f("corde") +
+            0.01 * _f("equipment") +
+            0.01 * _f("profile_match") +
+            0.05 * _f("driver_hippo") +
+            0.06 * _f("regularite") +
+            0.02 * _f("equip_change") +
+            0.02 * _f("style_attaquant") +
+            0.02 * _f("style_finisseur") +
+            0.02 * _f("gains_trend") +
+            0.01 * _f("jours_derniere") +
+            0.01 * _f("nb_courses_mois") +
+            0.02 * _f("perf_terrain") +
+            0.01 * _f("corde_avantage") +
+            0.02 * _f("chimie_driver") +
             a["bonus"]["team"] + a["bonus"]["deferre"]
         )
         scores_intr.append(max(s_val, 1))
