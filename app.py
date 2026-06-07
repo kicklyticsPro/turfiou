@@ -547,8 +547,9 @@ def featurize(p, nb_partants):
     forme = s.get("forme", 0)
     elo = s.get("elo", 50)
     driver = s.get("driver", 50)
-    marche = s.get("marche", 0)
-    
+    # marché neutralisé → on ne se fie plus aux cotes
+    marche = 50
+
     return [
         marche,
         forme,
@@ -576,7 +577,7 @@ def featurize(p, nb_partants):
         # NEW v5 interactions
         forme * elo / 100,  # forme × elo
         driver * s.get("entraineur", 50) / 100,  # team synergy
-        marche * s.get("cheval_stats", 50) / 100,  # marché vs stats
+        marche * s.get("cheval_stats", 50) / 100,  # marché vs stats (neutralisé)
         abs(forme - 50),  # écart à la moyenne (forme extrême)
     ]
 
@@ -857,9 +858,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     if not analyses:
         return []
 
-    proba_marche_list = [a["probaMarche"] for a in analyses]
-
-    # Score intrinsèque v4 (17 composantes)
+    # Score intrinsèque v4 (17 composantes) — SEUL utilisé pour le classement
     scores_intr = []
     for a in analyses:
         s = (0.15 * a["scores"]["forme"] +
@@ -874,21 +873,18 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
              0.04 * a["scores"]["repos"] +
              0.05 * a["scores"]["elo_trend"] +
              0.03 * a["scores"]["confrontation"] +
-             0.06 * a["scores"]["pedigree"] +       # NEW v4
-             0.03 * a["scores"]["corde"] +           # NEW v4
-             0.02 * a["scores"]["equipment"] +       # NEW v4
-             0.01 * a["scores"]["profile_match"] +   # NEW v4
+             0.06 * a["scores"]["pedigree"] +
+             0.03 * a["scores"]["corde"] +
+             0.02 * a["scores"]["equipment"] +
+             0.01 * a["scores"]["profile_match"] +
              a["bonus"]["team"] + a["bonus"]["deferre"])
         scores_intr.append(max(s, 1))
 
     total_intr = sum(scores_intr) or 1
     proba_intr = [s / total_intr * 100 for s in scores_intr]
 
-    # Heuristique : 50% marché (cotes) / 50% intrinsèque (stats)
-    chances_heur = [0.50 * proba_marche_list[i] + 0.50 * proba_intr[i]
-                    for i in range(len(analyses))]
-    total = sum(chances_heur) or 1
-    chances_heur = [c / total * 100 for c in chances_heur]
+    # Classement basé à 100% sur le score intrinsèque (SANS cotes du marché)
+    chances_heur = list(proba_intr)
 
     ml_model = load_ml_model() if use_ml else None
     calib = load_calibration() if use_ml else None
