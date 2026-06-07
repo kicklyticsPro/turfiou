@@ -2162,7 +2162,7 @@ import json as _json
 ML_AUTO_TRAIN_HOUR = 5
 ML_AUTO_TRAIN_MIN = 0
 ML_AUTO_PARAMS = {
-    "model_type": "ensemble",
+    "model_type": "advanced",
     "days_back": 30,
     "n_trees_gbm": 100,
     "n_trees_rf": 50,
