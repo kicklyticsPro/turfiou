@@ -722,19 +722,19 @@ def predict_ml(features, model, calibration=None):
 
 # ============================================================
 #  Score Top 4 — logique indépendante du gagnant
-#  Probabilité ABSOLUE (pas normalisée entre chevaux)
+#  Probabilité INDIVIDUELLE ABSOLUE (pas de normalisation)
 # ============================================================
 def compute_top4_rate(perfs_detail):
     """Taux historique de courses terminées dans les 4 premiers."""
     if not perfs_detail:
-        return None  # Pas de données
+        return None
     top4 = 0
     total = 0
-    for course in perfs_detail[:12]:  # 12 dernières courses
+    for course in perfs_detail[:12]:
         for p in course.get("participants", []):
             if p.get("itsHim"):
                 place = (p.get("place") or {}).get("place", 0) or 0
-                if place > 0:  # arrivée connue
+                if place > 0:
                     total += 1
                     if place <= 4:
                         top4 += 1
@@ -743,45 +743,10 @@ def compute_top4_rate(perfs_detail):
     return (top4 / total) * 100
 
 
-def compute_recent_form_top4(perfs_detail, today=None):
-    """Taux top4 sur les 6 dernières courses (pondéré par récence).
-    Donne plus de poids aux courses très récentes."""
+def compute_avg_place(perfs_detail):
+    """Place moyenne sur les 10 dernières courses (arrivée connue)."""
     if not perfs_detail:
         return None
-    if today is None:
-        today = datetime.now()
-    entries = []
-    for course in perfs_detail[:6]:
-        try:
-            date_ms = course.get("date")
-            if not date_ms:
-                continue
-            d = datetime.fromtimestamp(date_ms / 1000)
-            days_ago = max(1, (today - d).days)
-            for p in course.get("participants", []):
-                if p.get("itsHim"):
-                    place = (p.get("place") or {}).get("place", 0) or 0
-                    if place > 0:
-                        w = math.exp(-days_ago / 30)  # décroissance plus lente
-                        entries.append((place <= 4, w))
-                    break
-        except Exception:
-            continue
-    if not entries:
-        return None
-    top4_w = sum(1 for ok, w in entries if ok)
-    total_w = len(entries)
-    if total_w == 0:
-        return None
-    return (top4_w / total_w) * 100
-
-
-def compute_regularity(perfs_detail):
-    """Score de régularité : inverse de la variance des places récentes.
-    Un cheval régulier (toujours entre 2e et 5e) = score haut.
-    Un cheval volatile (1er puis 12e puis 3e) = score bas."""
-    if not perfs_detail:
-        return 50.0
     places = []
     for course in perfs_detail[:10]:
         for p in course.get("participants", []):
@@ -789,21 +754,116 @@ def compute_regularity(perfs_detail):
                 place = (p.get("place") or {}).get("place", 0) or 0
                 if place > 0:
                     places.append(place)
-    if len(places) < 3:
-        return 50.0
-    mean_p = sum(places) / len(places)
-    variance = sum((p - mean_p) ** 2 for p in places) / len(places)
-    return max(0, min(100, 100 - variance * 2.5))
-
-
-def compute_consistency_score(places_list):
-    """% de courses où le cheval a été dans le top 4 parmi celles avec arrivée connue.
-    Différent de top4_rate car on regarde TOUTES les courses récentes, pas juste 12."""
-    if not places_list:
+                break
+    if not places:
         return None
-    total = len(places_list)
-    top4 = sum(1 for p in places_list if 0 < p <= 4)
-    return (top4 / total) * 100
+    return sum(places) / len(places)
+
+
+def compute_consistency(perfs_detail):
+    """Score de régularité : % de courses finies dans les 5 premiers."""
+    if not perfs_detail:
+        return 50.0
+    top5 = 0
+    total = 0
+    for course in perfs_detail[:10]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    total += 1
+                    if place <= 5:
+                        top5 += 1
+                break
+    if total == 0:
+        return 50.0
+    return (top5 / total) * 100
+
+
+def compute_placement_probability(a, nb_partants):
+    """
+    Probabilité ABSOLUE d'être dans les 4 premiers.
+    Pas de normalisation entre chevaux.
+    
+    Logique simple et directe :
+    1. Base = taux top4 historique réel (déjà une probabilité !)
+    2. Petits ajustements pour les conditions du jour (±5-10%)
+    3. Pénalité forte si manque de données
+    """
+    top4_rate = a.get("top4", {}).get("rate")  # % réel de top4 historique
+    nb_courses = a.get("nbCourses", 0) or 0
+    proba = None
+    
+    # === ÉTAPE 1 : Base = taux historique réel ===
+    if top4_rate is not None and nb_courses >= 8:
+        # Assez de données → on se fie au taux réel
+        proba = top4_rate
+    elif top4_rate is not None and nb_courses >= 3:
+        # Quelques données → confiance modérée, on tire vers la moyenne théorique
+        theorique = (4 / max(nb_partants, 8)) * 100
+        confiance = nb_courses / 8  # 0.375 à 1.0
+        proba = top4_rate * confiance + theorique * (1 - confiance)
+    else:
+        # Pas ou peu de données → moyenne théorique avec forte incertitude
+        proba = (4 / max(nb_partants, 8)) * 100
+        # Pénalité inconnu
+        if nb_courses == 0:
+            proba -= 10  # inconnu = risqué
+    
+    # === ÉTAPE 2 : Ajustement par place moyenne ===
+    # Un cheval qui moyenne 2e a +8%, un qui moyenne 9e a -12%
+    perfs = a.get("_perfs_detail", [])
+    avg_place = compute_avg_place(perfs)
+    if avg_place is not None:
+        if avg_place <= 2.5:
+            proba += 8
+        elif avg_place <= 3.5:
+            proba += 5
+        elif avg_place <= 4.5:
+            proba += 2
+        elif avg_place <= 6.0:
+            proba -= 3
+        elif avg_place <= 8.0:
+            proba -= 8
+        else:
+            proba -= 15
+    
+    # === ÉTAPE 3 : Ajustement par régularité ===
+    # Un cheval constant (toujours entre 3e et 5e) est +fiable pour un top4
+    regularity = a.get("top4", {}).get("regularity", 50)
+    if regularity >= 75:
+        proba += 4  # très régulier
+    elif regularity >= 60:
+        proba += 2  # assez régulier
+    elif regularity <= 25:
+        proba -= 5  # très irrégulier
+    
+    # === ÉTAPE 4 : Ajustement par repos ===
+    repos_score = a["scores"]["repos"]
+    if repos_score >= 80:
+        proba += 3  # frais et disposé
+    elif repos_score <= 25:
+        proba -= 5  # pas frais ou trop reposé
+    elif repos_score <= 40:
+        proba -= 2  # un peu juste
+    
+    # === ÉTAPE 5 : Ajustement par driver ===
+    driver_score = a["scores"]["driver"]
+    if driver_score >= 75:
+        proba += 2  # top driver
+    elif driver_score <= 30:
+        proba -= 3  # driver faible
+    
+    # === ÉTAPE 6 : Expérience ===
+    if nb_courses == 0:
+        proba -= 5  # inconnu = risque
+    elif nb_courses >= 40:
+        proba += 3  # vétéran fiable
+    
+    # Bornes réalistes
+    proba = max(2, min(80, proba))
+    
+    return round(proba, 1)
 
 
 # ============================================================
@@ -899,7 +959,8 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
         if p.get("driverChange"): bonus_team -= 5
         bonus_deferre = 2 if "DEFERRE" in (p.get("deferre", "") or "") else 0
 
-        analyses.append({
+        # Stocker perfs_detail pour le calcul Top 4 (logique indépendante)
+        a_entry = {
             "numPmu": p.get("numPmu"),
             "nom": cheval, "age": p.get("age"), "sexe": p.get("sexe"),
             "driver": driver or "—", "entraineur": entr or "—",
@@ -928,18 +989,20 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
                 "repos": round(s_repos, 1),
                 "elo_trend": round(s_elo_trend, 1),
                 "confrontation": round(s_confrontation, 1),
-                "pedigree": round(s_pedigree, 1),         # NEW v4
-                "corde": round(s_corde, 1),                # NEW v4
-                "equipment": round(s_equipment, 1),        # NEW v4
-                "profile_match": round(s_profile_match, 1),  # NEW v4
+                "pedigree": round(s_pedigree, 1),
+                "corde": round(s_corde, 1),
+                "equipment": round(s_equipment, 1),
+                "profile_match": round(s_profile_match, 1),
             },
             "top4": {
-                "rate": round(s_top4_rate, 1),
+                "rate": round(s_top4_rate, 1) if s_top4_rate is not None else None,
                 "regularity": round(s_regularity, 1),
                 "raw": round(s_top4_raw, 1),
             },
             "bonus": {"team": bonus_team, "deferre": bonus_deferre},
-        })
+            "_perfs_detail": perfs_detail,  # pour calcul Top 4
+        }
+        analyses.append(a_entry)
 
     return analyses
 
@@ -985,56 +1048,11 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     chances_heur = list(proba_intr)
 
     # === PROBABILITÉ TOP 4 (logique INDEPENDANTE du gagnant) ===
-    # Pour le top 4, on ne cherche pas le potentiel brut mais la FIABILITÉ
-    # Probabilité ABSOLUE (pas normalisée) : chaque cheval a son % propre
-    # basé sur son historique réel de placement dans les 4 premiers.
-    #
-    # Composantes top 4 (poids différents du gagnant) :
-    #   35% taux historique top4        → % réel de courses dans les 4 premiers
-    #   25% régularité                   → variance faible des places récentes
-    #   20% forme récente                → performances des 6 dernières courses
-    #   10% driver placement rate        → driver qui place souvent
-    #   05% repos                        → cheval frais = plus fiable
-    #   05% equipment                    → déferré = intention de performer
+    # Chaque cheval a sa proba ABSOLUE (pas de normalisation entre chevaux)
+    # Critères spécifiques au placement : fiabilité, régularité, expérience
+    nb_partants = len(analyses)
     for a in analyses:
-        top4_data = a.get("top4", {})
-        top4_rate = top4_data.get("rate")  # None si pas de données
-        top4_raw = top4_data.get("raw", 50)
-        regularity = top4_data.get("regularity", 50)
-
-        # Point de départ : le taux historique réel (le plus fort signal)
-        if top4_rate is not None and top4_rate > 0:
-            base = top4_rate  # ex: 58% = le cheval a fait 58% de top4
-        else:
-            # Pas de données → baseline neutre (25% = 4/16 chevaux en moyenne)
-            base = 25.0
-
-        # Ajustement par régularité : un cheval constant = plus fiable pour top4
-        # régularité=80 → +10%, régularité=30 → -10%
-        reg_adjust = (regularity - 50) * 0.20
-
-        # Ajustement par forme récente : cheval en forme = bonus
-        forme = a["scores"]["forme"]
-        forme_adjust = (forme - 50) * 0.15
-
-        # Ajustement driver : un bon driver aide à placer
-        driver = a["scores"]["driver"]
-        driver_adjust = (driver - 50) * 0.08
-
-        # Ajustement repos
-        repos = a["scores"]["repos"]
-        repos_adjust = (repos - 50) * 0.05
-
-        # Ajustement equipment
-        equip = a["scores"]["equipment"]
-        equip_adjust = (equip - 50) * 0.03
-
-        proba = base + reg_adjust + forme_adjust + driver_adjust + repos_adjust + equip_adjust
-
-        # Borne entre 2% et 95% (pas de 0% ni de 100% réaliste)
-        proba = max(2, min(95, proba))
-
-        a["chanceTop4"] = round(proba, 1)
+        a["chanceTop4"] = compute_placement_probability(a, nb_partants)
 
     ml_model = load_ml_model() if use_ml else None
     calib = load_calibration() if use_ml else None
