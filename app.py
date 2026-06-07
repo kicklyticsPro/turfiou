@@ -760,24 +760,22 @@ def compute_avg_place(perfs_detail):
     return sum(places) / len(places)
 
 
-def compute_consistency(perfs_detail):
-    """Score de régularité : % de courses finies dans les 5 premiers."""
+def compute_regularity(perfs_detail):
+    """Score de régularité : inverse de la variance des places récentes."""
     if not perfs_detail:
         return 50.0
-    top5 = 0
-    total = 0
+    places = []
     for course in perfs_detail[:10]:
         for p in course.get("participants", []):
             if p.get("itsHim"):
                 place = (p.get("place") or {}).get("place", 0) or 0
                 if place > 0:
-                    total += 1
-                    if place <= 5:
-                        top5 += 1
-                break
-    if total == 0:
+                    places.append(place)
+    if len(places) < 3:
         return 50.0
-    return (top5 / total) * 100
+    mean_p = sum(places) / len(places)
+    variance = sum((p - mean_p) ** 2 for p in places) / len(places)
+    return max(0, min(100, 100 - variance * 2.5))
 
 
 def compute_placement_probability(a, nb_partants):
