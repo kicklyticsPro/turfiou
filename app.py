@@ -721,6 +721,51 @@ def predict_ml(features, model, calibration=None):
 
 
 # ============================================================
+#  Score Top 4 — logique indépendante du gagnant
+#  On privilégie la régularité, la constance, la fiabilité
+# ============================================================
+def compute_top4_rate(perfs_detail):
+    """Taux historique de courses terminées dans les 4 premiers."""
+    if not perfs_detail:
+        return 50.0
+    top4 = 0
+    total = 0
+    for course in perfs_detail[:12]:  # 12 dernières courses
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:  # arrivée connue
+                    total += 1
+                    if place <= 4:
+                        top4 += 1
+    if total == 0:
+        return 50.0
+    return (top4 / total) * 100
+
+
+def compute_regularity(perfs_detail):
+    """Score de régularité : inverse de la variance des places récentes.
+    Un cheval régulier (toujours entre 2e et 5e) score haut.
+    Un cheval volatil (1er puis 12e puis 3e) score bas."""
+    if not perfs_detail:
+        return 50.0
+    places = []
+    for course in perfs_detail[:10]:  # 10 dernières courses
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    places.append(place)
+    if len(places) < 3:
+        return 50.0
+    mean_p = sum(places) / len(places)
+    variance = sum((p - mean_p) ** 2 for p in places) / len(places)
+    # Variance 0 = parfait → 100, variance élevée → 0
+    score = max(0, 100 - variance * 2.5)
+    return score
+
+
+# ============================================================
 #  ALGORITHME HYBRIDE v4
 # ============================================================
 def analyser_course_features(participants_data, perfs_data, distance, discipline,
@@ -801,6 +846,13 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
         profile = detect_profile(perfs_detail)
         s_profile_match = get_profile_match_score(profile, distance, nb_partants)
 
+        # === SCORE TOP 4 (logique indépendante du gagnant) ===
+        s_top4_rate = compute_top4_rate(perfs_detail)
+        s_regularity = compute_regularity(perfs_detail)
+        # Un cheval qui finit souvent placé + régulier = bon top 4
+        # On pondère : taux top4 (60%) + régularité (40%)
+        s_top4_raw = 0.60 * s_top4_rate + 0.40 * s_regularity
+
         bonus_team = 0
         if driver and entr and driver == entr: bonus_team = 3
         if p.get("driverChange"): bonus_team -= 5
@@ -839,6 +891,11 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
                 "corde": round(s_corde, 1),                # NEW v4
                 "equipment": round(s_equipment, 1),        # NEW v4
                 "profile_match": round(s_profile_match, 1),  # NEW v4
+            },
+            "top4": {
+                "rate": round(s_top4_rate, 1),
+                "regularity": round(s_regularity, 1),
+                "raw": round(s_top4_raw, 1),
             },
             "bonus": {"team": bonus_team, "deferre": bonus_deferre},
         })
@@ -886,6 +943,36 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     # Classement basé à 100% sur le score intrinsèque (SANS cotes du marché)
     chances_heur = list(proba_intr)
 
+    # === PROBABILITÉ TOP 4 (logique INDEPENDANTE du gagnant) ===
+    # Pour le top 4, on ne cherche pas le potentiel brut mais la FIABILITÉ
+    # Un cheval régulier qui finit souvent 2e-5e vaut mieux qu'un cheval
+    # explosif mais inconstant pour le top 4.
+    #
+    # Composantes top 4 (poids différents du gagnant) :
+    #   30% taux historique top4      → est-ce qu'il finit souvent dans les 4 ?
+    #   25% régularité                → variance faible des places récentes
+    #   15% forme pondérée            → performances récentes stables
+    #   10% driver placement rate     → driver qui place souvent, pas juste gagne
+    #   08% cheval_stats placement    → cheval qui place souvent
+    #   05% repos                     → cheval frais = plus fiable
+    #   04% equipment                 → déferré = intention de performer
+    #   03% distance                  → à l'aise sur la distance
+    scores_top4 = []
+    for a in analyses:
+        top4_data = a.get("top4", {})
+        s = (0.30 * top4_data.get("raw", 50) +
+             0.25 * top4_data.get("regularity", 50) +
+             0.15 * a["scores"]["forme"] +
+             0.10 * a["scores"]["driver"] +
+             0.08 * a["scores"]["cheval_stats"] +
+             0.05 * a["scores"]["repos"] +
+             0.04 * a["scores"]["equipment"] +
+             0.03 * a["scores"]["distance"])
+        scores_top4.append(max(s, 1))
+
+    total_top4 = sum(scores_top4) or 1
+    proba_top4 = [s / total_top4 * 100 for s in scores_top4]
+
     ml_model = load_ml_model() if use_ml else None
     calib = load_calibration() if use_ml else None
     chances_ml = None
@@ -897,13 +984,14 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
 
     for i, a in enumerate(analyses):
         if chances_ml:
-            # Avec ML : 20% heuristique (dont 50% cotes) + 80% ML
-            # → poids effectif des cotes ≈ 20% × 50% = ~10%
+            # Avec ML : 20% heuristique + 80% ML
             a["chance"] = round(0.2 * chances_heur[i] + 0.8 * chances_ml[i], 2)
             a["chanceML"] = round(chances_ml[i], 2)
         else:
             a["chance"] = round(chances_heur[i], 2)
         a["chanceHeur"] = round(chances_heur[i], 2)
+        # Probabilité Top 4 (calcul indépendant du gagnant)
+        a["chanceTop4"] = round(proba_top4[i], 2)
 
         if a["cote"] and a["probaMarche"] > 0:
             edge = a["chance"] - a["probaMarche"]
