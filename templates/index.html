@@ -204,6 +204,30 @@
   }
   .btn-bet:hover { background: #7c3aed; }
 
+  .top4-block {
+    margin-top: 8px; padding: 6px 10px;
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.25);
+    border-radius: 6px; text-align: center;
+  }
+  .top4-pct {
+    font-size: 22px; font-weight: 800;
+    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .top4-label {
+    font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;
+    margin-top: 2px;
+  }
+  .top4-bar {
+    height: 4px; background: #0f172a; border-radius: 3px;
+    margin-top: 5px; overflow: hidden;
+  }
+  .top4-bar div {
+    height: 100%; background: linear-gradient(90deg, #06b6d4, #8b5cf6);
+    border-radius: 3px; transition: width .5s ease;
+  }
   .scores-detail {
     display: grid; grid-template-columns: repeat(17, 1fr); gap: 2px;
     margin-top: 10px; padding-top: 10px; border-top: 1px solid #334155;
@@ -500,6 +524,12 @@ function renderCourse(data) {
           ${a.cote ? `<div class="cote-tag">Cote ${a.cote}</div>` : ''}
           ${a.edge !== 0 ? `<div class="edge-tag ${a.edge<0?'negative':''}">Edge ${a.edge>0?'+':''}${a.edge}%</div>` : ''}
           ${kellyBlock}
+          ${a.chanceTop4 ? `
+          <div class="top4-block">
+            <div class="top4-pct">${a.chanceTop4}%</div>
+            <div class="top4-label">Chance Top 4</div>
+            <div class="top4-bar"><div style="width:${Math.min(a.chanceTop4*1.25, 100)}%"></div></div>
+          </div>` : ''}
         </div>
         <div class="scores-detail">
           <div class="score-item"><div class="lbl">Marché</div><div class="val">${a.scores.marche}</div></div>
@@ -579,5 +609,5 @@ async function confirmBet() {
 document.getElementById('datePicker').value = todayStr();
 loadReunions();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
