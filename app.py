@@ -1,31 +1,23 @@
 """
 Turf Analyzer v6 - Analyse hippique PMU professionnelle
 
-v6 nouveautés (par rapport à v5) :
-  12 nouvelles features ML (27 → 41 features) :
-    - Taux driver/hippodrome spécifique          🔴 Fort
-    - Indice de régularité (variance places)      🔴 Fort
-    - Changement d'équipement détecté             🟡 Moyen
-    - Style de course (attaquant/finisseur)       🟡 Moyen
-    - Tendance des gains sur 5 courses            🟡 Moyen
-    - Jours depuis dernière course (raw)          🟢 Léger
-    - Nombre de courses ce mois                   🟢 Léger
-    - Performance terrain historique              🟡 Moyen
-    - Avantage corde historique                   🟢 Léger
-    - Chimie cheval/driver actuel                 🟡 Moyen
+v6 nouveautés :
+  Features (27 → 41) :
+    - Taux driver/hippodrome, régularité, équipement, style, tendance gains...
     + 2 interactions : régularité×forme, driver_hippo×terrain
 
-v5 nouveautés :
-  9.  Ensemble Stacking (LGBM+CatBoost+HGB+RF+LR)
-  10. Calibration auto Platt/Isotone
+  Modèle DUAL Win + Top 4 :
+    - Modèle WIN  : y=1 si gagnant    (~8% positifs, classement)
+    - Modèle TOP4 : y=1 si ≤4e place  (~40% positifs, placement)
+    - Mêmes 41 features, labels différents
+    - Top 4 = beaucoup plus stable et calibré (4× plus de signal)
+    - Backtest enrichi : accuracy Top 4 par bucket de confiance
 
-v4 nouveautés :
-  9.  Ensemble GBM + Random Forest
-  10. Features pedigree (père/mère) + corde + équipements
-  11. Détection de profils (attaquant/finisseur/fragile) via commentaires
-  12. Kelly Criterion pour le sizing optimal des paris
-  13. Refresh auto des cotes live
-  14. Tracking des paris réels (ROI réel)
+v5 :
+  Ensemble Stacking (LGBM+CatBoost+HGB+RF+LR), Calibration Platt/Isotone
+
+v4 :
+  Ensemble GBM+RF, Pedigree, Corde, Équipements, Profils, Kelly, Live
 """
 
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
@@ -90,6 +82,9 @@ HORSE_RACES_FILE = os.path.join(CACHE_DIR, "horse_races_v4.pkl")
 PEDIGREE_FILE = os.path.join(CACHE_DIR, "pedigree_v4.pkl")           # NEW v4
 ML_MODEL_FILE = os.path.join(CACHE_DIR, "ml_ensemble_v4.pkl")        # NEW v4 : ensemble
 ML_MODEL_FILE_V5 = os.path.join(CACHE_DIR, "ml_advanced_v5.pkl")     # NEW v5
+# NEW v6 — Modèle Top 4 (placement binaire)
+ML_MODEL_TOP4_FILE = os.path.join(CACHE_DIR, "ml_top4_ensemble_v6.pkl")
+ML_MODEL_TOP4_V5_FILE = os.path.join(CACHE_DIR, "ml_top4_advanced_v6.pkl")
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
@@ -647,6 +642,20 @@ def save_ml_model(model):
     save_pickle(ML_MODEL_FILE, model.to_dict())
 
 
+def load_ml_model_top4():
+    """Charge le modèle Top 4 (placement binaire)."""
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_TOP4_V5_FILE)
+        if adv:
+            return adv
+    payload = load_pickle(ML_MODEL_TOP4_FILE, max_age_hours=24*14)
+    return load_model_from_dict(payload) if payload else None
+
+
+def save_ml_model_top4(model):
+    save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
+
+
 def load_calibration():
     return load_pickle(CALIBRATION_FILE, max_age_hours=24*7)
 
@@ -667,13 +676,14 @@ def _fetch_full(args):
 
 def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30,
                    model_type="ensemble"):
-    """Entraîne GBM + RF (ensemble) avec calibration."""
+    """Entraîne 2 modèles : WIN (y=1 si gagnant) + TOP4 (y=1 si ≤4e).
+    Les deux partagent les mêmes features X mais ont des labels différents."""
     try:
         import numpy as np
     except ImportError:
         return None
 
-    X, y = [], []
+    X, y_win, y_top4 = [], [], []
     today = datetime.now()
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
         max_days=max(HISTORY_DAYS, days_back + exclude_recent))
@@ -711,50 +721,94 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             X.append(featurize(a, nb))
             real = next((p for p in parts["participants"]
                         if p.get("numPmu") == a["numPmu"]), None)
-            y.append(1 if real and real.get("ordreArrivee") == 1 else 0)
+            place = (real.get("ordreArrivee") or 0) if real else 0
+            # === DUAL LABELS ===
+            y_win.append(1 if place == 1 else 0)
+            y_top4.append(1 if 1 <= place <= 4 else 0)
 
     if len(X) < 100:
         return None
 
-    print(f"[ML v4] {len(X)} échantillons, {sum(y)} victoires ({sum(y)/len(X)*100:.1f}%)")
+    n_top4 = sum(y_top4)
+    n_win = sum(y_win)
+    print(f"[ML v6] {len(X)} échantillons")
+    print(f"  WIN  : {n_win} victoires ({n_win/len(X)*100:.1f}%)")
+    print(f"  TOP4 : {n_top4} placés ({n_top4/len(X)*100:.1f}%)")
 
-    # NEW v5 : modèle avancé
+    info = {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
+            "model_type": model_type, "win_positives": n_win, "top4_positives": n_top4}
+
+    # ===========================================================
+    #  TRAINING — modèle avancé (Stacking sklearn)
+    # ===========================================================
     if model_type == "advanced" and HAS_ADVANCED:
-        print("[ML v5] Entraînement stacking avancé (LGBM+CatBoost+HGB+RF+LR)...")
-        train_advanced(X, y, ML_MODEL_FILE_V5)
-        return {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
-                "model_type": "advanced_v5",
-                "models": "LGBM,CatBoost,HistGB,RF,LR",
-                "calibration": "TimeSeriesSplit + Platt/Isotone"}
+        # --- Modèle WIN ---
+        print("[ML v6] 🔵 Entraînement WIN (stacking avancé)...")
+        train_advanced(X, y_win, ML_MODEL_FILE_V5)
 
-    gbm = None
-    rf = None
+        # --- Modèle TOP4 ---
+        print("[ML v6] 🟢 Entraînement TOP4 (stacking avancé)...")
+        train_advanced(X, y_top4, ML_MODEL_TOP4_V5_FILE)
+
+        info["win_model"] = "LGBM+CatBoost+HGB+RF+LR (TimeSeriesSplit)"
+        info["top4_model"] = "LGBM+CatBoost+HGB+RF+LR (TimeSeriesSplit)"
+        info["models_trained"] = ["win", "top4"]
+        return info
+
+    # ===========================================================
+    #  TRAINING — modèle ensemble (NumPy pur)
+    # ===========================================================
+    # --- Modèle WIN ---
+    gbm_win = None
+    rf_win = None
     if model_type in ("ensemble", "gbm"):
-        print(f"[ML v4] Entraînement GBM ({n_trees_gbm} arbres)...")
-        gbm = GradientBoosting(n_trees=n_trees_gbm, max_depth=3, learning_rate=0.1)
-        gbm.fit(X, y)
+        print(f"[ML v6] 🔵 Entraînement WIN GBM ({n_trees_gbm} arbres)...")
+        gbm_win = GradientBoosting(n_trees=n_trees_gbm, max_depth=3, learning_rate=0.1)
+        gbm_win.fit(X, y_win)
     if model_type in ("ensemble", "rf"):
-        print(f"[ML v4] Entraînement Random Forest ({n_trees_rf} arbres)...")
-        rf = RandomForest(n_trees=n_trees_rf, max_depth=8, min_samples=15)
-        rf.fit(X, y)
+        print(f"[ML v6] 🔵 Entraînement WIN RF ({n_trees_rf} arbres)...")
+        rf_win = RandomForest(n_trees=n_trees_rf, max_depth=8, min_samples=15)
+        rf_win.fit(X, y_win)
 
     if model_type == "ensemble":
-        model = Ensemble(gbm=gbm, rf=rf, w_gbm=0.6, w_rf=0.4)
+        model_win = Ensemble(gbm=gbm_win, rf=rf_win, w_gbm=0.6, w_rf=0.4)
     elif model_type == "gbm":
-        model = gbm
+        model_win = gbm_win
     else:
-        model = rf
+        model_win = rf_win
 
-    print("[ML v4] Calibration isotone...")
-    preds = [model.predict_one(x) for x in X]
-    calib = fit_isotonic(preds, y, n_bins=20)
+    print("[ML v6] 🔵 Calibration WIN isotone...")
+    preds_win = [model_win.predict_one(x) for x in X]
+    calib = fit_isotonic(preds_win, y_win, n_bins=20)
     save_calibration(calib)
-    save_ml_model(model)
+    save_ml_model(model_win)
+    info["n_trees_gbm"] = n_trees_gbm if gbm_win else 0
+    info["n_trees_rf"] = n_trees_rf if rf_win else 0
 
-    return {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
-            "model_type": model_type,
-            "n_trees_gbm": n_trees_gbm if gbm else 0,
-            "n_trees_rf": n_trees_rf if rf else 0}
+    # --- Modèle TOP4 ---
+    gbm_t4 = None
+    rf_t4 = None
+    if model_type in ("ensemble", "gbm"):
+        print(f"[ML v6] 🟢 Entraînement TOP4 GBM ({n_trees_gbm} arbres)...")
+        gbm_t4 = GradientBoosting(n_trees=n_trees_gbm, max_depth=3, learning_rate=0.1)
+        gbm_t4.fit(X, y_top4)
+    if model_type in ("ensemble", "rf"):
+        print(f"[ML v6] 🟢 Entraînement TOP4 RF ({n_trees_rf} arbres)...")
+        rf_t4 = RandomForest(n_trees=n_trees_rf, max_depth=8, min_samples=15)
+        rf_t4.fit(X, y_top4)
+
+    if model_type == "ensemble":
+        model_t4 = Ensemble(gbm=gbm_t4, rf=rf_t4, w_gbm=0.6, w_rf=0.4)
+    elif model_type == "gbm":
+        model_t4 = gbm_t4
+    else:
+        model_t4 = rf_t4
+
+    print("[ML v6] 🟢 Sauvegarde modèle TOP4...")
+    save_ml_model_top4(model_t4)
+    info["models_trained"] = ["win", "top4"]
+
+    return info
 
 
 def predict_ml(features, model, calibration=None):
@@ -1174,6 +1228,13 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         total_ml = sum(raw_ml) or 1
         chances_ml = [x / total_ml * 100 for x in raw_ml]
 
+    # NEW v6 — Top 4 ML model (modèle binaire placement)
+    ml_top4_model = load_ml_model_top4() if use_ml else None
+    raw_top4_ml = None
+    if ml_top4_model:
+        nb = len(analyses)
+        raw_top4_ml = [predict_ml(featurize(a, nb), ml_top4_model) for a in analyses]
+
     for i, a in enumerate(analyses):
         if chances_ml:
             # Avec ML : 20% heuristique + 80% ML
@@ -1182,6 +1243,15 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         else:
             a["chance"] = round(chances_heur[i], 2)
         a["chanceHeur"] = round(chances_heur[i], 2)
+
+        # NEW v6 — Top 4 : ML remplace heuristique si disponible
+        if raw_top4_ml:
+            ml_top4_prob = raw_top4_ml[i] * 100
+            # Sauvegarder l'heuristique avant blend
+            a["chanceTop4Heur"] = round(a["chanceTop4"], 2)
+            a["chanceTop4ML"] = round(ml_top4_prob, 2)
+            # Blend : 20% heuristique + 80% ML Top4
+            a["chanceTop4"] = round(0.2 * a["chanceTop4Heur"] + 0.8 * ml_top4_prob, 2)
 
         if a["cote"] and a["probaMarche"] > 0:
             edge = a["chance"] - a["probaMarche"]
@@ -1226,6 +1296,10 @@ def backtest(days_back=7, use_ml=False):
         "value_bets": [], "mise_totale": 0.0, "gain_total": 0.0,
         # NEW v4 : Kelly tracking
         "kelly_mise_totale": 0.0, "kelly_gain_total": 0.0,
+        # NEW v6 : Top 4 tracking
+        "top4_ml_hit": 0, "top4_ml_total": 0,
+        "top1_top4_hit": 0,  # le #1 algo est-il dans le top 4 ?
+        "top4_by_confidence": {"high": {"hit": 0, "total": 0}, "medium": {"hit": 0, "total": 0}, "low": {"hit": 0, "total": 0}},
     }
 
     tasks = []
@@ -1276,6 +1350,31 @@ def backtest(days_back=7, use_ml=False):
         if top1["ordreArrivee"] == 1 and top1["cote"]:
             results["gain_total"] += top1["cote"]
 
+        # NEW v6 — Top 4 tracking
+        top1_place = top1.get("ordreArrivee", 0) or 0
+        if 1 <= top1_place <= 4:
+            results["top1_top4_hit"] += 1
+
+        # Top 4 ML confidence tracking : chevaux avec chanceTop4ML > 60%
+        for a in analyses:
+            ml_top4_prob = a.get("chanceTop4ML", 0)
+            actual_place = a.get("ordreArrivee", 0) or 0
+            if ml_top4_prob > 0:
+                actual_top4 = 1 <= actual_place <= 4
+                results["top4_ml_total"] += 1
+                if actual_top4:
+                    results["top4_ml_hit"] += 1
+                # Par niveau de confiance
+                if ml_top4_prob >= 0.60:
+                    bucket = "high"
+                elif ml_top4_prob >= 0.35:
+                    bucket = "medium"
+                else:
+                    bucket = "low"
+                results["top4_by_confidence"][bucket]["total"] += 1
+                if actual_top4:
+                    results["top4_by_confidence"][bucket]["hit"] += 1
+
         for a in analyses:
             if a.get("valueBet"):
                 results["value_bets"].append({
@@ -1316,6 +1415,21 @@ def backtest(days_back=7, use_ml=False):
         results["vb_roi"] = round((gains_vb - len(vb)) / len(vb) * 100, 2)
     else:
         results["vb_nb"] = 0; results["vb_winrate"] = 0; results["vb_roi"] = 0
+
+    # NEW v6 — Top 4 ML stats
+    n_top4 = results["top4_ml_total"]
+    if n_top4 > 0:
+        results["top4_ml_accuracy"] = round(results["top4_ml_hit"] / n_top4 * 100, 2)
+        results["top4_ml_brier"] = "N/A"  # TODO: compute Brier score
+    else:
+        results["top4_ml_accuracy"] = None
+    n = results["total_courses"] or 1
+    results["top1_top4_rate"] = round(results["top1_top4_hit"] / n * 100, 2)
+
+    # Par bucket de confiance
+    for bucket in ["high", "medium", "low"]:
+        b = results["top4_by_confidence"][bucket]
+        b["accuracy"] = round(b["hit"] / b["total"] * 100, 2) if b["total"] > 0 else None
 
     results["value_bets"] = results["value_bets"][-30:]
     return results
@@ -1895,6 +2009,7 @@ def api_course(r_num, c_num):
         "date": date_str, "reunion": reunion_info, "course": course_info,
         "analyses": analyses,
         "ml_active": use_ml and load_ml_model() is not None,
+        "ml_top4_active": use_ml and load_ml_model_top4() is not None,
         "live": live,
         "timestamp": datetime.now().isoformat(),
     })
@@ -2124,11 +2239,18 @@ def api_ml_status():
     if status is None:
         # Vérifier si un modèle existe déjà (entraîné manuellement)
         ml = load_ml_model()
+        ml_top4 = load_ml_model_top4()
         if ml:
             return jsonify({"status": "ok", "source": "manual",
-                            "message": "Modèle chargé (entraînement manuel)"})
+                            "models": {"win": True, "top4": ml_top4 is not None},
+                            "message": "Modèle(s) chargé(s)"})
         return jsonify({"status": "none", "source": "none",
                         "message": "Aucun modèle entraîné"})
+    # Enrichir le status avec la présence des modèles
+    status["models_loaded"] = {
+        "win": load_ml_model() is not None,
+        "top4": load_ml_model_top4() is not None,
+    }
     return jsonify(status)
 
 

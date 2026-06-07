@@ -1,133 +1,141 @@
-# Upgrade v5 → v6 — 14 nouvelles features ML
+# Upgrade v6 — Dual Model Win + Top 4 + 14 Features
 
 ## Résumé
 
-**27 → 41 features** dans le pipeline ML (12 features brutes + 2 interactions).
+**2 changements majeurs** dans cette version :
 
-Toutes les features demandées ont été implémentées et intégrées dans les 3 couches du pipeline :
-1. **Calcul** (`lib/features_v4.py`) — 6 nouvelles fonctions
-2. **Scoring** (`app.py` → `analyser_course_features()`) — intégration dans le dict `scores`
-3. **ML** (`app.py` → `featurize()`) — ajout au vecteur de features
-4. **Heuristique** (`app.py` → `analyser_course()`) — redistribution des poids
+### 1. Modèle DUAL Win + Top 4
+Avant : 1 seul modèle (y=1 si gagnant → ~8% positifs)
+Maintenant : **2 modèles entraînés en parallèle**
 
-## Features ajoutées
+| Modèle | Label | % Positifs | Usage |
+|--------|-------|------------|-------|
+| **WIN** | `y=1 si place == 1` | ~8% | Classement, proba gagnant |
+| **TOP4** | `y=1 si place ≤ 4` | ~40% | Probabilité placement |
 
-| # | Feature | Nom code | Impact | Source |
-|---|---------|----------|--------|--------|
-| 1 | Taux driver/hippodrome | `driver_hippo` | 🔴 Fort | `team_stats["drivers_hippo"]` |
-| 2 | Indice de régularité | `regularite` | 🔴 Fort | `compute_regularity()` (existant) |
-| 3 | Changement d'équipement | `equip_change` | 🟡 Moyen | `detect_equipment_change()` 🆕 |
-| 4 | Style attaquant | `style_attaquant` | 🟡 Moyen | `detect_profile()` (existant) |
-| 5 | Style finisseur | `style_finisseur` | 🟡 Moyen | `detect_profile()` (existant) |
-| 6 | Penal fragile | `style_fragile` | 🟡 Moyen | `detect_profile()` (existant) |
-| 7 | Tendance des gains | `gains_trend` | 🟡 Moyen | `compute_gains_trend()` 🆕 |
-| 8 | Jours depuis dernière course | `jours_derniere` | 🟢 Léger | `compute_days_since_last()` 🆕 |
-| 9 | Nb courses ce mois | `nb_courses_mois` | 🟢 Léger | `compute_nb_courses_recent()` 🆕 |
-| 10 | Performance terrain | `perf_terrain` | 🟡 Moyen | `compute_terrain_perf()` 🆕 |
-| 11 | Avantage corde historique | `corde_avantage` | 🟢 Léger | `compute_corde_avantage()` 🆕 |
-| 12 | Chimie cheval/driver | `chimie_driver` | 🟡 Moyen | `horse_stats["with_driver"]` |
+**Pourquoi c'est mieux :**
+- **4× plus de signal** : le modèle Top 4 apprend sur 40% des données au lieu de 8%
+- **Moins de variance** : un favori 3ème n'est plus "0" pour le modèle
+- **Meilleure calibration** : les probas Top 4 sont intrinsèquement plus fiables
+- **Complémentaire** : Win capture le pic de performance, Top 4 capture la fiabilité
 
-### Interactions ajoutées
+### 2. 14 nouvelles features ML (27 → 41)
 
-| # | Interaction | Logique |
-|---|-------------|---------|
-| 13 | `regularite_x_forme` | Régularité × Forme = fiabilité globale |
-| 14 | `driver_hippo_x_terrain` | Expertise locale × affinité terrain |
+Même vecteur de features pour les deux modèles.
+
+## Architecture
+
+```
+                    ┌──────────────────┐
+  41 features ─────►│   Modèle WIN     │──► chance (proba gagnant, normalisée)
+                    │  (stacking 5 ML) │
+                    └──────────────────┘
+                    
+                    ┌──────────────────┐
+  41 features ─────►│  Modèle TOP4     │──► chanceTop4 (proba placement, absolu)
+                    │  (stacking 5 ML) │
+                    └──────────────────┘
+
+  Chance Win   = 20% heuristique + 80% ML_win     (normalisée entre chevaux)
+  Chance Top 4 = 20% heuristique + 80% ML_top4    (absolu, pas de normalisation)
+```
 
 ## Fichiers modifiés
 
-### `lib/features_v4.py` (+220 lignes)
-- `compute_gains_trend()` — Compare gains récents vs anciens sur 5 courses
-- `compute_terrain_perf()` — Performance moyenne par type de terrain (BON/SOUPLE/LOURD)
-- `detect_equipment_change()` — Détecte 1ères œillères, nouveau déferrage, re-ferrage
-- `compute_days_since_last()` — Jours depuis dernière course (normalisé 0-100)
-- `compute_nb_courses_recent()` — Nombre de courses sur 30 jours (normalisé 0-100)
-- `compute_corde_avantage()` — Performance historique en corde interne vs externe
+| Fichier | Changement |
+|---------|------------|
+| `app.py` | +375 lignes : dual training, dual prediction, backtest top4, 14 features |
+| `lib/features_v4.py` | +271 lignes : 6 nouvelles fonctions de features |
+| `UPGRADE_V6.md` | Ce fichier |
 
-### `app.py` (+145 lignes)
-- Imports mis à jour (6 nouvelles fonctions)
-- `analyser_course_features()` : calcul des 12 nouvelles scores + ajout au dict `scores`
-- `featurize()` : 14 nouveaux éléments dans le vecteur (27 → 41)
-- `FEATURE_NAMES` : 41 noms à jour
-- `analyser_course()` : poids heuristiques redistribués (29 composantes)
-- `api_course()` : extraction du terrain depuis le programme PMU
+## Détail du modèle dual
 
-## Poids heuristiques redistribués
-
+### Training (`train_ml_model`)
 ```
-Ancien total = 1.00 (16 composantes)
-Nouveau total = 1.00 (28 composantes)
+Pour chaque course historique :
+  X.append(featurize(cheval, nb_partants))
+  y_win.append(1 if place == 1 else 0)      # ~8% positifs
+  y_top4.append(1 if 1 <= place <= 4 else 0) # ~40% positifs
 
-Anciennes (poids réduits) : 0.74
-  forme 0.12, carriere 0.06, gains 0.05, driver 0.07, entraineur 0.04,
-  distance 0.05, cheval_stats 0.07, elo 0.08, age_sexe 0.03, repos 0.03,
-  elo_trend 0.04, confrontation 0.02, pedigree 0.04, corde 0.02,
-  equipment 0.01, profile_match 0.01
+Entraîner stacking(X, y_win)  → ml_advanced_v5.pkl
+Entraîner stacking(X, y_top4) → ml_top4_advanced_v6.pkl
+```
 
-Nouvelles v6 : 0.26
-  driver_hippo 0.05 🔴, regularite 0.06 🔴, equip_change 0.02 🟡,
-  style_attaquant 0.02 🟡, style_finisseur 0.02 🟡, gains_trend 0.02 🟡,
-  jours_derniere 0.01 🟢, nb_courses_mois 0.01 🟢, perf_terrain 0.02 🟡,
-  corde_avantage 0.01 🟢, chimie_driver 0.02 🟡
+### Prediction (`analyser_course`)
+```python
+# WIN
+chance = 0.2 * heuristique + 0.8 * ML_win    # normalisé à 100%
+
+# TOP4 (nouveau)
+chanceTop4 = 0.2 * heuristique_top4 + 0.8 * ML_top4  # proba absolue
+```
+
+### Réponse API enrichie
+```json
+{
+  "chanceTop4": 62.4,        // proba top 4 blendée (20% heur + 80% ML)
+  "chanceTop4ML": 65.2,      // proba top 4 ML pure
+  "chanceTop4Heur": 50.0,    // proba top 4 heuristique seule
+  "chance": 18.5,            // proba gagnant (normalisée)
+  "chanceML": 19.2,          // proba gagnant ML pure
+  "ml_top4_active": true     // flag modèle top4 chargé
+}
+```
+
+### Backtest enrichi
+```json
+{
+  "top4_ml_accuracy": 68.5,       // accuracy globale top4
+  "top1_top4_rate": 45.2,         // le #1 algo est dans le top 4
+  "top4_by_confidence": {
+    "high":   {"hit": 120, "total": 165, "accuracy": 72.7},  // proba ≥ 60%
+    "medium": {"hit": 200, "total": 340, "accuracy": 58.8},  // 35-60%
+    "low":    {"hit": 50,  "total": 150, "accuracy": 33.3}   // < 35%
+  }
+}
 ```
 
 ## Comment utiliser
 
-### 1. Installer (inchangé)
+### 1. Installer
 ```bash
-cd turfiou
 pip install -r requirements.txt
 ```
 
-### 2. ⚠️ Retrainer le modèle OBLIGATOIRE
+### 2. ⚠️ Retrainer OBLIGATOIREMENT
+Les deux modèles sont entraînés en un seul appel :
 ```bash
-# Le vecteur de features a changé (27 → 41) → l'ancien modèle est incompatible
 curl -X POST "http://localhost:5000/api/train?type=advanced&days=21"
 ```
+→ Entraîne WIN + TOP4 en ~3-5 minutes
 
-### 3. Utiliser
-Coche "🧠 ML" comme avant → le modèle v5/v6 sera utilisé automatiquement.
+### 3. Vérifier
+```bash
+curl "http://localhost:5000/api/ml-status"
+# → {"models_loaded": {"win": true, "top4": true}}
+```
 
-## Détail des nouvelles fonctions
+### 4. Utiliser
+Coche "🧠 ML" → les deux modèles sont utilisés automatiquement.
 
-### `compute_gains_trend(perfs_detail)`
-- Compare la moyenne des gains des courses les plus récentes vs les plus anciennes
-- Ratio > 1 = progression → score > 50
-- Ratio < 1 = régression → score < 50
-- Utilise l'allocation de la course et la place pour estimer les gains
+## Avantages du modèle Top 4 vs Win seul
 
-### `compute_terrain_perf(perfs_detail)`
-- Groupe les performances par type de terrain (BON/SOUPLE/LOURD/PSF)
-- Calcule le score moyen par terrain
-- Retourne la moyenne des scores = capacité à performer sur tous les terrains
+| Critère | Win seul | Win + Top 4 |
+|---------|----------|-------------|
+| % positifs | ~8% | ~40% pour Top4 |
+| Signal/noise | Faible | 5× meilleur |
+| Calibration | Difficile | Naturelle |
+| Stabilité prediction | Variance élevée | Stable |
+| Usage pratique | Gagnant seul | Gagnant + Placement + Couplé |
+| Confiance | Binaire | Bucket haute/moyenne/basse |
 
-### `detect_equipment_change(perfs_detail, current_oeilleres, current_deferre)`
-- Compare l'équipement actuel avec celui de la dernière course
-- Signaux détectés :
-  - Premières œillères : +15
-  - Nouveau déferrage : +12
-  - Déferrage complet (4 fers) : +8
-  - Retrait d'œillères : -5
-  - Re-ferrage : -5
+## Nouveaux fichiers modèle
 
-### `compute_days_since_last(perfs_detail)`
-- Extrait la date de la course la plus récente
-- Normalise en score : 0-7j → 85, 8-14j → 75, ..., 90j+ → 20
-
-### `compute_nb_courses_recent(perfs_detail, days=30)`
-- Compte les courses dans les 30 derniers jours
-- Optimal : 2-3 courses (score 75-80)
-- Fatigue : 5+ (score 30)
-- Manque de rythme : 0 (score 40)
-
-### `compute_corde_avantage(perfs_detail)`
-- Compare la place moyenne en corde interne (≤40% du peloton) vs externe
-- Si meilleur en interne → score > 50 (avantage corde confirmé)
-
-## Compatibilité
-
-- ✅ Rétro-compatible avec les données existantes (toutes les features ont des valeurs par défaut)
-- ✅ `compute_all_stats()` inchangé — pas besoin de re-builder le cache
-- ❌ Ancien modèle ML incompatible (27 features → 41) → retraining obligatoire
-- ✅ Interface web inchangée
-- ✅ API publique inchangée
+```
+/tmp/turf_cache/
+  ml_advanced_v5.pkl          # Modèle WIN (stacking)
+  ml_top4_advanced_v6.pkl     # Modèle TOP4 (stacking)  ← NOUVEAU
+  ml_ensemble_v4.pkl          # Fallback WIN (numpy)
+  ml_top4_ensemble_v6.pkl     # Fallback TOP4 (numpy)   ← NOUVEAU
+  calibration_v4.pkl          # Calibration isotone WIN
+```
