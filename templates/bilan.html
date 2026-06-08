@@ -151,6 +151,9 @@
         <option value="30">30 jours</option>
       </select>
     </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;">
+      <input type="checkbox" id="bilanML" style="width:auto;"> 🧠 ML + 🎯 Top4
+    </label>
     <button onclick="loadBilan()">🔄 Charger</button>
   </div>
 
@@ -162,11 +165,12 @@
 <script>
 async function loadBilan() {
   const days = document.getElementById('bilanDays').value;
+  const ml = document.getElementById('bilanML').checked ? '&ml=1' : '';
   const block = document.getElementById('bilanResult');
   block.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement du bilan…</div>';
 
   try {
-    const res = await fetch(`/api/bilan?days=${days}`);
+    const res = await fetch(`/api/bilan?days=${days}${ml}`);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     renderBilan(data);
@@ -279,5 +283,5 @@ function toggleDetail(i) {
 
 loadBilan();
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0855cb52cbfd11c',t:'MTc4MDg5NTEzMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
