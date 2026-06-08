@@ -1319,6 +1319,7 @@ def backtest(days_back=7, use_ml=False):
         "top4_ml_hit": 0, "top4_ml_total": 0,
         "top1_top4_hit": 0,  # le #1 algo est-il dans le top 4 ?
         "top4_by_confidence": {"high": {"hit": 0, "total": 0}, "medium": {"hit": 0, "total": 0}, "low": {"hit": 0, "total": 0}},
+        "top4_brier_sum": 0.0,  # Somme des (p - y)^2 pour Brier score
     }
 
     tasks = []
@@ -1383,6 +1384,8 @@ def backtest(days_back=7, use_ml=False):
                 results["top4_ml_total"] += 1
                 if actual_top4:
                     results["top4_ml_hit"] += 1
+                # Brier: (p - y)^2
+                results["top4_brier_sum"] += (ml_top4_prob - (1.0 if actual_top4 else 0.0)) ** 2
                 # Par niveau de confiance
                 if ml_top4_prob >= 0.60:
                     bucket = "high"
@@ -1439,7 +1442,7 @@ def backtest(days_back=7, use_ml=False):
     n_top4 = results["top4_ml_total"]
     if n_top4 > 0:
         results["top4_ml_accuracy"] = round(results["top4_ml_hit"] / n_top4 * 100, 2)
-        results["top4_ml_brier"] = "N/A"  # TODO: compute Brier score
+        results["top4_ml_brier"] = round(results["top4_brier_sum"] / n_top4, 4)
     else:
         results["top4_ml_accuracy"] = None
     n = results["total_courses"] or 1
@@ -1472,7 +1475,7 @@ def bilan(days_back=7, use_ml=False):
             "date_short": d.strftime("%d/%m"),
             "jour": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][d.weekday()],
             "total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0,
-            "top3_total": 0,
+            "top3_total": 0, "top4_count": 0,
             "courses": [],
         }
 
@@ -1533,12 +1536,15 @@ def bilan(days_back=7, use_ml=False):
 
             if 1 <= place <= 3:
                 day["top3_total"] += 1
+            if 1 <= place <= 4:
+                day["top4_count"] += 1
 
             day["courses"].append(course_detail)
 
         if day["total"] > 0:
             day["taux_top1"] = round(day["top1"] / day["total"] * 100, 1)
             day["taux_top3"] = round(day["top3_total"] / day["total"] * 100, 1)
+            day["taux_top4"] = round(day["top4_count"] / day["total"] * 100, 1)
             daily_results.append(day)
 
     return daily_results
@@ -2044,13 +2050,14 @@ def api_bilan():
         data = bilan(days_back=days, use_ml=use_ml)
         # Totaux globaux
         totals = {"total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0,
-                  "top3_total": 0}
+                  "top3_total": 0, "top4_count": 0}
         for d in data:
             for k in totals:
                 totals[k] += d.get(k, 0)
         n = totals["total"] or 1
         totals["taux_top1"] = round(totals["top1"] / n * 100, 1)
         totals["taux_top3"] = round(totals["top3_total"] / n * 100, 1)
+        totals["taux_top4"] = round(totals["top4_count"] / n * 100, 1)
         return jsonify({"daily": data, "totals": totals})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
