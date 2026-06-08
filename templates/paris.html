@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mes paris — Turf Analyzer v4</title>
+  <title>Mes paris — Turf Analyzer v6</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -95,7 +95,7 @@
 </head>
 <body>
 <header>
-  <h1>🐎 Turf Analyzer — Mes paris</h1>
+  <h1>🐎 Turf Analyzer — Mes paris <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
   <div class="nav-links">
     <a href="/admin">Analyse</a>
     <a href="/backtest">Backtest & ML</a>
@@ -137,6 +137,7 @@ function renderStats(s) {
     <div class="stat-card"><div class="value">${s.total_gain}€</div><div class="label">Gain total</div></div>
     <div class="stat-card ${profitClass}"><div class="value">${s.profit > 0 ? '+' : ''}${s.profit}€</div><div class="label">Profit</div></div>
     <div class="stat-card ${profitClass}"><div class="value">${s.roi > 0 ? '+' : ''}${s.roi}%</div><div class="label">ROI réel</div></div>
+    <div class="stat-card" style="border-color:#06b6d4;"><div class="value">${s.avg_top4_chance || '—'}%</div><div class="label">🎯 Chance T4 moy.</div></div>
   `;
 }
 
@@ -164,6 +165,7 @@ function renderBetRow(b) {
       <div>
         <div class="bet-cheval">${b.cheval}</div>
         ${b.edge ? `<div class="bet-meta">Edge: +${b.edge}%</div>` : ''}
+        ${b.chanceTop4 ? `<div class="bet-meta" style="color:#06b6d4;">🎯 Top4: ${Math.round(b.chanceTop4)}%</div>` : ''}
       </div>
       <div>Cote <strong>${b.cote}</strong></div>
       <div>Mise <strong>${b.mise}€</strong></div>

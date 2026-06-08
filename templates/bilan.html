@@ -130,7 +130,7 @@
 </head>
 <body>
 <header>
-  <h1>🐎 Turf Analyzer — Bilan</h1>
+  <h1>🐎 Turf Analyzer — Bilan <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
   <div class="nav-links">
     <a href="/admin">Analyse</a>
     <a href="/backtest">Backtest & ML</a>
@@ -194,6 +194,8 @@ function renderBilan(data) {
       <div class="total-card"><div class="val">${totals.top3_total}</div><div class="lbl">Podium total</div></div>
       <div class="total-card"><div class="val"><span class="rate ${rateClass(totals.taux_top1)}">${totals.taux_top1}%</span></div><div class="lbl">Taux gagnant</div></div>
       <div class="total-card"><div class="val"><span class="rate ${rateClass(totals.taux_top3)}">${totals.taux_top3}%</span></div><div class="lbl">Taux podium</div></div>
+      <div class="total-card" style="border-color:#06b6d4;"><div class="val">${totals.top4_count || 0}</div><div class="lbl">🎯 Top 4</div></div>
+      <div class="total-card" style="border-color:#06b6d4;"><div class="val"><span class="rate ${rateClass(totals.taux_top4 || 0)}">${totals.taux_top4 || 0}%</span></div><div class="lbl">Taux Top 4</div></div>
     </div>
 
     <table>
@@ -207,8 +209,10 @@ function renderBilan(data) {
           <th class="num">🥈</th>
           <th class="num">🥉</th>
           <th class="num">Hors</th>
+          <th class="num">🎯T4</th>
           <th class="num">Taux gagnant</th>
           <th class="num">Taux podium</th>
+          <th class="num">Taux Top4</th>
         </tr>
       </thead>
       <tbody>
@@ -225,11 +229,13 @@ function renderBilan(data) {
           <td class="num silver">${d.top2}</td>
           <td class="num bronze">${d.top3}</td>
           <td class="num" style="color:#64748b;">${d.hors}</td>
+          <td class="num" style="color:#06b6d4;">${d.top4_count || 0}</td>
           <td class="num"><span class="rate ${rateClass(d.taux_top1)}">${d.taux_top1}%</span></td>
           <td class="num"><span class="rate ${rateClass(d.taux_top3)}">${d.taux_top3}%</span></td>
+          <td class="num"><span class="rate ${rateClass(d.taux_top4 || 0)}">${d.taux_top4 || 0}%</span></td>
         </tr>
         <tr class="detail-row" id="detail-${i}">
-          <td colspan="10" class="detail-cell">
+          <td colspan="12" class="detail-cell">
             ${d.courses.map(c => `<span class="course-line">${c.resultat} ${c.nom}${c.cote ? ' (c.'+c.cote+')' : ''}</span>`).join('')}
           </td>
         </tr>
@@ -247,8 +253,10 @@ function renderBilan(data) {
           <td class="num">${totals.top2}</td>
           <td class="num">${totals.top3}</td>
           <td class="num">${totals.hors}</td>
+          <td class="num" style="color:#06b6d4;">${totals.top4_count || 0}</td>
           <td class="num">${totals.taux_top1}%</td>
           <td class="num">${totals.taux_top3}%</td>
+          <td class="num">${totals.taux_top4 || 0}%</td>
         </tr>
       </tbody>
     </table>

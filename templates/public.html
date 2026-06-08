@@ -212,8 +212,8 @@
 </head>
 <body>
 <header>
-  <h1>⚡ Turfiou — Pronostics IA</h1>
-  <p>Analyse hippique par intelligence artificielle</p>
+  <h1>⚡ Turfiou — Pronostics IA <span style="background:#facc15;color:#0f172a;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:700;">v6</span></h1>
+  <p>Analyse hippique par intelligence artificielle — 41 features · Dual Win/Top4 · Stacking ML</p>
   <div id="mlStatus" class="ml-status none"><span class="ml-dot"></span><span id="mlStatusText">Chargement…</span></div>
 </header>
 
@@ -243,7 +243,7 @@
 </div>
 
 <div class="footer">
-  <p>Turfiou — Analyse hippique par IA</p>
+  <p>Turfiou — Analyse hippique par IA — <strong>v6</strong> 41 features · Dual Win/Top4 · Stacking ML</p>
   <p style="margin-top:4px;">Le jeu comporte des risques : <a href="https://www.joueurs-info-service.fr/">joueurs-info-service.fr</a></p>
 </div>
 
@@ -457,6 +457,7 @@ function horseCard(c, style) {
     </div>
     <div class="card-right">
       ${c.is_crack?`<span class="role-badge crack-tag">⚡ Crack</span>`:''}
+      ${c.chanceTop4?`<span class="role-badge" style="background:rgba(6,182,212,0.2);color:#06b6d4;">🎯 T4 ${Math.round(c.chanceTop4)}%</span>`:''}
       ${eloPill}
       ${c.cote?`<span class="cote-pill">Cote ${c.cote}</span>`:''}
     </div>
