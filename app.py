@@ -85,6 +85,9 @@ ML_MODEL_FILE_V5 = os.path.join(CACHE_DIR, "ml_advanced_v5.pkl")     # NEW v5
 # NEW v6 — Modèle Top 4 (placement binaire)
 ML_MODEL_TOP4_FILE = os.path.join(CACHE_DIR, "ml_top4_ensemble_v6.pkl")
 ML_MODEL_TOP4_V5_FILE = os.path.join(CACHE_DIR, "ml_top4_advanced_v6.pkl")
+# NEW v6.1 — Modèle Top 3 (placement binaire, ~25% positifs = idéal pour sklearn)
+ML_MODEL_TOP3_FILE = os.path.join(CACHE_DIR, "ml_top3_ensemble_v6.pkl")
+ML_MODEL_TOP3_V5_FILE = os.path.join(CACHE_DIR, "ml_top3_advanced_v6.pkl")
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
@@ -655,6 +658,20 @@ def load_ml_model_top4():
 def save_ml_model_top4(model):
     save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
 
+def load_ml_model_top3():
+    """Charge le modèle TOP3 (advanced si dispo, sinon ensemble numpy)."""
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_TOP3_V5_FILE)
+        if adv:
+            return adv
+    payload = load_pickle(ML_MODEL_TOP3_FILE, max_age_hours=24*14)
+    if payload:
+        return load_model_from_dict(payload)
+    return None
+
+def save_ml_model_top3(model):
+    save_pickle(ML_MODEL_TOP3_FILE, model.to_dict())
+
 
 def load_calibration():
     return load_pickle(CALIBRATION_FILE, max_age_hours=24*7)
@@ -683,7 +700,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     except ImportError:
         return None
 
-    X, y_win, y_top4 = [], [], []
+    X, y_win, y_top4, y_top3 = [], [], [], []
     today = datetime.now()
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
         max_days=max(HISTORY_DAYS, days_back + exclude_recent))
@@ -722,21 +739,25 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             real = next((p for p in parts["participants"]
                         if p.get("numPmu") == a["numPmu"]), None)
             place = (real.get("ordreArrivee") or 0) if real else 0
-            # === DUAL LABELS ===
+            # === TRIPLE LABELS ===
             y_win.append(1 if place == 1 else 0)
+            y_top3.append(1 if 1 <= place <= 3 else 0)
             y_top4.append(1 if 1 <= place <= 4 else 0)
 
     if len(X) < 100:
         return None
 
     n_top4 = sum(y_top4)
+    n_top3 = sum(y_top3)
     n_win = sum(y_win)
     print(f"[ML v6] {len(X)} échantillons")
     print(f"  WIN  : {n_win} victoires ({n_win/len(X)*100:.1f}%)")
+    print(f"  TOP3 : {n_top3} placés ({n_top3/len(X)*100:.1f}%)")
     print(f"  TOP4 : {n_top4} placés ({n_top4/len(X)*100:.1f}%)")
 
     info = {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
-            "model_type": model_type, "win_positives": n_win, "top4_positives": n_top4}
+            "model_type": model_type, "win_positives": n_win,
+            "top3_positives": n_top3, "top4_positives": n_top4}
 
     # ===========================================================
     #  TRAINING — modèle avancé (Stacking sklearn)
@@ -746,13 +767,18 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         print("[ML v6] 🔵 Entraînement WIN (stacking avancé)...")
         train_advanced(X, y_win, ML_MODEL_FILE_V5)
 
+        # --- Modèle TOP3 ---
+        print("[ML v6] 🟡 Entraînement TOP3 (stacking avancé)...")
+        train_advanced(X, y_top3, ML_MODEL_TOP3_V5_FILE)
+
         # --- Modèle TOP4 ---
         print("[ML v6] 🟢 Entraînement TOP4 (stacking avancé)...")
         train_advanced(X, y_top4, ML_MODEL_TOP4_V5_FILE)
 
-        info["win_model"] = "LGBM+CatBoost+HGB+RF+LR (TimeSeriesSplit)"
-        info["top4_model"] = "LGBM+CatBoost+HGB+RF+LR (TimeSeriesSplit)"
-        info["models_trained"] = ["win", "top4"]
+        info["win_model"] = "LGBM+CatBoost+HGB+RF+LR (Stacking)"
+        info["top3_model"] = "LGBM+CatBoost+HGB+RF+LR (Stacking)"
+        info["top4_model"] = "LGBM+CatBoost+HGB+RF+LR (Stacking)"
+        info["models_trained"] = ["win", "top3", "top4"]
         return info
 
     # ===========================================================
@@ -806,7 +832,29 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
 
     print("[ML v6] 🟢 Sauvegarde modèle TOP4...")
     save_ml_model_top4(model_t4)
-    info["models_trained"] = ["win", "top4"]
+
+    # --- Modèle TOP3 (ensemble numpy) ---
+    gbm_t3 = None
+    rf_t3 = None
+    if model_type in ("ensemble", "gbm"):
+        print(f"[ML v6] 🟡 Entraînement TOP3 GBM ({n_trees_gbm} arbres)...")
+        gbm_t3 = GradientBoosting(n_trees=n_trees_gbm, max_depth=3, learning_rate=0.1)
+        gbm_t3.fit(X, y_top3)
+    if model_type in ("ensemble", "rf"):
+        print(f"[ML v6] 🟡 Entraînement TOP3 RF ({n_trees_rf} arbres)...")
+        rf_t3 = RandomForest(n_trees=n_trees_rf, max_depth=8, min_samples=15)
+        rf_t3.fit(X, y_top3)
+
+    if model_type == "ensemble":
+        model_t3 = Ensemble(gbm=gbm_t3, rf=rf_t3, w_gbm=0.6, w_rf=0.4)
+    elif model_type == "gbm":
+        model_t3 = gbm_t3
+    else:
+        model_t3 = rf_t3
+
+    print("[ML v6] 🟡 Sauvegarde modèle TOP3...")
+    save_ml_model_top3(model_t3)
+    info["models_trained"] = ["win", "top3", "top4"]
 
     return info
 
@@ -1254,6 +1302,13 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         nb = len(analyses)
         raw_top4_ml = [predict_ml(featurize(a, nb), ml_top4_model) for a in analyses]
 
+    # NEW v6.1 — Top 3 ML model (modèle dédié placement top3, ~25% positifs)
+    ml_top3_model = load_ml_model_top3() if use_ml else None
+    raw_top3_ml = None
+    if ml_top3_model:
+        nb = len(analyses)
+        raw_top3_ml = [predict_ml(featurize(a, nb), ml_top3_model) for a in analyses]
+
     for i, a in enumerate(analyses):
         if chances_ml:
             # Avec ML : 20% heuristique + 80% ML
@@ -1271,6 +1326,13 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
             a["chanceTop4ML"] = round(ml_top4_prob, 2)
             # Blend : 20% heuristique + 80% ML Top4
             a["chanceTop4"] = round(0.2 * a["chanceTop4Heur"] + 0.8 * ml_top4_prob, 2)
+
+        # NEW v6.1 — Top 3 : modèle dédié (~25% positifs)
+        if raw_top3_ml:
+            ml_top3_prob = raw_top3_ml[i] * 100
+            a["chanceTop3ML"] = round(ml_top3_prob, 2)
+        else:
+            a["chanceTop3ML"] = None
 
         if a["cote"] and a["probaMarche"] > 0:
             edge = a["chance"] - a["probaMarche"]
@@ -1320,6 +1382,10 @@ def backtest(days_back=7, use_ml=False):
         "top1_top4_hit": 0,  # le #1 algo est-il dans le top 4 ?
         "top4_by_confidence": {"high": {"hit": 0, "total": 0}, "medium": {"hit": 0, "total": 0}, "low": {"hit": 0, "total": 0}},
         "top4_brier_sum": 0.0,  # Somme des (p - y)^2 pour Brier score
+        # NEW v6.1 : Top 3 ML tracking
+        "top3_ml_hit": 0, "top3_ml_total": 0,
+        "top3_brier_sum": 0.0,
+        "super_base_hit": 0, "super_base_total": 0,  # Super Base = meilleur top3 ML dans top 5
     }
 
     tasks = []
@@ -1397,6 +1463,28 @@ def backtest(days_back=7, use_ml=False):
                 if actual_top4:
                     results["top4_by_confidence"][bucket]["hit"] += 1
 
+        # NEW v6.1 — Top 3 ML tracking
+        for a in analyses:
+            ml_top3_prob = a.get("chanceTop3ML")
+            actual_place = a.get("ordreArrivee", 0) or 0
+            if ml_top3_prob and ml_top3_prob > 0:
+                actual_top3 = 1 <= actual_place <= 3
+                results["top3_ml_total"] += 1
+                if actual_top3:
+                    results["top3_ml_hit"] += 1
+                results["top3_brier_sum"] += (ml_top3_prob - (1.0 if actual_top3 else 0.0)) ** 2
+
+        # Super Base : meilleur chanceTop3ML parmi les 5 premiers → est-il dans le top 3 ?
+        if len(analyses) >= 1:
+            top5 = analyses[:5]
+            with_top3 = [a for a in top5 if a.get("chanceTop3ML")]
+            if with_top3:
+                super_base = max(with_top3, key=lambda a: a.get("chanceTop3ML", 0))
+                sb_place = super_base.get("ordreArrivee", 0) or 0
+                results["super_base_total"] += 1
+                if 1 <= sb_place <= 3:
+                    results["super_base_hit"] += 1
+
         for a in analyses:
             if a.get("valueBet"):
                 results["value_bets"].append({
@@ -1445,6 +1533,20 @@ def backtest(days_back=7, use_ml=False):
         results["top4_ml_brier"] = round(results["top4_brier_sum"] / n_top4, 4)
     else:
         results["top4_ml_accuracy"] = None
+        results["top4_ml_brier"] = None
+
+    n_top3 = results["top3_ml_total"]
+    if n_top3 > 0:
+        results["top3_ml_accuracy"] = round(results["top3_ml_hit"] / n_top3 * 100, 2)
+        results["top3_ml_brier"] = round(results["top3_brier_sum"] / n_top3, 4)
+    else:
+        results["top3_ml_accuracy"] = None
+        results["top3_ml_brier"] = None
+
+    if results["super_base_total"] > 0:
+        results["super_base_accuracy"] = round(results["super_base_hit"] / results["super_base_total"] * 100, 2)
+    else:
+        results["super_base_accuracy"] = None
     n = results["total_courses"] or 1
     results["top1_top4_rate"] = round(results["top1_top4_hit"] / n * 100, 2)
 
@@ -2038,6 +2140,276 @@ def api_course(r_num, c_num):
         "live": live,
         "timestamp": datetime.now().isoformat(),
     })
+
+
+@app.route("/api/course-pdf/<int:r_num>/<int:c_num>")
+@admin_required
+def api_course_pdf(r_num, c_num):
+    """Génère un PDF de synthèse pour une course.
+    - GAGNANT : chevaux classés #1 et #2
+    - SUPER BASE : meilleur % Top4 parmi les 5 premiers
+    """
+    from fpdf import FPDF
+    from flask import send_file
+    import io as _io
+
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    use_ml = request.args.get("ml") == "1"
+    capital = float(request.args.get("capital", 100))
+
+    try:
+        prog = get_programme(date_str)
+        parts = get_participants(date_str, r_num, c_num)
+        perfs = get_performances(date_str, r_num, c_num)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    course_info = None
+    reunion_info = None
+    discipline = None
+    hippodrome = None
+    type_corde = None
+    terrain = None
+    heure = ""
+    for r in prog["programme"]["reunions"]:
+        if r["numOfficiel"] == r_num:
+            hippodrome = r["hippodrome"]["libelleCourt"]
+            reunion_info = {"hippodrome": hippodrome}
+            for c in r["courses"]:
+                if c["numOrdre"] == c_num:
+                    discipline = c.get("discipline")
+                    type_corde = c.get("corde", "")
+                    terrain = c.get("natureTerrain") or c.get("terrain")
+                    heure = datetime.fromtimestamp(c["heureDepart"] / 1000).strftime("%H:%M") if c.get("heureDepart") else ""
+                    course_info = {
+                        "libelle": c.get("libelle"),
+                        "discipline": discipline,
+                        "distance": c.get("distance"),
+                        "specialite": c.get("specialite"),
+                        "corde": type_corde,
+                        "terrain": terrain,
+                        "heure": heure,
+                        "montantPrix": c.get("montantPrix"),
+                        "nbPartants": c.get("nombreDeclaresPartants"),
+                    }
+
+    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
+        max_days=HISTORY_DAYS)
+    analyses = analyser_course(parts, perfs,
+                                course_info.get("distance") if course_info else None,
+                                discipline, hippodrome, type_corde,
+                                team_stats, horse_stats, elo, elo_hist,
+                                horse_races, pedigree, use_ml=use_ml,
+                                capital=capital, terrain=terrain)
+
+    if not analyses:
+        return jsonify({"error": "Aucune analyse"}), 404
+
+    # GAGNANT : top 2
+    gagnant = analyses[:2]
+    # SUPER BASE : meilleur Top3 ML parmi les 5 premiers (fallback Top4 ML)
+    top5 = analyses[:5]
+    # Priorité au modèle TOP3 dédié, sinon fallback sur Top4
+    def _super_base_score(a):
+        if a.get("chanceTop3ML"):
+            return a["chanceTop3ML"]
+        return a.get("chanceTop4", 0) / 100  # fallback
+    best_top4 = max(top5, key=_super_base_score)
+
+    # Date lisible
+    try:
+        date_lisible = f"{date_str[0:2]}/{date_str[2:4]}/{date_str[4:8]}"
+    except:
+        date_lisible = date_str
+
+    # ============ PDF ============
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+
+    # En-tête vert foncé
+    pdf.set_fill_color(15, 23, 42)
+    pdf.rect(0, 0, 210, 35, 'F')
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(16, 185, 129)
+    pdf.set_xy(10, 6)
+    pdf.cell(0, 10, "TURF ANALYZER v6", ln=True)
+
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(148, 163, 184)
+    pdf.set_x(10)
+    libelle = (course_info or {}).get("libelle", "") or ""
+    dist = (course_info or {}).get("distance", "") or ""
+    disc = (course_info or {}).get("discipline", "") or ""
+    nb = (course_info or {}).get("nbPartants", "") or ""
+    prix = (course_info or {}).get("montantPrix")
+    prix_str = f" - {prix:,} EUR" if prix else ""
+    pdf.cell(0, 5, f"{date_lisible} | {hippodrome or ''} | R{r_num}C{c_num} | {heure}", ln=True)
+    pdf.set_x(10)
+    pdf.cell(0, 5, f"{libelle} | {disc} {dist}m | {nb} partants{prix_str}", ln=True)
+    if use_ml:
+        pdf.set_x(10)
+        pdf.set_text_color(139, 92, 246)
+        pdf.cell(0, 5, "Mode: ML active (20% heuristique + 80% ML)", ln=True)
+
+    # --- Section GAGNANT ---
+    pdf.ln(10)
+    pdf.set_fill_color(16, 185, 129)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "  GAGNANT — Top 2", fill=True, ln=True)
+
+    for a in gagnant:
+        pdf.ln(3)
+        y_start = pdf.get_y()
+        pdf.set_fill_color(30, 41, 59)
+        pdf.rect(10, y_start, 190, 22, 'F')
+
+        # Numéro + Nom
+        pdf.set_font("Helvetica", "B", 22)
+        pdf.set_text_color(16, 185, 129)
+        pdf.set_xy(14, y_start + 2)
+        pdf.cell(14, 14, f"#{a['rang']}")
+
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.set_text_color(226, 232, 240)
+        pdf.cell(75, 8, str(a["nom"])[:25])
+
+        # Chance
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.set_text_color(16, 185, 129)
+        pdf.cell(30, 10, f"{a['chance']}%")
+
+        # Cote
+        if a.get("cote"):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(30, 64, 175)
+            pdf.cell(25, 10, f"Cote {a['cote']}")
+
+        # Edge
+        if a.get("edge", 0) != 0:
+            pdf.set_font("Helvetica", "B", 10)
+            if a["edge"] > 0:
+                pdf.set_text_color(16, 185, 129)
+            else:
+                pdf.set_text_color(239, 68, 68)
+            pdf.cell(0, 10, f"Edge {'+' if a['edge']>0 else ''}{a['edge']}%")
+
+        # Ligne info
+        pdf.set_xy(14, y_start + 12)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.set_text_color(148, 163, 184)
+        age = a.get("age", "")
+        sexe = a.get("sexe", "")
+        driver = a.get("driver", "")
+        entraineur = a.get("entraineur", "")
+        nbC = a.get("nbCourses", 0)
+        nbV = a.get("nbVictoires", 0)
+        nbP = a.get("nbPlaces", 0)
+        gains = a.get("gainsCarriere", 0)
+        pdf.cell(0, 5, f"{age}ans {sexe} | Dr: {driver} | Ent: {entraineur} | {nbC}c {nbV}V {nbP}P | {gains:,}EUR")
+
+        # Musique
+        if a.get("musique"):
+            pdf.set_x(14)
+            pdf.set_font("Courier", "", 8)
+            pdf.set_text_color(245, 158, 11)
+            pdf.cell(0, 4, str(a["musique"])[:50])
+
+        pdf.set_y(y_start + 24)
+
+    # --- Section SUPER BASE ---
+    pdf.ln(6)
+    pdf.set_fill_color(6, 182, 212)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "  SUPER BASE — Meilleur Top 4 (top 5)", fill=True, ln=True)
+
+    a = best_top4
+    pdf.ln(3)
+    y_start = pdf.get_y()
+    pdf.set_fill_color(30, 41, 59)
+    pdf.rect(10, y_start, 190, 30, 'F')
+
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_text_color(6, 182, 212)
+    pdf.set_xy(14, y_start + 2)
+    pdf.cell(14, 14, f"#{a['rang']}")
+
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(226, 232, 240)
+    pdf.cell(65, 8, str(a["nom"])[:25])
+
+    # Chance Top3 ML (ou fallback Top4)
+    t3ml = a.get("chanceTop3ML")
+    t4 = a.get("chanceTop4", 0)
+    score_display = round(t3ml) if t3ml else round(t4)
+    label_display = "Top3 ML" if t3ml else "Top4"
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.set_text_color(6, 182, 212)
+    pdf.cell(30, 10, f"{score_display}%")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(148, 163, 184)
+    pdf.cell(20, 10, label_display)
+
+    # Chance Gagnant
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.set_text_color(16, 185, 129)
+    pdf.cell(0, 10, f"Gagnant {a['chance']}%")
+
+    # Info
+    pdf.set_xy(14, y_start + 12)
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(148, 163, 184)
+    driver = a.get("driver", "")
+    entraineur = a.get("entraineur", "")
+    pdf.cell(0, 5, f"Dr: {driver} | Ent: {entraineur} | {a.get('nbCourses',0)}c {a.get('nbVictoires',0)}V {a.get('nbPlaces',0)}P | {a.get('gainsCarriere',0):,}EUR")
+
+    # Musique
+    if a.get("musique"):
+        pdf.set_x(14)
+        pdf.set_font("Courier", "", 8)
+        pdf.set_text_color(245, 158, 11)
+        pdf.cell(0, 4, str(a["musique"])[:50])
+
+    # Top4 ML detail
+    if a.get("chanceTop4ML"):
+        pdf.set_x(14)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(139, 92, 246)
+        pdf.cell(0, 4, f"Top4 ML: {round(a['chanceTop4ML'])}% | Top4 Heur: {round(a.get('chanceTop4Heur',0))}%")
+
+    # Kelly
+    if a.get("kellyMise", 0) > 0:
+        pdf.set_x(14)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_text_color(167, 139, 250)
+        pdf.cell(0, 4, f"Kelly: {a['kellyMise']}EUR | EV: +{a.get('expectedROI',0)}%")
+
+    # Cote
+    if a.get("cote"):
+        pdf.set_x(14)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(30, 64, 175)
+        pdf.cell(0, 4, f"Cote: {a['cote']}")
+
+    # --- Footer ---
+    pdf.set_y(y_start + 36)
+    pdf.ln(6)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(71, 85, 105)
+    pdf.cell(0, 5, f"Turf Analyzer v6 — Genere le {datetime.now().strftime('%d/%m/%Y %H:%M')} — 41 features, Dual Win/Top4, Stacking ML", align="C")
+    pdf.ln(4)
+    pdf.cell(0, 5, "Le jeu comporte des risques : joueurs-info-service.fr", align="C")
+
+    # Output
+    output = _io.BytesIO()
+    pdf.output(output)
+    output.seek(0)
+
+    filename = f"turf_{date_lisible.replace('/','')}_R{r_num}C{c_num}.pdf"
+    return send_file(output, mimetype='application/pdf', as_attachment=True,
+                     download_name=filename)
 
 
 @app.route("/api/bilan")
