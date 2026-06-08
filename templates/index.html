@@ -318,6 +318,7 @@
     </label>
     <input type="date" id="datePicker">
     <button onclick="loadReunions()">Charger</button>
+    <button onclick="downloadPDF()" style="background:#dc2626;font-size:11px;" title="Télécharger le PDF (Gagnant Top 2 + Super Base Top4)">📄 PDF</button>
   </div>
 </header>
 
@@ -542,6 +543,7 @@ function renderCourse(data) {
             <div class="top4-pct">${a.chanceTop4}%</div>
             <div class="top4-label">Chance Top 4${a.chanceTop4ML ? ' <small style="color:#a78bfa;">(ML ' + Math.round(a.chanceTop4ML) + '%)</small>' : ''}</div>
             <div class="top4-bar"><div style="width:${Math.min(a.chanceTop4*1.25, 100)}%"></div></div>
+            ${a.chanceTop3ML ? `<div style="margin-top:4px;font-size:10px;color:#fbbf24;">🏅 Top3 ML: <strong>${Math.round(a.chanceTop3ML)}%</strong></div>` : ''}
           </div>` : ''}
         </div>
         <div class="scores-detail">
@@ -632,6 +634,17 @@ async function confirmBet() {
 
 document.getElementById('datePicker').value = todayStr();
 loadReunions();
+
+function downloadPDF() {
+  if (!currentR || !currentC) {
+    alert('Sélectionne une course d\'abord');
+    return;
+  }
+  const ml = document.getElementById('mlToggle').checked ? '&ml=1' : '';
+  const capital = document.getElementById('capital').value || 100;
+  const url = `/api/course-pdf/${currentR}/${currentC}?date=${currentDate}&capital=${capital}${ml}`;
+  window.open(url, '_blank');
+}
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08ac8554ea19ea9',t:'MTc4MDk1MTk3MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

@@ -196,9 +196,10 @@ async function trainModel() {
         ✅ Modèles <strong>${models}</strong> entraînés !<br>
         📊 ${data.n_samples} échantillons |
         🔵 WIN: ${data.win_positives} positifs (${(data.win_positives/data.n_samples*100).toFixed(1)}%) |
+        🟡 TOP3: ${data.top3_positives} positifs (${(data.top3_positives/data.n_samples*100).toFixed(1)}%) |
         🟢 TOP4: ${data.top4_positives} positifs (${(data.top4_positives/data.n_samples*100).toFixed(1)}%)<br>
         🕐 ${new Date(data.trained_at).toLocaleString('fr-FR')}<br>
-        <small style="color:#94a3b8;">Mode ML disponible sur la page Analyse. Coche 🧠 ML + 🎯 Top4.</small>
+        <small style="color:#94a3b8;">Triple modèle Win/Top3/Top4. Coche 🧠 ML pour activer.</small>
       </div>
     `;
   } catch(e) {
@@ -269,6 +270,25 @@ function renderBacktest(d) {
       ${d.top4_by_confidence.low && d.top4_by_confidence.low.total > 0 ? ` | 🔴 Basse (<35%): ${d.top4_by_confidence.low.accuracy}% (${d.top4_by_confidence.low.total})` : ''}
     </div>` : ''}
     ` : ''}
+
+    ${d.top3_ml_accuracy != null ? `
+    <h3 style="margin:18px 0 8px;color:#fbbf24;font-size:14px;">🏅 Modèle Top 3 ML (dédié ~25% positifs)</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.top3_ml_accuracy}%</div><div class="label">Accuracy Top 3</div></div>
+      <div class="stat-card"><div class="value">${d.top3_ml_total}</div><div class="label">Prédictions Top3</div></div>
+      <div class="stat-card"><div class="value">${d.top3_ml_hit}</div><div class="label">Hits Top3</div></div>
+      <div class="stat-card"><div class="value">${d.top3_ml_brier != null ? d.top3_ml_brier : '—'}</div><div class="label">Brier Score</div></div>
+    </div>
+    ` : ''}
+
+    ${d.super_base_accuracy != null ? `
+    <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Super Base — Meilleur Top3 ML dans le Top 5</h3>
+    <div class="results-grid">
+      <div class="stat-card" style="border-color:#f59e0b;"><div class="value">${d.super_base_accuracy}%</div><div class="label">Super Base dans Top 3</div></div>
+      <div class="stat-card"><div class="value">${d.super_base_total}</div><div class="label">Courses testées</div></div>
+      <div class="stat-card"><div class="value">${d.super_base_hit}</div><div class="label">Hits Super Base</div></div>
+    </div>
+    ` : ''}
   `;
 
   if (d.value_bets && d.value_bets.length) {
@@ -330,5 +350,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08ac806cd259ea9',t:'MTc4MDk1MTk1Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
