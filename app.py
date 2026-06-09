@@ -49,6 +49,13 @@ try:
 except:
     HAS_ADVANCED = False
 
+# NEW v7 - pipeline XGBoost + LightGBM + TabNet
+try:
+    from lib.ml_v7 import train_v7, load_v7
+    HAS_V7 = True
+except:
+    HAS_V7 = False
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-secret-2026")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -88,6 +95,10 @@ ML_MODEL_TOP4_V5_FILE = os.path.join(CACHE_DIR, "ml_top4_advanced_v6.pkl")
 # NEW v6.1 — Modèle Top 3 (placement binaire, ~25% positifs = idéal pour sklearn)
 ML_MODEL_TOP3_FILE = os.path.join(CACHE_DIR, "ml_top3_ensemble_v6.pkl")
 ML_MODEL_TOP3_V5_FILE = os.path.join(CACHE_DIR, "ml_top3_advanced_v6.pkl")
+# NEW v7 — XGBoost + LightGBM + TabNet
+ML_MODEL_WIN_V7_FILE = os.path.join(CACHE_DIR, "ml_win_v7.pkl")
+ML_MODEL_TOP3_V7_FILE = os.path.join(CACHE_DIR, "ml_top3_v7.pkl")
+ML_MODEL_TOP4_V7_FILE = os.path.join(CACHE_DIR, "ml_top4_v7.pkl")
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
@@ -993,7 +1004,11 @@ FEATURE_NAMES = [
 
 
 def load_ml_model():
-    # Priorité au modèle v5 avancé
+    # Priorité : v7 > v5 > v4
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_WIN_V7_FILE)
+        if v7:
+            return v7
     if HAS_ADVANCED:
         adv = load_advanced(ML_MODEL_FILE_V5)
         if adv:
@@ -1008,6 +1023,10 @@ def save_ml_model(model):
 
 def load_ml_model_top4():
     """Charge le modèle Top 4 (placement binaire)."""
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_TOP4_V7_FILE)
+        if v7:
+            return v7
     if HAS_ADVANCED:
         adv = load_advanced(ML_MODEL_TOP4_V5_FILE)
         if adv:
@@ -1020,7 +1039,11 @@ def save_ml_model_top4(model):
     save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
 
 def load_ml_model_top3():
-    """Charge le modèle TOP3 (advanced si dispo, sinon ensemble numpy)."""
+    """Charge le modèle TOP3 (v7 > advanced > ensemble numpy)."""
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_TOP3_V7_FILE)
+        if v7:
+            return v7
     if HAS_ADVANCED:
         adv = load_advanced(ML_MODEL_TOP3_V5_FILE)
         if adv:
@@ -1121,7 +1144,29 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             "top3_positives": n_top3, "top4_positives": n_top4}
 
     # ===========================================================
-    #  TRAINING — modèle avancé (Stacking sklearn)
+    #  TRAINING — modèle v7 (XGBoost + LightGBM + TabNet)
+    # ===========================================================
+    if model_type == "advanced_v7" and HAS_V7:
+        # --- Modèle WIN ---
+        print("[ML v7] 🔵 Entraînement WIN (XGBoost + LightGBM + TabNet)...")
+        train_v7(X, y_win, ML_MODEL_WIN_V7_FILE, target="win")
+
+        # --- Modèle TOP3 ---
+        print("[ML v7] 🟡 Entraînement TOP3 (XGBoost + LightGBM + TabNet)...")
+        train_v7(X, y_top3, ML_MODEL_TOP3_V7_FILE, target="top3")
+
+        # --- Modèle TOP4 ---
+        print("[ML v7] 🟢 Entraînement TOP4 (XGBoost + LightGBM + TabNet)...")
+        train_v7(X, y_top4, ML_MODEL_TOP4_V7_FILE, target="top4")
+
+        info["win_model"] = "XGBoost + LightGBM + HGB + TabNet (Stacking V7)"
+        info["top3_model"] = "XGBoost + LightGBM + HGB + TabNet (Stacking V7)"
+        info["top4_model"] = "XGBoost + LightGBM + HGB + TabNet (Stacking V7)"
+        info["models_trained"] = ["win", "top3", "top4"]
+        return info
+
+    # ===========================================================
+    #  TRAINING — modèle avancé (Stacking sklearn v5)
     # ===========================================================
     if model_type == "advanced" and HAS_ADVANCED:
         # --- Modèle WIN ---
@@ -3129,6 +3174,7 @@ def api_ml_status():
     # Enrichir le status avec la présence des modèles
     status["models_loaded"] = {
         "win": load_ml_model() is not None,
+        "top3": load_ml_model_top3() is not None,
         "top4": load_ml_model_top4() is not None,
     }
     return jsonify(status)
