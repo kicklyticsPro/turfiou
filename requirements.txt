@@ -10,3 +10,4 @@ pandas>=2.2.0
 joblib>=1.4.0
 fpdf2
 pytorch-tabnet>=4.1.0
+optuna>=3.5.0

@@ -56,6 +56,13 @@ try:
 except:
     HAS_V7 = False
 
+# NEW v8 - pipeline V8 (Optuna + Purged TS-CV + Feature Eng + Poids dynamiques)
+try:
+    from lib.ml_v8 import train_v8, load_v8, engineer_v8
+    HAS_V8 = True
+except:
+    HAS_V8 = False
+
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-secret-2026")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
@@ -99,6 +106,10 @@ ML_MODEL_TOP3_V5_FILE = os.path.join(CACHE_DIR, "ml_top3_advanced_v6.pkl")
 ML_MODEL_WIN_V7_FILE = os.path.join(CACHE_DIR, "ml_win_v7.pkl")
 ML_MODEL_TOP3_V7_FILE = os.path.join(CACHE_DIR, "ml_top3_v7.pkl")
 ML_MODEL_TOP4_V7_FILE = os.path.join(CACHE_DIR, "ml_top4_v7.pkl")
+# NEW v8 — Optuna + Purged TS-CV + Feature Eng + TabNet V8
+ML_MODEL_WIN_V8_FILE = os.path.join(CACHE_DIR, "ml_win_v8.pkl")
+ML_MODEL_TOP3_V8_FILE = os.path.join(CACHE_DIR, "ml_top3_v8.pkl")
+ML_MODEL_TOP4_V8_FILE = os.path.join(CACHE_DIR, "ml_top4_v8.pkl")
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
@@ -1004,7 +1015,11 @@ FEATURE_NAMES = [
 
 
 def load_ml_model():
-    # Priorité : v7 > v5 > v4
+    # Priorité : v8 > v7 > v5 > v4
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_WIN_V8_FILE)
+        if v8:
+            return v8
     if HAS_V7:
         v7 = load_v7(ML_MODEL_WIN_V7_FILE)
         if v7:
@@ -1023,6 +1038,10 @@ def save_ml_model(model):
 
 def load_ml_model_top4():
     """Charge le modèle Top 4 (placement binaire)."""
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_TOP4_V8_FILE)
+        if v8:
+            return v8
     if HAS_V7:
         v7 = load_v7(ML_MODEL_TOP4_V7_FILE)
         if v7:
@@ -1039,7 +1058,11 @@ def save_ml_model_top4(model):
     save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
 
 def load_ml_model_top3():
-    """Charge le modèle TOP3 (v7 > advanced > ensemble numpy)."""
+    """Charge le modèle TOP3 (v8 > v7 > advanced > ensemble numpy)."""
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_TOP3_V8_FILE)
+        if v8:
+            return v8
     if HAS_V7:
         v7 = load_v7(ML_MODEL_TOP3_V7_FILE)
         if v7:
@@ -1142,6 +1165,47 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     info = {"n_samples": len(X), "trained_at": datetime.now().isoformat(),
             "model_type": model_type, "win_positives": n_win,
             "top3_positives": n_top3, "top4_positives": n_top4}
+
+    # ===========================================================
+    #  TRAINING — modèle v8 (Optuna + TS-CV + Feature Eng V8)
+    # ===========================================================
+    if model_type in ("advanced_v8", "advanced_v8_no_optuna") and HAS_V8:
+        from lib.ml_v8 import engineer_v8
+        # Enrichir les features : 48 → 62 (14 interactions)
+        X_v8 = []
+        for a in analyses_list_v8 if False else []:
+            pass  # placeholder — on utilise X existant
+        # X contient les 48 features de featurize(); on reconstruit depuis raw
+        # Solution: on applique engineer_v8 sur chaque sample
+        X_v8 = []
+        for sample in X:
+            # sample = liste de 48 features depuis featurize()
+            # On a besoin du dict raw, mais ici on n'a que la liste.
+            # Alternative: features d'interaction directes depuis le vecteur
+            X_v8.append(_engineer_v8_from_vector(sample))
+        X = X_v8
+        print(f"[ML v8] Features enrichies : {len(X[0])} features (48 base + 14 interactions)")
+
+        use_optuna = model_type == "advanced_v8"  # Optuna que pour le mode complet
+
+        # --- Modèle WIN ---
+        print("[ML v8] 🔵 Entraînement WIN (Optuna + XGBoost + LightGBM + TabNet)...")
+        train_v8(X, y_win, ML_MODEL_WIN_V8_FILE, target="win", use_optuna=use_optuna)
+
+        # --- Modèle TOP3 ---
+        print("[ML v8] 🟡 Entraînement TOP3...")
+        train_v8(X, y_top3, ML_MODEL_TOP3_V8_FILE, target="top3", use_optuna=use_optuna)
+
+        # --- Modèle TOP4 ---
+        print("[ML v8] 🟢 Entraînement TOP4...")
+        train_v8(X, y_top4, ML_MODEL_TOP4_V8_FILE, target="top4", use_optuna=use_optuna)
+
+        info["win_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
+        info["top3_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
+        info["top4_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
+        info["models_trained"] = ["win", "top3", "top4"]
+        info["n_features"] = len(X[0])
+        return info
 
     # ===========================================================
     #  TRAINING — modèle v7 (XGBoost + LightGBM + TabNet)
@@ -1265,7 +1329,109 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     return info
 
 
+def _engineer_v8_from_vector(v):
+    """
+    Prend le vecteur de 48 features (depuis featurize()) et retourne
+    62 features avec les 14 interactions v8.
+    
+    Index mapping du vecteur v (48 features v7) :
+      0-5   : carrière (age, nb_courses, nb_victoires, nb_places, win_rate, place_rate)
+      6-7   : gains (gains_carriere_log, gains_par_course_log)
+      8-12  : 5 dernières places (place_1..5)
+      13-18 : agrégats (avg_place_3, avg_place_5, top3_rate, top4_rate, variance, nb_raced)
+      19-20 : dernière course (last_place, days_since_last)
+      21    : activité (nb_courses_mois)
+      22-24 : distance (dist_count, dist_avg, dist_wr)
+      25-27 : driver global (dr_courses, dr_wr, dr_pr)
+      28-29 : driver discipline (dr_disc_courses, dr_disc_wr)
+      30-31 : driver hippo (dr_hippo_courses, dr_hippo_wr)
+      32-34 : entraineur (en_courses, en_wr, en_disc_wr)
+      35-36 : chimie (chimie_courses, chimie_wr)
+      37-38 : elo (elo, elo_trend)
+      39-44 : course (nb_partants, cote, inv_cote, is_female, has_oeilleres, is_deferre)
+      45-47 : contexte (driver_changed, bonus_team, bonus_deferre)
+    """
+    # Sécuriser
+    def safe(idx, default=0.0):
+        val = v[idx] if idx < len(v) else default
+        return float(val) if val is not None else default
+
+    age = safe(0)
+    nb_courses = max(safe(1), 1.0)
+    win_rate = safe(4)
+    place_rate = safe(5)
+    gains_pc_log = safe(7)
+    avg_place_3 = safe(13)
+    avg_place_5 = safe(14)
+    top3_rate = safe(15)
+    top4_rate = safe(16)
+    variance = safe(17)
+    place_1 = safe(8)
+    last_place = safe(19)
+    days_since = safe(20)
+    nb_courses_mois = safe(21)
+    dist_count = safe(22)
+    dist_avg = safe(23)
+    dist_wr = safe(24)
+    dr_wr = safe(26)
+    dr_pr = safe(27)
+    dr_disc_wr = safe(29)
+    dr_hippo_wr = safe(31)
+    en_wr = safe(33)
+    en_disc_wr = safe(34)
+    chimie_courses = safe(35)
+    chimie_wr = safe(36)
+    elo = safe(37)
+    elo_trend = safe(38)
+    nb_partants = max(safe(39), 1.0)
+    cote = max(safe(40), 1.0)
+    inv_cote = safe(41)
+    driver_courses = safe(25)
+
+    interactions = [
+        # 1. forme × cote (value bet signal)
+        avg_place_3 * cote,
+        # 2. momentum (amélioration récente)
+        avg_place_5 - place_1 if (avg_place_5 > 0 and place_1 > 0) else 0.0,
+        # 3. driver × entraineur
+        dr_wr * en_wr / 100.0 if dr_wr > 0 and en_wr > 0 else 0.0,
+        # 4. elo × marché
+        elo * inv_cote * 100,
+        # 5. régularité (négatif = mieux)
+        -variance,
+        # 6. exp distance ratio
+        dist_count / nb_courses,
+        # 7. spécialisation driver
+        dr_disc_wr / max(dr_wr, 1.0),
+        # 8. proba marché
+        inv_cote * 100,
+        # 9. chimie relative
+        chimie_wr / max(dr_wr, 1.0) if chimie_courses >= 2 else 0.0,
+        # 10. tendance pondérée
+        elo_trend * nb_courses_mois,
+        # 11. dernier top3
+        1.0 if 0 < last_place <= 3 else 0.0,
+        # 12. inactivité score
+        min(days_since, 120) / 30.0,
+        # 13. progression gains
+        gains_pc_log,
+        # 14. compétitivité
+        1.0 / nb_partants * 100,
+    ]
+    return list(v) + interactions
+
+
 def predict_ml(features, model, calibration=None):
+    """Prédiction ML — enrichit en v8 si le modèle l'attend."""
+    # Si le modèle v8 attend 62 features et qu'on en a 48, enrichir
+    if HAS_V8 and hasattr(model, 'stacking') and hasattr(model.stacking, 'n_features'):
+        if model.stacking.n_features and len(features) < model.stacking.n_features:
+            features = _engineer_v8_from_vector(features)
+    elif HAS_V8 and hasattr(model, 'model') and isinstance(model.model, dict):
+        # StackingV8 standalone
+        nf = model.n_features
+        if nf and len(features) < nf:
+            features = _engineer_v8_from_vector(features)
     p = model.predict_one(features)
     if calibration:
         p = apply_calibration(p, calibration)
