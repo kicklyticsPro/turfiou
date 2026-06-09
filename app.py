@@ -685,7 +685,7 @@ def _extract_distance_raw(perfs_detail, distance_course):
 def _extract_team_raw(name, kind, team_stats, discipline=None, hippodrome=None):
     """Extrait les stats brutes d'un driver/entraineur : (courses, victoires, places)."""
     if not team_stats or not name:
-        return 0, 0, 0, 0, 0, 0  # courses, vict, places, disc_courses, disc_vict, hippo_courses, hippo_vict
+        return 0, 0, 0, 0, 0, 0, 0  # courses, vict, places, disc_courses, disc_vict, hippo_courses, hippo_vict
 
     if kind == "drivers":
         gb = team_stats.get("drivers", {}).get(name)
