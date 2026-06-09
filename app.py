@@ -2469,17 +2469,56 @@ def api_backtest():
 def api_train():
     days = int(request.args.get("days", 21))
     days = min(days, 30)
-    n_trees_gbm = int(request.args.get("trees_gbm", 50))
-    n_trees_rf = int(request.args.get("trees_rf", 30))
-    model_type = request.args.get("type", "advanced")  # v5 par défaut
-    try:
-        info = train_ml_model(days_back=days, n_trees_gbm=n_trees_gbm,
-                              n_trees_rf=n_trees_rf, model_type=model_type)
-        if info is None:
-            return jsonify({"error": "Pas assez de données"}), 400
-        return jsonify({"ok": True, **info})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    model_type = request.args.get("type", "advanced")
+
+    # Vérifier si un training est déjà en cours
+    current_status = _load_ml_status()
+    if current_status and current_status.get("status") == "training":
+        return jsonify({"error": "Un entraînement est déjà en cours"}), 409
+
+    # Lancer le training en arrière-plan (async)
+    def _train_bg():
+        now_str = datetime.now().strftime("%d/%m/%Y %H:%M")
+        print(f"[Manual Train] Démarrage — {days} jours, {model_type} — {now_str}")
+        _save_ml_status({
+            "status": "training",
+            "started_at": datetime.now().isoformat(),
+            "source": "manual",
+            "params": {"days_back": days, "model_type": model_type},
+        })
+        try:
+            info = train_ml_model(days_back=days, model_type=model_type)
+            if info:
+                _save_ml_status({
+                    "status": "ok",
+                    "finished_at": datetime.now().isoformat(),
+                    "source": "manual",
+                    "params": {"days_back": days, "model_type": model_type},
+                    "result": {k: str(v) for k, v in info.items()},
+                })
+                print(f"[Manual Train] ✅ Terminé — {info}")
+            else:
+                _save_ml_status({
+                    "status": "error",
+                    "finished_at": datetime.now().isoformat(),
+                    "source": "manual",
+                    "error": "Pas assez de données (< 100 samples)",
+                })
+                print("[Manual Train] ❌ Pas assez de données")
+        except Exception as e:
+            _save_ml_status({
+                "status": "error",
+                "finished_at": datetime.now().isoformat(),
+                "source": "manual",
+                "error": str(e),
+            })
+            print(f"[Manual Train] ❌ Erreur: {e}")
+
+    import threading
+    t = threading.Thread(target=_train_bg, daemon=True)
+    t.start()
+
+    return jsonify({"ok": True, "message": "Training démarré en arrière-plan", "status_url": "/api/ml-status"})
 
 
 @app.route("/api/team-stats")
