@@ -182,29 +182,60 @@
 </div>
 
 <script>
+let trainPollInterval = null;
+
 async function trainModel() {
   const days = document.getElementById('trainDays').value;
   const type = document.getElementById('trainType').value;
   const res_div = document.getElementById('trainResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement Dual Win + Top4 en cours… (2-5 min)</div>';
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Démarrage du training…</div>';
   try {
     const res = await fetch(`/api/train?days=${days}&type=${type}`, {method:'POST'});
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    const models = data.models_trained ? data.models_trained.join(' + ') : type;
-    res_div.innerHTML = `
-      <div class="success">
-        ✅ Modèles <strong>${models}</strong> entraînés !<br>
-        📊 ${data.n_samples} échantillons |
-        🔵 WIN: ${data.win_positives} positifs (${(data.win_positives/data.n_samples*100).toFixed(1)}%) |
-        🟡 TOP3: ${data.top3_positives} positifs (${(data.top3_positives/data.n_samples*100).toFixed(1)}%) |
-        🟢 TOP4: ${data.top4_positives} positifs (${(data.top4_positives/data.n_samples*100).toFixed(1)}%)<br>
-        🕐 ${new Date(data.trained_at).toLocaleString('fr-FR')}<br>
-        <small style="color:#94a3b8;">Triple modèle Win/Top3/Top4. Coche 🧠 ML pour activer.</small>
-      </div>
-    `;
+    // Training lancé en arrière-plan → poll le statut
+    res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement en cours… (3-10 min pour les 3 modèles)<br><small style="color:#94a3b8;">La page peut être fermée, le training continue en arrière-plan.</small></div>';
+    if (trainPollInterval) clearInterval(trainPollInterval);
+    trainPollInterval = setInterval(pollTrainStatus, 5000);
   } catch(e) {
     res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+  }
+}
+
+async function pollTrainStatus() {
+  const res_div = document.getElementById('trainResult');
+  try {
+    const res = await fetch('/api/ml-status');
+    const data = await res.json();
+    if (data.status === 'training') {
+      const started = data.started_at ? new Date(data.started_at).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}) : '?';
+      res_div.innerHTML = `<div class="loading"><div class="spinner"></div>Entraînement en cours… (démarré à ${started})<br><small style="color:#94a3b8;">Les 3 modèles (WIN + TOP3 + TOP4) sont entraînés séquentiellement.</small></div>`;
+    } else if (data.status === 'ok') {
+      if (trainPollInterval) { clearInterval(trainPollInterval); trainPollInterval = null; }
+      const r = data.result || {};
+      const n = parseInt(r.n_samples) || 0;
+      const winP = parseInt(r.win_positives) || 0;
+      const top3P = parseInt(r.top3_positives) || 0;
+      const top4P = parseInt(r.top4_positives) || 0;
+      const models = r.models_trained || 'win+top3+top4';
+      const ts = data.finished_at ? new Date(data.finished_at).toLocaleString('fr-FR') : '';
+      res_div.innerHTML = `
+        <div class="success">
+          ✅ <strong>${models}</strong> entraînés !<br>
+          📊 ${n} échantillons |
+          🔵 WIN: ${winP} (${n?(winP/n*100).toFixed(1):'—'}%) |
+          🟡 TOP3: ${top3P} (${n?(top3P/n*100).toFixed(1):'—'}%) |
+          🟢 TOP4: ${top4P} (${n?(top4P/n*100).toFixed(1):'—'}%)<br>
+          🕐 ${ts}<br>
+          <small style="color:#94a3b8;">Triple modèle Win/Top3/Top4. Coche 🧠 ML pour activer.</small>
+        </div>
+      `;
+    } else if (data.status === 'error') {
+      if (trainPollInterval) { clearInterval(trainPollInterval); trainPollInterval = null; }
+      res_div.innerHTML = `<div class="error">❌ Training échoué: ${data.error || 'erreur inconnue'}</div>`;
+    }
+  } catch(e) {
+    // Silencieux — on réessaie au prochain poll
   }
 }
 
@@ -351,5 +382,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08d6c28ec752a3b',t:'MTc4MDk3OTY1MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08dce272d9bd14a',t:'MTc4MDk4MzY2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
