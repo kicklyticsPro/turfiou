@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Force ML — Turf Analyzer v6</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh;
+  }
+  header {
+    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #f59e0b;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+  }
+  header h1 {
+    font-size: 20px;
+    background: linear-gradient(90deg, #f59e0b, #ef4444);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a {
+    color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px; transition: all .2s;
+  }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=date], select, button {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 6px 10px; border-radius: 7px; font-size: 12px;
+  }
+  button { background: #f59e0b; border: none; cursor: pointer; font-weight: 600; color: #0f172a; }
+  button:hover { background: #d97706; }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .sidebar {
+    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 14px;
+    max-height: calc(100vh - 110px); overflow-y: auto; border: 1px solid #334155;
+  }
+  .reunion-block { margin-bottom: 14px; }
+  .reunion-title { font-size: 12px; font-weight: 700; color: #06b6d4; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .course-btn {
+    width: 100%; text-align: left; background: #1e293b; color: #cbd5e1;
+    padding: 7px 9px; margin-bottom: 3px; border-radius: 6px;
+    font-size: 11px; border: 1px solid transparent; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .course-btn:hover { border-color: #f59e0b; background: #263548; }
+  .course-btn.active { background: #422006; border-color: #f59e0b; }
+  .course-btn .time { color: #94a3b8; font-size: 10px; }
+
+  .main { min-height: 400px; }
+  .placeholder { text-align: center; padding: 60px 20px; color: #64748b; }
+  .placeholder .emoji { font-size: 56px; margin-bottom: 16px; }
+  .placeholder h2 { color: #e2e8f0; font-size: 22px; margin-bottom: 10px; }
+
+  .course-header {
+    background: rgba(30, 41, 59, 0.8); padding: 16px 20px; border-radius: 12px;
+    margin-bottom: 14px; border-left: 4px solid #f59e0b;
+  }
+  .course-header h2 { font-size: 18px; margin-bottom: 4px; }
+  .course-header .meta { display: flex; gap: 14px; flex-wrap: wrap; color: #94a3b8; font-size: 12px; }
+  .course-header .meta span strong { color: #e2e8f0; }
+
+  /* Force ranking */
+  .force-list { display: flex; flex-direction: column; gap: 8px; }
+  .force-card {
+    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 14px 18px;
+    border: 1px solid #334155; display: grid;
+    grid-template-columns: 50px 1fr 200px;
+    gap: 14px; align-items: center; transition: all .2s; position: relative;
+  }
+  .force-card:hover { border-color: #f59e0b; }
+
+  .force-card.tier-S { background: linear-gradient(90deg, rgba(250,204,21,0.15), rgba(30,41,59,0.6)); border-color: #facc15; }
+  .force-card.tier-A { background: linear-gradient(90deg, rgba(16,185,129,0.12), rgba(30,41,59,0.6)); border-color: #10b981; }
+  .force-card.tier-B { border-color: #06b6d4; }
+  .force-card.tier-C { border-color: #8b5cf6; }
+  .force-card.tier-D { border-color: #475569; opacity: 0.7; }
+
+  .force-rank {
+    text-align: center;
+  }
+  .force-num { font-size: 28px; font-weight: 800; line-height: 1; }
+  .tier-S .force-num { color: #facc15; }
+  .tier-A .force-num { color: #10b981; }
+  .tier-B .force-num { color: #06b6d4; }
+  .tier-C .force-num { color: #8b5cf6; }
+  .tier-D .force-num { color: #64748b; }
+  .force-pmu {
+    background: #0f172a; color: #f59e0b; border-radius: 50%;
+    width: 32px; height: 32px; display: inline-flex; align-items: center;
+    justify-content: center; font-weight: 700; margin-top: 5px;
+    border: 2px solid #f59e0b; font-size: 13px;
+  }
+  .tier-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 800; margin-top: 4px;
+  }
+  .tier-S .tier-badge { background: #facc15; color: #0f172a; }
+  .tier-A .tier-badge { background: #10b981; color: #0f172a; }
+  .tier-B .tier-badge { background: #06b6d4; color: #0f172a; }
+  .tier-C .tier-badge { background: #8b5cf6; color: white; }
+  .tier-D .tier-badge { background: #475569; color: #cbd5e1; }
+
+  .force-info h3 { font-size: 16px; margin-bottom: 3px; }
+  .force-info .sub { color: #94a3b8; font-size: 11px; margin-bottom: 2px; }
+  .force-info .musique {
+    font-family: 'Courier New', monospace; background: #0f172a;
+    padding: 2px 6px; border-radius: 3px; display: inline-block;
+    color: #f59e0b; font-size: 11px; margin-top: 3px;
+  }
+  .force-scores { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .force-tag {
+    font-size: 9px; padding: 2px 6px; border-radius: 3px;
+    background: #0f172a; font-weight: 600;
+  }
+  .force-tag.win { color: #10b981; border: 1px solid #10b98133; }
+  .force-tag.top3 { color: #fbbf24; border: 1px solid #fbbf2433; }
+  .force-tag.top4 { color: #06b6d4; border: 1px solid #06b6d433; }
+  .force-tag.heur { color: #8b5cf6; border: 1px solid #8b5cf633; }
+
+  /* Force meter */
+  .force-meter { text-align: right; }
+  .force-pct {
+    font-size: 34px; font-weight: 800; line-height: 1;
+  }
+  .tier-S .force-pct { background: linear-gradient(90deg, #facc15, #ef4444); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .tier-A .force-pct { background: linear-gradient(90deg, #10b981, #06b6d4); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .tier-B .force-pct { background: linear-gradient(90deg, #06b6d4, #8b5cf6); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .tier-C .force-pct { background: linear-gradient(90deg, #8b5cf6, #64748b); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .tier-D .force-pct { color: #64748b; }
+  .force-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; margin-top: 2px; }
+  .force-bar-bg {
+    height: 8px; background: #0f172a; border-radius: 4px;
+    margin-top: 8px; overflow: hidden; width: 100%;
+  }
+  .force-bar-fill {
+    height: 100%; border-radius: 4px; transition: width .6s ease;
+  }
+  .tier-S .force-bar-fill { background: linear-gradient(90deg, #facc15, #ef4444); }
+  .tier-A .force-bar-fill { background: linear-gradient(90deg, #10b981, #06b6d4); }
+  .tier-B .force-bar-fill { background: linear-gradient(90deg, #06b6d4, #8b5cf6); }
+  .tier-C .force-bar-fill { background: linear-gradient(90deg, #8b5cf6, #64748b); }
+  .tier-D .force-bar-fill { background: #475569; }
+
+  .cote-tag {
+    display: inline-block; background: #1e40af; color: white;
+    padding: 2px 7px; border-radius: 3px; font-size: 11px;
+    font-weight: 700; margin-top: 4px;
+  }
+
+  /* Legend */
+  .legend {
+    background: rgba(30, 41, 59, 0.5); border-radius: 10px; padding: 12px 16px;
+    margin-bottom: 16px; display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+    font-size: 11px; color: #94a3b8; border: 1px solid #334155;
+  }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  .loading { text-align: center; padding: 50px; color: #94a3b8; }
+  .spinner {
+    border: 3px solid #334155; border-top: 3px solid #f59e0b;
+    border-radius: 50%; width: 32px; height: 32px;
+    animation: spin 1s linear infinite; margin: 0 auto 14px;
+  }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  .disclaimer {
+    background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b;
+    border-radius: 8px; padding: 8px 12px; margin-top: 12px;
+    font-size: 11px; color: #fbbf24;
+  }
+
+  @media (max-width: 800px) {
+    .force-card { grid-template-columns: 45px 1fr; }
+    .force-meter { grid-column: 1 / -1; text-align: left; }
+    .force-bar-bg { width: 100%; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>💪 Turf Analyzer — Force<span class="version-tag">v6</span></h1>
+  <div class="nav-links">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest & ML</a>
+    <a href="/bilan">📊 Bilan</a>
+    <a href="/force" class="active">💪 Force</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
+  </div>
+  <div class="controls">
+    <input type="date" id="datePicker">
+    <button onclick="loadReunions()">Charger</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div id="reunionsList" class="loading"><div class="spinner"></div>Chargement…</div>
+  </aside>
+
+  <main class="main" id="mainContent">
+    <div class="placeholder">
+      <div class="emoji">💪</div>
+      <h2>Force ML</h2>
+      <p>Indice de force basé sur les 3 modèles ML (Win + Top3 + Top4)</p>
+      <p style="font-size:13px; margin-top:10px;">Sélectionnez une course pour voir le classement par force.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+let currentDate = '';
+let currentR = null, currentC = null;
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
+
+async function loadReunions() {
+  currentDate = toApiDate(document.getElementById('datePicker').value);
+  const list = document.getElementById('reunionsList');
+  list.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement…</div>';
+  try {
+    const res = await fetch(`/api/reunions?date=${currentDate}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.reunions || !data.reunions.length) {
+      list.innerHTML = '<p style="color:#94a3b8;padding:20px;">Aucune réunion</p>';
+      return;
+    }
+    list.innerHTML = data.reunions.map(r => `
+      <div class="reunion-block">
+        <div class="reunion-title">R${r.numReunion} · ${r.hippodrome}</div>
+        ${r.courses.map(c => `
+          <button class="course-btn" onclick="loadForce(${r.numReunion}, ${c.numCourse}, this)">
+            <span>C${c.numCourse} · ${(c.libelle||'').substring(0,26)}</span>
+            <span>${c.arriveeDefinitive ? '<span style="color:#f59e0b;">✓</span> ' : ''}<span class="time">${c.heure}</span></span>
+          </button>
+        `).join('')}
+      </div>
+    `).join('');
+  } catch(e) {
+    list.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
+  }
+}
+
+async function loadForce(r, c, btn) {
+  currentR = r; currentC = c;
+  if (btn) {
+    document.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const main = document.getElementById('mainContent');
+  main.innerHTML = '<div class="loading"><div class="spinner"></div>Calcul de la force ML…</div>';
+  try {
+    const res = await fetch(`/api/course/${r}/${c}?date=${currentDate}&ml=1&capital=100`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderForce(data);
+  } catch(e) {
+    main.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
+  }
+}
+
+function computeForce(a) {
+  // Force = combinaison des 3 modèles ML
+  // Win ML = chance de gagner (normalisé ~5-30%)
+  // Top3 ML = chance d'être dans les 3 premiers (normalisé ~15-50%)
+  // Top4 ML = chance d'être dans les 4 premiers (normalisé ~20-55%)
+  const winML  = a.chanceML || a.chance || 0;
+  const top3ML = a.chanceTop3ML || a.chanceTop4ML || 0;
+  const top4ML = a.chanceTop4ML || 0;
+
+  // Pondération : Win × 3 (très discriminant), Top3 × 2, Top4 × 1
+  const raw = winML * 3 + top3ML * 2 + top4ML * 1;
+  // Normaliser sur 100 : max théorique = 50×3 + 80×2 + 90×1 = 400
+  const force = Math.min(100, raw / 4.0);
+
+  return { force: Math.round(force * 10) / 10, winML, top3ML, top4ML };
+}
+
+function getTier(force) {
+  if (force >= 65) return 'S';
+  if (force >= 50) return 'A';
+  if (force >= 38) return 'B';
+  if (force >= 25) return 'C';
+  return 'D';
+}
+
+function getTierLabel(tier) {
+  return { S: '🔥 Ultra fort', A: '💪 Très fort', B: '👍 Fort', C: '😐 Moyen', D: '📉 Faible' }[tier];
+}
+
+function renderForce(data) {
+  const { reunion, course, analyses } = data;
+  const main = document.getElementById('mainContent');
+
+  // Calculer la force de chaque cheval
+  const ranked = analyses.map(a => {
+    const { force, winML, top3ML, top4ML } = computeForce(a);
+    return { ...a, force, winML, top3ML, top4ML };
+  });
+  ranked.sort((a, b) => b.force - a.force);
+
+  // Re-assigner le rang de force
+  ranked.forEach((a, i) => { a.forceRang = i + 1; });
+
+  let html = `
+    <div class="course-header">
+      <h2>${course.libelle}
+        ${data.ml_active ? '<span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;">🧠 ML</span>' : ''}
+      </h2>
+      <div class="meta">
+        <span>📍 <strong>${reunion.hippodrome}</strong></span>
+        <span>🕐 <strong>${course.heure}</strong></span>
+        <span>🏁 <strong>${course.discipline}</strong></span>
+        <span>📏 <strong>${course.distance}m</strong></span>
+        <span>🐎 <strong>${analyses.length} partants</strong></span>
+      </div>
+    </div>
+
+    <div class="legend">
+      <strong style="color:#f59e0b;">Formule :</strong>
+      <span>Win ML × 3 + Top3 ML × 2 + Top4 ML × 1</span>
+      <span style="margin-left:8px;">|</span>
+      <div class="legend-item"><div class="legend-dot" style="background:#facc15;"></div> S ≥ 65</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#10b981;"></div> A ≥ 50</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#06b6d4;"></div> B ≥ 38</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#8b5cf6;"></div> C ≥ 25</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#475569;"></div> D &lt; 25</div>
+    </div>
+  `;
+
+  html += '<div class="force-list">';
+
+  ranked.forEach(a => {
+    const tier = getTier(a.force);
+    const barWidth = Math.min(a.force, 100);
+
+    html += `
+      <div class="force-card tier-${tier}">
+        <div class="force-rank">
+          <div class="force-num">#${a.forceRang}</div>
+          <div class="force-pmu">${a.numPmu}</div>
+          <div class="tier-badge">${tier}</div>
+        </div>
+        <div class="force-info">
+          <h3>${a.nom}</h3>
+          <div class="sub">${a.age} ans · ${a.sexe||''} · 🏇 <strong>${a.driver}</strong> · 👤 ${a.entraineur}</div>
+          <div class="sub">${a.nbCourses}c · ${a.nbVictoires}V · ${a.nbPlaces}P · 💰 ${a.gainsCarriere.toLocaleString()}€</div>
+          ${a.musique ? `<span class="musique">${a.musique}</span>` : ''}
+          <div class="force-scores">
+            <span class="force-tag win">🏆 Win ${Math.round(a.winML)}%</span>
+            <span class="force-tag top3">🏅 T3 ${Math.round(a.top3ML)}%</span>
+            <span class="force-tag top4">🎯 T4 ${Math.round(a.top4ML)}%</span>
+            <span class="force-tag heur">📊 Heur ${Math.round(a.chanceHeur || 0)}%</span>
+            ${a.cote ? `<span class="cote-tag">Cote ${a.cote}</span>` : ''}
+          </div>
+        </div>
+        <div class="force-meter">
+          <div class="force-pct">${a.force}</div>
+          <div class="force-label">${getTierLabel(tier)}</div>
+          <div class="force-bar-bg"><div class="force-bar-fill" style="width:${barWidth}%"></div></div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+
+  html += `
+    <div class="disclaimer">
+      ⚠️ Indice de force = Win ML × 3 + Top3 ML × 2 + Top4 ML × 1, normalisé sur 100.
+      Classé par force décroissante. Les tiers (S/A/B/C/D) aident à identifier rapidement les chevaux les plus forts.
+      Le jeu peut être addictif : <a href="https://www.joueurs-info-service.fr/" style="color:#fbbf24;">joueurs-info-service.fr</a>
+    </div>
+  `;
+
+  main.innerHTML = html;
+}
+
+document.getElementById('datePicker').value = todayStr();
+loadReunions();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08d6b734d882a3b',t:'MTc4MDk3OTYyMg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
