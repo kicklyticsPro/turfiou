@@ -122,16 +122,16 @@
   <div class="section">
     <h2>🧠 Modèle ML v6 — Dual Win + Top 4</h2>
     <p>
-      Entraîne <strong>2 modèles en parallèle</strong> :<br>
-      🔵 <strong>WIN</strong> — y=1 si gagnant (~8% positifs, classement)<br>
-      🟢 <strong>TOP4</strong> — y=1 si ≤4e place (~40% positifs, placement, plus stable)<br>
-      Utilise <strong>41 features</strong> incluant driver/hippodrome, régularité, chimie, terrain, etc.
-      Stacking de 5 modèles (LGBM+CatBoost+HGB+RF+LR) avec TimeSeriesSplit.
+      Entraîne <strong>3 modèles</strong> (WIN, TOP3, TOP4) avec les 48 features brutes v7.<br>
+      🔵 <strong>WIN</strong> — y=1 si gagnant (~8%) &nbsp;|&nbsp;
+      🟡 <strong>TOP3</strong> — y=1 si ≤3e (~25%) &nbsp;|&nbsp;
+      🟢 <strong>TOP4</strong> — y=1 si ≤4e (~40%)
     </p>
     <div class="controls">
       <label>Type :
         <select id="trainType">
-          <option value="advanced" selected>Stacking avancé (recommandé)</option>
+          <option value="advanced_v7" selected>🧠 V7 — XGBoost + LightGBM + TabNet (recommandé)</option>
+          <option value="advanced">V5 — Stacking sklearn (LGBM+CatBoost+HGB+RF)</option>
           <option value="ensemble">Ensemble NumPy (fallback)</option>
         </select>
       </label>
@@ -382,5 +382,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08dce272d9bd14a',t:'MTc4MDk4MzY2NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
