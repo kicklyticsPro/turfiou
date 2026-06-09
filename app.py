@@ -637,82 +637,359 @@ def score_distance(perfs_detail, distance_course):
 
 
 # ============================================================
-#  ML featurization v4 — 23 features (vs 17 en v3)
+#  Raw data extraction — données brutes pour le ML
+#  Pas de scoring synthétique, le ML apprend les relations
+# ============================================================
+
+def _extract_last_places(perfs_detail, n=5):
+    """Extrait les N dernières places brutes. 0 = pas de donnée."""
+    places = []
+    for course in (perfs_detail or [])[:n]:
+        found = False
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                places.append(place)
+                found = True
+                break
+        if not found:
+            places.append(0)
+    while len(places) < n:
+        places.append(0)
+    return places
+
+
+def _extract_distance_raw(perfs_detail, distance_course):
+    """Stats brutes sur courses à distance similaire (±200m)."""
+    if not perfs_detail or not distance_course:
+        return 0, 0.0, 0.0  # count, avg_place, win_rate
+    places = []
+    wins = 0
+    for course in perfs_detail:
+        dist = course.get("distance")
+        if not dist: continue
+        if abs(dist - distance_course) <= 200:
+            for p in course.get("participants", []):
+                if p.get("itsHim"):
+                    place = (p.get("place") or {}).get("place", 0) or 0
+                    if place > 0:
+                        places.append(place)
+                        if place == 1:
+                            wins += 1
+                    break
+    if not places:
+        return 0, 0.0, 0.0
+    return len(places), sum(places) / len(places), wins / len(places)
+
+
+def _extract_team_raw(name, kind, team_stats, discipline=None, hippodrome=None):
+    """Extrait les stats brutes d'un driver/entraineur : (courses, victoires, places)."""
+    if not team_stats or not name:
+        return 0, 0, 0, 0, 0, 0  # courses, vict, places, disc_courses, disc_vict, hippo_courses, hippo_vict
+
+    if kind == "drivers":
+        gb = team_stats.get("drivers", {}).get(name)
+        db = team_stats.get("drivers_disc", {}).get(name, {}).get(discipline) if discipline else None
+        hb = team_stats.get("drivers_hippo", {}).get(name, {}).get(hippodrome) if hippodrome else None
+    else:
+        gb = team_stats.get("entraineurs", {}).get(name)
+        db = team_stats.get("entraineurs_disc", {}).get(name, {}).get(discipline) if discipline else None
+        hb = None
+
+    c = (gb or {}).get("c", 0)
+    v = (gb or {}).get("v", 0)
+    p = (gb or {}).get("p", 0)
+    dc = (db or {}).get("c", 0)
+    dv = (db or {}).get("v", 0)
+    hc = (hb or {}).get("c", 0) if hb else 0
+    hv = (hb or {}).get("v", 0) if hb else 0
+
+    return c, v, p, dc, dv, hc, hv
+
+
+def _extract_chimie_raw(cheval, driver, horse_stats):
+    """Taux de victoire brut du duo cheval/driver."""
+    if not cheval or not driver or not horse_stats:
+        return 0, 0  # courses, victoires
+    data = horse_stats.get("with_driver", {}).get(cheval, {}).get(driver)
+    if not data:
+        return 0, 0
+    return data.get("c", 0), data.get("v", 0)
+
+
+def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
+                       cheval, team_stats, horse_stats, elo_ratings, elo_hist,
+                       discipline, hippodrome, nb_partants):
+    """Construit le dict de features brutes pour le ML.
+    Tout est en valeurs réelles, pas de scoring synthétique.
+    """
+    import math as _math
+
+    # --- Carrière ---
+    nb_courses = p.get("nombreCourses", 0) or 0
+    nb_vict = p.get("nombreVictoires", 0) or 0
+    nb_place = p.get("nombrePlaces", 0) or 0
+    gains = p.get("gainsParticipant", {}) or {}
+    gains_carriere = gains.get("gainsCarriere", 0) or 0
+
+    # --- Dernières places ---
+    last5 = _extract_last_places(perfs_detail, 5)
+    last_place = last5[0]
+
+    # --- Agrégats perf ---
+    top3_rate = compute_top3_rate(perfs_detail)
+    top4_rate = compute_top4_rate(perfs_detail)
+    avg_place_3 = compute_avg_place_recent(perfs_detail, 3)
+    all_places = [pl for pl in last5 if pl > 0]
+    avg_place_5 = sum(all_places) / len(all_places) if all_places else 0.0
+    variance_places = 0.0
+    if len(all_places) >= 3:
+        mean_p = sum(all_places) / len(all_places)
+        variance_places = sum((x - mean_p) ** 2 for x in all_places) / len(all_places)
+
+    # --- Jours depuis dernière course ---
+    days_since = 0.0
+    if perfs_detail:
+        for course in perfs_detail[:1]:
+            date_ms = course.get("date")
+            if date_ms:
+                d = datetime.fromtimestamp(date_ms / 1000)
+                days_since = max(0, (datetime.now() - d).days)
+
+    nb_courses_mois = 0
+    if perfs_detail:
+        from datetime import timedelta
+        cutoff = datetime.now() - timedelta(days=30)
+        for course in perfs_detail:
+            date_ms = course.get("date")
+            if not date_ms: continue
+            d = datetime.fromtimestamp(date_ms / 1000)
+            if d >= cutoff:
+                nb_courses_mois += 1
+
+    # --- Distance ---
+    dist_count, dist_avg_place, dist_win_rate = _extract_distance_raw(perfs_detail, distance_course)
+
+    # --- Driver ---
+    dr_c, dr_v, dr_p, dr_dc, dr_dv, dr_hc, dr_hv = _extract_team_raw(
+        driver, "drivers", team_stats, discipline, hippodrome)
+
+    # --- Entraineur ---
+    en_c, en_v, en_p, en_dc, en_dv, en_hc, en_hv = _extract_team_raw(
+        entraineur, "entraineurs", team_stats, discipline)
+
+    # --- Chimie cheval/driver ---
+    chimie_c, chimie_v = _extract_chimie_raw(cheval, driver, horse_stats)
+
+    # --- Elo ---
+    elo_val = elo_ratings.get(cheval, 1500) if elo_ratings else 1500
+    elo_trend_raw = 0.0
+    if elo_hist and cheval in elo_hist:
+        hist = elo_hist[cheval]
+        if len(hist) >= 2:
+            recent = hist[-1] if hist else elo_val
+            older = hist[-2] if len(hist) >= 2 else elo_val
+            elo_trend_raw = recent - older
+
+    # --- Course ---
+    rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
+    cote = float(rap["rapport"]) if rap and rap.get("rapport") else 0
+    age = p.get("age") or 0
+
+    return {
+        # Carrière (6)
+        "age": age,
+        "nb_courses": nb_courses,
+        "nb_victoires": nb_vict,
+        "nb_places": nb_place,
+        "win_rate": nb_vict / nb_courses * 100 if nb_courses > 0 else 0,
+        "place_rate": nb_place / nb_courses * 100 if nb_courses > 0 else 0,
+        # Gains (2)
+        "gains_carriere_log": _math.log10(max(gains_carriere, 1)),
+        "gains_par_course_log": _math.log10(max(gains_carriere / max(nb_courses, 1), 1)),
+        # 5 dernières places (5)
+        "place_1": last5[0], "place_2": last5[1], "place_3": last5[2],
+        "place_4": last5[3], "place_5": last5[4],
+        # Agrégats perf (6)
+        "avg_place_3": avg_place_3,
+        "avg_place_5": avg_place_5,
+        "top3_rate": top3_rate,
+        "top4_rate": top4_rate,
+        "variance_places": variance_places,
+        "nb_raced_recent": len(all_places),
+        # Dernière course (2)
+        "last_place": last_place,
+        "days_since_last": days_since,
+        # Activité (1)
+        "nb_courses_mois": nb_courses_mois,
+        # Distance (3)
+        "dist_similar_count": dist_count,
+        "dist_avg_place": dist_avg_place,
+        "dist_win_rate": dist_win_rate * 100,
+        # Driver global (3)
+        "driver_courses": dr_c,
+        "driver_win_rate": dr_v / dr_c * 100 if dr_c > 0 else 0,
+        "driver_place_rate": dr_p / dr_c * 100 if dr_c > 0 else 0,
+        # Driver discipline (2)
+        "driver_disc_courses": dr_dc,
+        "driver_disc_win_rate": dr_dv / dr_dc * 100 if dr_dc > 0 else 0,
+        # Driver hippodrome (2)
+        "driver_hippo_courses": dr_hc,
+        "driver_hippo_win_rate": dr_hv / dr_hc * 100 if dr_hc > 0 else 0,
+        # Entraineur (3)
+        "entraineur_courses": en_c,
+        "entraineur_win_rate": en_v / en_c * 100 if en_c > 0 else 0,
+        "entraineur_disc_win_rate": en_dv / en_dc * 100 if en_dc > 0 else 0,
+        # Chimie cheval/driver (2)
+        "chimie_courses": chimie_c,
+        "chimie_win_rate": chimie_v / chimie_c * 100 if chimie_c > 0 else 0,
+        # Elo (2)
+        "elo": elo_val,
+        "elo_trend_raw": elo_trend_raw,
+        # Course (6)
+        "nb_partants": nb_partants,
+        "cote": cote,
+        "inv_cote": 1.0 / max(cote, 1),
+        "is_female": 1 if p.get("sexe") == "FEMELLES" else 0,
+        "has_oeilleres": 1 if p.get("oeilleres") and p.get("oeilleres") != "SANS_OEILLERES" else 0,
+        "is_deferre": 1 if "DEFERRE" in (p.get("deferre", "") or "") else 0,
+        "driver_changed": 1 if p.get("driverChange") else 0,
+        # Bonus contextuels (2)
+        "bonus_team": 1 if driver and entraineur and driver == entraineur else 0,
+        "bonus_deferre": 1 if "DEFERRE" in (p.get("deferre", "") or "") else 0,
+    }
+
+
+# ============================================================
+#  ML featurization v7 — 44 features brutes (0% synthétique)
 # ============================================================
 def featurize(p, nb_partants):
+    """ML featurization v7 — 44 features brutes (0% synthétique).
+    Utilise p["raw"] si disponible (v7), sinon fallback sur p["scores"] (v6).
+    """
+    raw = p.get("raw")
+    if raw:
+        # === v7 : toutes les features brutes ===
+        return [
+            # Carrière (6)
+            raw["age"],
+            raw["nb_courses"],
+            raw["nb_victoires"],
+            raw["nb_places"],
+            raw["win_rate"],
+            raw["place_rate"],
+            # Gains (2)
+            raw["gains_carriere_log"],
+            raw["gains_par_course_log"],
+            # 5 dernières places (5)
+            raw["place_1"], raw["place_2"], raw["place_3"],
+            raw["place_4"], raw["place_5"],
+            # Agrégats perf (6)
+            raw["avg_place_3"],
+            raw["avg_place_5"],
+            raw["top3_rate"],
+            raw["top4_rate"],
+            raw["variance_places"],
+            raw["nb_raced_recent"],
+            # Dernière course (2)
+            raw["last_place"],
+            raw["days_since_last"],
+            # Activité (1)
+            raw["nb_courses_mois"],
+            # Distance (3)
+            raw["dist_similar_count"],
+            raw["dist_avg_place"],
+            raw["dist_win_rate"],
+            # Driver global (3)
+            raw["driver_courses"],
+            raw["driver_win_rate"],
+            raw["driver_place_rate"],
+            # Driver discipline (2)
+            raw["driver_disc_courses"],
+            raw["driver_disc_win_rate"],
+            # Driver hippodrome (2)
+            raw["driver_hippo_courses"],
+            raw["driver_hippo_win_rate"],
+            # Entraineur (3)
+            raw["entraineur_courses"],
+            raw["entraineur_win_rate"],
+            raw["entraineur_disc_win_rate"],
+            # Chimie cheval/driver (2)
+            raw["chimie_courses"],
+            raw["chimie_win_rate"],
+            # Elo (2)
+            raw["elo"],
+            raw["elo_trend_raw"],
+            # Course (6)
+            raw["nb_partants"],
+            raw["cote"],
+            raw["inv_cote"],
+            raw["is_female"],
+            raw["has_oeilleres"],
+            raw["is_deferre"],
+            # Contexte (3)
+            raw["driver_changed"],
+            raw["bonus_team"],
+            raw["bonus_deferre"],
+        ]
+
+    # === Fallback v6 : scores synthétiques (compatibilité anciens modèles) ===
     s = p["scores"]
     forme = s.get("forme", 0)
     elo = s.get("elo", 50)
     driver = s.get("driver", 50)
-    regularite = s.get("regularite", 50)
-    driver_hippo = s.get("driver_hippo", 50)
-
     return [
-        # === Core features (17) ===
-        forme,
-        s.get("carriere", 0),
-        s.get("gains", 0),
-        driver,
-        s.get("entraineur", 50),
-        s.get("distance", 50),
-        s.get("cheval_stats", 50),
-        elo,
-        s.get("age_sexe", 50),
-        s.get("repos", 50),
-        s.get("elo_trend", 50),
-        s.get("confrontation", 50),
-        s.get("pedigree", 50),
-        s.get("corde", 50),
-        s.get("equipment", 50),
-        s.get("profile_match", 50),
-        nb_partants,
-        # === Raw inputs (4) ===
-        1.0 / max(p.get("cote") or 50, 1),
-        p["bonus"].get("team", 0),
-        p["bonus"].get("deferre", 0),
-        1 if p.get("sexe") == "FEMELLES" else 0,
-        # === Interactions haute valeur (3) ===
-        forme * elo / 100,                         # forme × elo
-        driver * s.get("entraineur", 50) / 100,    # team synergy
-        abs(forme - 50),                           # forme extrême
-        # === v6 features avancées (11) ===
-        driver_hippo,                  # driver/hippodrome
-        regularite,                    # régularité
-        s.get("equip_change", 50),     # changement équipement
-        s.get("style_attaquant", 50),  # style attaquant
-        s.get("style_finisseur", 50),  # style finisseur
-        s.get("gains_trend", 50),      # tendance gains
-        s.get("jours_derniere", 50),   # jours depuis dernière
-        s.get("nb_courses_mois", 50),  # courses ce mois
-        s.get("perf_terrain", 50),     # perf terrain
-        s.get("corde_avantage", 50),   # avantage corde
-        s.get("chimie_driver", 50),    # chimie driver
-        # === v6 interactions (2) ===
-        regularite * forme / 100,                     # régularité × forme = fiabilité
-        driver_hippo * s.get("perf_terrain", 50) / 100,  # expertise locale × terrain
-        # === v6.2 — Features haute valeur Top3 (5) ===
-        s.get("top3_rate", 0),         # Taux top3 réel (best predictor)
-        s.get("last_place", 0),        # Place dernière course (momentum)
-        s.get("avg_place_3", 0),       # Place moyenne 3 dernières (forme courte)
-        s.get("win_rate", 0),          # Taux victoire réel
-        s.get("place_rate", 0),        # Taux placement réel
+        forme, s.get("carriere", 0), s.get("gains", 0), driver,
+        s.get("entraineur", 50), s.get("distance", 50), s.get("cheval_stats", 50),
+        elo, s.get("age_sexe", 50), s.get("repos", 50), s.get("elo_trend", 50),
+        s.get("confrontation", 50), s.get("pedigree", 50), s.get("corde", 50),
+        s.get("equipment", 50), s.get("profile_match", 50), nb_partants,
+        1.0 / max(p.get("cote") or 50, 1), p["bonus"].get("team", 0),
+        p["bonus"].get("deferre", 0), 1 if p.get("sexe") == "FEMELLES" else 0,
+        forme * elo / 100, driver * s.get("entraineur", 50) / 100, abs(forme - 50),
+        s.get("driver_hippo", 50), s.get("regularite", 50), s.get("equip_change", 50),
+        s.get("style_attaquant", 50), s.get("style_finisseur", 50),
+        s.get("gains_trend", 50), s.get("jours_derniere", 50), s.get("nb_courses_mois", 50),
+        s.get("perf_terrain", 50), s.get("corde_avantage", 50), s.get("chimie_driver", 50),
+        s.get("regularite", 50) * forme / 100,
+        s.get("driver_hippo", 50) * s.get("perf_terrain", 50) / 100,
+        s.get("top3_rate", 0), s.get("last_place", 0), s.get("avg_place_3", 0),
+        s.get("win_rate", 0), s.get("place_rate", 0),
     ]
 
 
-FEATURE_NAMES = ["forme","carriere","gains","driver","entraineur",
-                 "distance","cheval_stats","elo","age_sexe","repos",
-                 "elo_trend","confrontation","pedigree","corde","equipment",
-                 "profile_match","nb_partants",
-                 "inv_cote","bonus_team","bonus_deferre","is_female",
-                 "forme_x_elo","team_synergy","forme_extreme",
-                 # v6
-                 "driver_hippo","regularite","equip_change",
-                 "style_attaquant","style_finisseur",
-                 "gains_trend","jours_derniere","nb_courses_mois",
-                 "perf_terrain","corde_avantage","chimie_driver",
-                 "regularite_x_forme","driver_hippo_x_terrain",
-                 # v6.2
-                 "top3_rate","last_place","avg_place_3","win_rate","place_rate"]
+FEATURE_NAMES = [
+    # Carrière (6)
+    "age","nb_courses","nb_victoires","nb_places","win_rate","place_rate",
+    # Gains (2)
+    "gains_carriere_log","gains_par_course_log",
+    # 5 dernières places (5)
+    "place_1","place_2","place_3","place_4","place_5",
+    # Agrégats perf (6)
+    "avg_place_3","avg_place_5","top3_rate","top4_rate","variance_places","nb_raced_recent",
+    # Dernière course (2)
+    "last_place","days_since_last",
+    # Activité (1)
+    "nb_courses_mois",
+    # Distance (3)
+    "dist_similar_count","dist_avg_place","dist_win_rate",
+    # Driver global (3)
+    "driver_courses","driver_win_rate","driver_place_rate",
+    # Driver discipline (2)
+    "driver_disc_courses","driver_disc_win_rate",
+    # Driver hippodrome (2)
+    "driver_hippo_courses","driver_hippo_win_rate",
+    # Entraineur (3)
+    "entraineur_courses","entraineur_win_rate","entraineur_disc_win_rate",
+    # Chimie cheval/driver (2)
+    "chimie_courses","chimie_win_rate",
+    # Elo (2)
+    "elo","elo_trend_raw",
+    # Course (6)
+    "nb_partants","cote","inv_cote","is_female","has_oeilleres","is_deferre",
+    # Contexte (3)
+    "driver_changed","bonus_team","bonus_deferre",
+]
 
 
 def load_ml_model():
@@ -1359,6 +1636,11 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
             },
             "bonus": {"team": bonus_team, "deferre": bonus_deferre},
             "_perfs_detail": perfs_detail,  # pour calcul Top 4
+            # NEW v7 — Raw features pour ML (données brutes, pas de scoring)
+            "raw": build_raw_features(
+                p, perfs_detail, distance, driver, entraineur,
+                cheval, team_stats, horse_stats, elo, elo_hist,
+                discipline, hippodrome, nb_partants),
         }
         analyses.append(a_entry)
 
