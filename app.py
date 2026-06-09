@@ -1638,7 +1638,7 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
             "_perfs_detail": perfs_detail,  # pour calcul Top 4
             # NEW v7 — Raw features pour ML (données brutes, pas de scoring)
             "raw": build_raw_features(
-                p, perfs_detail, distance, driver, entraineur,
+                p, perfs_detail, distance, driver, entr,
                 cheval, team_stats, horse_stats, elo, elo_hist,
                 discipline, hippodrome, nb_partants),
         }
