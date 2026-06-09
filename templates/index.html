@@ -380,17 +380,39 @@ async function loadReunions() {
       list.innerHTML = '<p style="color:#94a3b8;padding:20px;">Aucune réunion</p>';
       return;
     }
+    // Afficher les courses immédiatement
     list.innerHTML = data.reunions.map(r => `
       <div class="reunion-block">
         <div class="reunion-title">R${r.numReunion} · ${r.hippodrome}</div>
         ${r.courses.map(c => `
-          <button class="course-btn" onclick="loadCourse(${r.numReunion}, ${c.numCourse}, this)">
+          <button class="course-btn" onclick="loadCourse(${r.numReunion}, ${c.numCourse}, this)" id="cbtn-${r.numReunion}-${c.numCourse}">
             <span>C${c.numCourse} · ${(c.libelle||'').substring(0,26)}</span>
-            <span>${c.arriveeDefinitive ? '<span class="finished">✓</span> ' : ''}<span class="time">${c.heure}</span></span>
+            <span>${c.arriveeDefinitive ? '<span class="finished">✓</span> ' : ''}<span class="diff-badge" id="diff-${r.numReunion}-${c.numCourse}"></span> <span class="time">${c.heure}</span></span>
           </button>
         `).join('')}
       </div>
     `).join('');
+
+    // Charger les indices de difficulté en arrière-plan
+    fetch(`/api/course-difficulty?date=${currentDate}`).then(r => r.json()).then(diffData => {
+      if (diffData.difficulties) {
+        for (const [key, val] of Object.entries(diffData.difficulties)) {
+          const [rn, cn] = key.split('_');
+          const el = document.getElementById(`diff-${rn}-${cn}`);
+          if (el) {
+            const d = val;
+            let color, label;
+            if (d <= 2) { color = '#10b981'; label = 'Facile'; }
+            else if (d <= 4) { color = '#06b6d4'; label = 'Jouable'; }
+            else if (d <= 6) { color = '#f59e0b'; label = 'Moyen'; }
+            else if (d <= 8) { color = '#f97316'; label = 'Dur'; }
+            else { color = '#ef4444'; label = 'Expert'; }
+            el.innerHTML = `<span style="display:inline-block;background:${color};color:#0f172a;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:800;">${d}/10</span>`;
+            el.title = `Difficulté: ${d}/10 — ${label}`;
+          }
+        }
+      }
+    }).catch(() => {}); // Silencieux si échec
   } catch(e) {
     list.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
   }
@@ -647,5 +669,5 @@ function downloadPDF() {
   window.open(url, '_blank');
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a08d6b476b4b2a3b',t:'MTc4MDk3OTYxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
