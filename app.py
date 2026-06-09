@@ -1301,6 +1301,9 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     if ml_top4_model:
         nb = len(analyses)
         raw_top4_ml = [predict_ml(featurize(a, nb), ml_top4_model) for a in analyses]
+        # Normaliser : dans une course, exactement 4 chevaux sont dans le top 4
+        total_top4 = sum(raw_top4_ml) or 1
+        raw_top4_ml = [p / total_top4 * 4 for p in raw_top4_ml]
 
     # NEW v6.1 — Top 3 ML model (modèle dédié placement top3, ~25% positifs)
     ml_top3_model = load_ml_model_top3() if use_ml else None
@@ -1308,6 +1311,11 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     if ml_top3_model:
         nb = len(analyses)
         raw_top3_ml = [predict_ml(featurize(a, nb), ml_top3_model) for a in analyses]
+        # Normaliser : dans une course, exactement 3 chevaux sont dans le top 3
+        total_top3 = sum(raw_top3_ml) or 1
+        raw_top3_ml = [p / total_top3 * 3 for p in raw_top3_ml]
+        # Log pour debug
+        print(f"[TOP3 ML] {nb} chevaux, raw min={min(raw_top3_ml)*100:.1f}% max={max(raw_top3_ml)*100:.1f}%")
 
     for i, a in enumerate(analyses):
         if chances_ml:
@@ -1321,6 +1329,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         # NEW v6 — Top 4 : ML remplace heuristique si disponible
         if raw_top4_ml:
             ml_top4_prob = raw_top4_ml[i] * 100
+            ml_top4_prob = min(ml_top4_prob, 95.0)
             # Sauvegarder l'heuristique avant blend
             a["chanceTop4Heur"] = round(a["chanceTop4"], 2)
             a["chanceTop4ML"] = round(ml_top4_prob, 2)
@@ -1330,6 +1339,8 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         # NEW v6.1 — Top 3 : modèle dédié (~25% positifs)
         if raw_top3_ml:
             ml_top3_prob = raw_top3_ml[i] * 100
+            # Sécurité : clamp à 95% max (impossible > 95% d'être top3)
+            ml_top3_prob = min(ml_top3_prob, 95.0)
             a["chanceTop3ML"] = round(ml_top3_prob, 2)
         else:
             a["chanceTop3ML"] = None
@@ -2051,6 +2062,12 @@ def paris_page():
 @admin_required
 def bilan_page():
     return render_template("bilan.html")
+
+
+@app.route("/force")
+@admin_required
+def force_page():
+    return render_template("force.html")
 
 
 @app.route("/api/reunions")
