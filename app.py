@@ -137,6 +137,85 @@ def get_performances(date_str, r_num, c_num):
         return {"participants": []}
 
 
+def compute_difficulty(cotes):
+    """Calcule un indice de difficulté 1-10 basé sur la concentration des cotes.
+    
+    1 = course facile (1-2 favoris écrasants, cotes 2-4)
+    10 = course impossible (tous outsiders, cotes similaires 8-15)
+    
+    Formule : on regarde la part des 3 plus petites cotes (les favoris).
+    - Si top3 cotes concentrent 70%+ de la proba → facile (1-3)
+    - Si top3 cotes ne concentrent que 30% → difficile (8-10)
+    """
+    if not cotes or len(cotes) < 3:
+        return None
+    # Filtrer les cotes valides (> 1.0)
+    cotes = [c for c in cotes if c and c > 1.0]
+    if len(cotes) < 3:
+        return None
+    # Probabilités implicites : 1/cote
+    probs = [1.0 / c for c in cotes]
+    total = sum(probs)
+    if total == 0:
+        return None
+    # Normaliser
+    probs_norm = [p / total for p in probs]
+    # Prendre les 3 plus grandes (les favoris)
+    probs_sorted = sorted(probs_norm, reverse=True)
+    top3_share = sum(probs_sorted[:3])
+    # Mapper : top3_share élevé → facile (1), top3_share bas → difficile (10)
+    # top3_share typique : 0.25 (très ouvert) à 0.80 (très concentré)
+    # Échelle : 0.80 → 1, 0.25 → 10
+    difficulty = max(1, min(10, round(10 - (top3_share - 0.20) * 17.5)))
+    return difficulty
+
+
+@app.route("/api/course-difficulty")
+@admin_required
+def api_course_difficulty():
+    """Calcule l'indice de difficulté pour toutes les courses d'un jour.
+    Utilise uniquement les cotes → rapide (pas d'analyse complète).
+    """
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+    try:
+        prog = get_programme(date_str)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    tasks = []
+    keys = []
+    for r in prog["programme"]["reunions"]:
+        r_num = r["numOfficiel"]
+        for c in r["courses"]:
+            c_num = c["numOrdre"]
+            tasks.append((date_str, r_num, c_num))
+            keys.append(f"{r_num}_{c_num}")
+
+    # Fetcher les participants en parallèle (juste pour les cotes)
+    def _fetch_cotes(task):
+        try:
+            parts = get_participants(*task)
+            cotes = []
+            for p in parts.get("participants", []):
+                cote = p.get("dernierRapportDirect") or p.get("cote")
+                if cote and float(cote) > 1.0:
+                    cotes.append(float(cote))
+            return cotes
+        except:
+            return []
+
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        results = list(ex.map(_fetch_cotes, tasks))
+
+    out = {}
+    for key, cotes in zip(keys, results):
+        d = compute_difficulty(cotes)
+        if d is not None:
+            out[key] = d
+
+    return jsonify({"date": date_str, "difficulties": out})
+
+
 # ============================================================
 #  Cache helpers
 # ============================================================
@@ -562,15 +641,14 @@ def score_distance(perfs_detail, distance_course):
 # ============================================================
 def featurize(p, nb_partants):
     s = p["scores"]
-    # v5 : ajout d'interactions pour capturer non-linéarités
     forme = s.get("forme", 0)
     elo = s.get("elo", 50)
     driver = s.get("driver", 50)
-    # marché neutralisé → on ne se fie plus aux cotes
-    marche = 50
+    regularite = s.get("regularite", 50)
+    driver_hippo = s.get("driver_hippo", 50)
 
     return [
-        marche,
+        # === Core features (17) ===
         forme,
         s.get("carriere", 0),
         s.get("gains", 0),
@@ -588,47 +666,53 @@ def featurize(p, nb_partants):
         s.get("equipment", 50),
         s.get("profile_match", 50),
         nb_partants,
+        # === Raw inputs (4) ===
         1.0 / max(p.get("cote") or 50, 1),
         p["bonus"].get("team", 0),
         p["bonus"].get("deferre", 0),
-        p.get("age") or 5,
         1 if p.get("sexe") == "FEMELLES" else 0,
-        # v5 interactions
-        forme * elo / 100,  # forme × elo
-        driver * s.get("entraineur", 50) / 100,  # team synergy
-        marche * s.get("cheval_stats", 50) / 100,  # marché vs stats (neutralisé)
-        abs(forme - 50),  # écart à la moyenne (forme extrême)
-        # NEW v6 — 12 features avancées
-        s.get("driver_hippo", 50),       # 🔴 Taux driver/hippodrome
-        s.get("regularite", 50),         # 🔴 Indice de régularité
-        s.get("equip_change", 50),       # 🟡 Changement d'équipement
-        s.get("style_attaquant", 50),    # 🟡 Style attaquant
-        s.get("style_finisseur", 50),    # 🟡 Style finisseur
-        s.get("style_fragile", 50),      # 🟡 Penal fragile
-        s.get("gains_trend", 50),        # 🟡 Tendance des gains
-        s.get("jours_derniere", 50),     # 🟢 Jours depuis dernière course
-        s.get("nb_courses_mois", 50),    # 🟢 Nb courses ce mois
-        s.get("perf_terrain", 50),       # 🟡 Performance terrain
-        s.get("corde_avantage", 50),     # 🟢 Avantage corde historique
-        s.get("chimie_driver", 50),      # 🟡 Chimie cheval/driver
-        # NEW v6 — interactions
-        s.get("regularite", 50) * forme / 100,  # régularité × forme = fiabilité
-        s.get("driver_hippo", 50) * s.get("perf_terrain", 50) / 100,  # expertise locale × terrain
+        # === Interactions haute valeur (3) ===
+        forme * elo / 100,                         # forme × elo
+        driver * s.get("entraineur", 50) / 100,    # team synergy
+        abs(forme - 50),                           # forme extrême
+        # === v6 features avancées (11) ===
+        driver_hippo,                  # driver/hippodrome
+        regularite,                    # régularité
+        s.get("equip_change", 50),     # changement équipement
+        s.get("style_attaquant", 50),  # style attaquant
+        s.get("style_finisseur", 50),  # style finisseur
+        s.get("gains_trend", 50),      # tendance gains
+        s.get("jours_derniere", 50),   # jours depuis dernière
+        s.get("nb_courses_mois", 50),  # courses ce mois
+        s.get("perf_terrain", 50),     # perf terrain
+        s.get("corde_avantage", 50),   # avantage corde
+        s.get("chimie_driver", 50),    # chimie driver
+        # === v6 interactions (2) ===
+        regularite * forme / 100,                     # régularité × forme = fiabilité
+        driver_hippo * s.get("perf_terrain", 50) / 100,  # expertise locale × terrain
+        # === v6.2 — Features haute valeur Top3 (5) ===
+        s.get("top3_rate", 0),         # Taux top3 réel (best predictor)
+        s.get("last_place", 0),        # Place dernière course (momentum)
+        s.get("avg_place_3", 0),       # Place moyenne 3 dernières (forme courte)
+        s.get("win_rate", 0),          # Taux victoire réel
+        s.get("place_rate", 0),        # Taux placement réel
     ]
 
 
-FEATURE_NAMES = ["marche","forme","carriere","gains","driver","entraineur",
+FEATURE_NAMES = ["forme","carriere","gains","driver","entraineur",
                  "distance","cheval_stats","elo","age_sexe","repos",
                  "elo_trend","confrontation","pedigree","corde","equipment",
-                 "profile_match","nb_partants","inv_cote",
-                 "bonus_team","bonus_deferre","age_raw","is_female",
-                 "forme_x_elo","team_synergy","marche_x_stats","forme_extreme",
+                 "profile_match","nb_partants",
+                 "inv_cote","bonus_team","bonus_deferre","is_female",
+                 "forme_x_elo","team_synergy","forme_extreme",
                  # v6
                  "driver_hippo","regularite","equip_change",
-                 "style_attaquant","style_finisseur","style_fragile",
+                 "style_attaquant","style_finisseur",
                  "gains_trend","jours_derniere","nb_courses_mois",
                  "perf_terrain","corde_avantage","chimie_driver",
-                 "regularite_x_forme","driver_hippo_x_terrain"]
+                 "regularite_x_forme","driver_hippo_x_terrain",
+                 # v6.2
+                 "top3_rate","last_place","avg_place_3","win_rate","place_rate"]
 
 
 def load_ml_model():
@@ -890,6 +974,53 @@ def compute_top4_rate(perfs_detail):
     return (top4 / total) * 100
 
 
+def compute_top3_rate(perfs_detail):
+    """Taux de top3 sur les 10 dernières courses."""
+    if not perfs_detail:
+        return 0.0
+    top3 = 0
+    total = 0
+    for course in perfs_detail[:10]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    total += 1
+                    if place <= 3:
+                        top3 += 1
+    if total == 0:
+        return 0.0
+    return (top3 / total) * 100
+
+
+def compute_last_place(perfs_detail):
+    """Place de la dernière course (0 si inconnu)."""
+    if not perfs_detail:
+        return 0
+    for course in perfs_detail[:1]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                return (p.get("place") or {}).get("place", 0) or 0
+    return 0
+
+
+def compute_avg_place_recent(perfs_detail, n=3):
+    """Place moyenne sur les N dernières courses. 0 si pas de données."""
+    if not perfs_detail:
+        return 0.0
+    places = []
+    for course in perfs_detail[:n]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    places.append(place)
+                break
+    if not places:
+        return 0.0
+    return sum(places) / len(places)
+
+
 def compute_avg_place(perfs_detail):
     """Place moyenne sur les 10 dernières courses (arrivée connue).
     Retourne toujours un float (0.0 si pas de données)."""
@@ -1134,9 +1265,14 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
             # === SCORE TOP 4 (logique indépendante du gagnant) ===
             s_top4_rate = compute_top4_rate(perfs_detail) or 0.0
             s_regularity = compute_regularity(perfs_detail)
-            # Un cheval qui finit souvent placé + régulier = bon top 4
-            # On pondère : taux top4 (60%) + régularité (40%)
             s_top4_raw = 0.60 * s_top4_rate + 0.40 * s_regularity
+
+            # === NEW v6.2 — Features haute valeur pour Top3 ML ===
+            s_top3_rate = compute_top3_rate(perfs_detail)       # Taux top3 réel
+            s_last_place = compute_last_place(perfs_detail)     # Place dernière course
+            s_avg_place_3 = compute_avg_place_recent(perfs_detail, 3)  # Moyenne 3 dernières
+            s_win_rate = (nb_vict / nb_courses * 100) if nb_courses > 0 else 0   # Taux victoire réel
+            s_place_rate = (nb_place / nb_courses * 100) if nb_courses > 0 else 0  # Taux placement réel
 
         except Exception as e:
             # 🛡️ Un cheval ne doit jamais crasher toute la course
@@ -1151,6 +1287,8 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
             s_gains_trend = 50.0; s_jours_derniere = 50; s_nb_courses_mois = 50
             s_perf_terrain = 50.0; s_corde_avantage = 50; s_chimie_driver = 50
             s_top4_rate = 0.0; s_top4_raw = 20.0
+            s_top3_rate = 0.0; s_last_place = 0; s_avg_place_3 = 0.0
+            s_win_rate = 0.0; s_place_rate = 0.0
             profile = {"attaquant": 50, "finisseur": 50, "fragile": 50, "regulier": 50}
             gains = p.get("gainsParticipant", {}) or {}
             gains_carriere = gains.get("gainsCarriere", 0) or 0
@@ -1207,6 +1345,12 @@ def analyser_course_features(participants_data, perfs_data, distance, discipline
                 "perf_terrain": round(float(s_perf_terrain or 50), 1),
                 "corde_avantage": round(float(s_corde_avantage or 50), 1),
                 "chimie_driver": round(float(s_chimie_driver or 50), 1),
+                # NEW v6.2 — Features haute valeur Top3
+                "top3_rate": round(float(s_top3_rate or 0), 1),
+                "last_place": round(float(s_last_place or 0), 1),
+                "avg_place_3": round(float(s_avg_place_3 or 0), 1),
+                "win_rate": round(float(s_win_rate or 0), 1),
+                "place_rate": round(float(s_place_rate or 0), 1),
             },
             "top4": {
                 "rate": round(float(s_top4_rate or 0), 1),
