@@ -155,43 +155,77 @@ def compute_course_ranking_features(course_features):
             vals = mat[:, dim_idx].copy()
             horse_val = vals[i]
             
-            # Dimensions où "plus bas = meilleur" → on inverse
-            if dim_name in ("cote", "avg_place_3"):
-                # Percentile : 0 = meilleur (cote la plus basse)
-                rank_pct = np.mean(vals <= horse_val)
+            # Ignorer les NaN dans le ranking
+            valid_mask = ~np.isnan(vals)
+            if not np.isnan(horse_val) and valid_mask.sum() > 0:
+                valid_vals = vals[valid_mask]
+                if dim_name in ("cote", "avg_place_3"):
+                    rank_pct = np.mean(valid_vals <= horse_val)
+                else:
+                    rank_pct = np.mean(valid_vals <= horse_val)
             else:
-                # Percentile : 0 = pire, 1 = meilleur
-                rank_pct = np.mean(vals <= horse_val)
+                rank_pct = 0.5  # neutre si NaN
             
             feats.append(rank_pct)
         
         # Z-scores sur 2 dimensions clés
         for dim_idx in [37, 40]:  # elo, cote
             vals = mat[:, dim_idx]
-            mean_val = np.mean(vals)
-            std_val = np.std(vals) if np.std(vals) > 0 else 1.0
-            feats.append((mat[i, dim_idx] - mean_val) / std_val)
+            valid_mask = ~np.isnan(vals)
+            if valid_mask.sum() > 1 and not np.isnan(mat[i, dim_idx]):
+                mean_val = np.mean(vals[valid_mask])
+                std_val = np.std(vals[valid_mask]) if np.std(vals[valid_mask]) > 0 else 1.0
+                feats.append((mat[i, dim_idx] - mean_val) / std_val)
+            else:
+                feats.append(0.0)
         
         # Is top-N binary
         # Top 3 par Elo
-        elo_vals = mat[:, 37]
-        top3_elo = np.argsort(-elo_vals)[:min(3, n_horses)]
-        feats.append(1.0 if i in top3_elo else 0.0)
+        elo_vals = mat[:, 37].copy()
+        valid_elo = ~np.isnan(elo_vals)
+        if valid_elo.sum() >= 3:
+            elo_ranked = np.argsort(-elo_vals, axis=0)  # NaN goes to end
+            top3_elo = set()
+            for idx in elo_ranked:
+                if valid_elo[idx] and len(top3_elo) < 3:
+                    top3_elo.add(idx)
+            feats.append(1.0 if i in top3_elo else 0.0)
+        else:
+            feats.append(0.0)
         
         # Top 3 par cote (inv_cote = plus fort)
-        inv_cote_vals = mat[:, 41]  # inv_cote
-        top3_cote = np.argsort(-inv_cote_vals)[:min(3, n_horses)]
-        feats.append(1.0 if i in top3_cote else 0.0)
+        inv_cote_vals = mat[:, 41].copy()  # inv_cote
+        valid_inv = ~np.isnan(inv_cote_vals)
+        if valid_inv.sum() >= 3:
+            inv_ranked = np.argsort(-inv_cote_vals, axis=0)
+            top3_cote = set()
+            for idx in inv_ranked:
+                if valid_inv[idx] and len(top3_cote) < 3:
+                    top3_cote.add(idx)
+            feats.append(1.0 if i in top3_cote else 0.0)
+        else:
+            feats.append(0.0)
         
         # Écart au favori (1er de la cote)
-        fav_idx = np.argmax(inv_cote_vals)
-        elo_gap_to_fav = mat[i, 37] - mat[fav_idx, 37]
+        if valid_inv.sum() > 0:
+            valid_indices = np.where(valid_inv)[0]
+            fav_idx = valid_indices[np.argmax(inv_cote_vals[valid_inv])]
+            if not np.isnan(mat[i, 37]) and not np.isnan(mat[fav_idx, 37]):
+                elo_gap_to_fav = mat[i, 37] - mat[fav_idx, 37]
+            else:
+                elo_gap_to_fav = 0.0
+        else:
+            elo_gap_to_fav = 0.0
         feats.append(elo_gap_to_fav)
         
         # Force relative : (elo * win_rate) vs moyenne course
         power = mat[:, 37] * mat[:, 4]  # elo * win_rate
-        mean_power = np.mean(power)
-        feats.append(power[i] / max(mean_power, 1.0))
+        valid_power = ~np.isnan(power)
+        if valid_power.sum() > 0 and not np.isnan(power[i]):
+            mean_power = np.mean(power[valid_power])
+            feats.append(power[i] / max(mean_power, 1.0))
+        else:
+            feats.append(1.0)
         
         results.append(np.array(feats))
     
@@ -476,7 +510,15 @@ class StackingV8:
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore")
                     learner.fit(X_tr, y_tr)
-                oof_matrix[val_idx, j] = learner.predict_proba(X_val)[:, 1]
+                preds = learner.predict_proba(X_val)[:, 1]
+                # Protection NaN : les base learners gèrent NaN en input
+                # mais peuvent exceptionnellement produire des NaN en output
+                nan_count = np.isnan(preds).sum()
+                if nan_count > 0:
+                    med = np.nanmedian(preds) if np.any(~np.isnan(preds)) else 0.5
+                    preds = np.where(np.isnan(preds), med, preds)
+                    print(f"    ⚠️ {name} fold {fold_idx+1}: {nan_count} NaN preds → {med:.4f}")
+                oof_matrix[val_idx, j] = preds
             pct = (fold_idx + 1) / len(splits) * 100
             print(f"    Fold {fold_idx+1}/{len(splits)} [{pct:.0f}%]")
 
@@ -491,8 +533,16 @@ class StackingV8:
             fitted_base.append((name, learner))
             print(f"    ✅ {name}")
 
-        # Meta-learner
+        # Meta-learner — nettoyer NaN dans l'OOF matrix
         print(f"\n  [3/4] Meta-learner ({n_learners} OOF cols)...")
+        _nan_oof = np.isnan(oof_matrix).sum()
+        if _nan_oof > 0:
+            for col in range(n_learners):
+                col_nan = np.isnan(oof_matrix[:, col])
+                if col_nan.any():
+                    med = np.nanmedian(oof_matrix[:, col])
+                    oof_matrix[col_nan, col] = med
+            print(f"    ⚠️ {_nan_oof} NaN imputés dans OOF matrix (médiane/colonne)")
         meta = LogisticRegression(C=1.0, max_iter=2000, fit_intercept=True)
         meta.fit(oof_matrix, y)
         for j, (name, _) in enumerate(learners):
@@ -521,9 +571,18 @@ class StackingV8:
                 continue
         else:
             m = LogisticRegression(max_iter=2000)
+        # Imputer NaN pour les modèles sklearn (LogisticRegression, etc.)
+        X_clean = np.copy(X)
+        if np.isnan(X_clean).any():
+            for col in range(X_clean.shape[1]):
+                col_nan = np.isnan(X_clean[:, col])
+                if col_nan.any():
+                    med = np.nanmedian(X_clean[:, col]) if np.any(~col_nan) else 0.0
+                    X_clean[col_nan, col] = med
+            print(f"    ⚠️ NaN imputés (médiane/colonne) pour fallback model")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
-            m.fit(X, y)
+            m.fit(X_clean, y)
         self.model = {"base_learners": [("fallback", m)], "meta": None, "target": target}
         self.calibrated = None
         self.val_score = None
@@ -537,6 +596,10 @@ class StackingV8:
         if len(X_cal) < 30 or len(set(y_cal.tolist())) < 2:
             return None
         preds_cal = self._raw_predict_proba(X_cal)
+        # Protection NaN : IsotonicRegression/Sigmoid ne gèrent pas NaN
+        if np.isnan(preds_cal).any():
+            med = np.nanmedian(preds_cal) if np.any(~np.isnan(preds_cal)) else 0.5
+            preds_cal = np.where(np.isnan(preds_cal), med, preds_cal)
         raw_brier = brier_score_loss(y_cal, preds_cal)
         print(f"    Raw Brier = {raw_brier:.4f}")
 
@@ -567,6 +630,13 @@ class StackingV8:
         X = np.asarray(X, dtype=np.float64)
         if X.ndim == 1: X = X.reshape(1, -1)
         base_preds = np.column_stack([l.predict_proba(X)[:, 1] for _, l in self.model["base_learners"]])
+        # Protection NaN avant le meta-learner (LogisticRegression ne gère pas NaN)
+        if np.isnan(base_preds).any():
+            for col in range(base_preds.shape[1]):
+                col_nan = np.isnan(base_preds[:, col])
+                if col_nan.any():
+                    med = np.nanmedian(base_preds[:, col]) if np.any(~col_nan) else 0.5
+                    base_preds[col_nan, col] = med
         meta = self.model.get("meta")
         if meta: return meta.predict_proba(base_preds)[:, 1]
         return np.mean(base_preds, axis=1)
@@ -620,6 +690,14 @@ class TabNetV8:
             return None
         X = np.asarray(X, dtype=np.float32)
         y = np.asarray(y, dtype=np.int64)
+        # TabNet ne gère pas NaN — imputer avec la médiane par colonne
+        if np.isnan(X).any():
+            for col in range(X.shape[1]):
+                col_nan = np.isnan(X[:, col])
+                if col_nan.any():
+                    med = np.nanmedian(X[:, col]) if np.any(~col_nan) else 0.0
+                    X[col_nan, col] = med
+            print(f"  [TabNetV8] ⚠️ NaN imputés (médiane/colonne)")
         n, d = X.shape
         n_pos = int(np.sum(y))
         print(f"\n  [TabNetV8] {target.upper()} — {n}×{d}, {n_pos}+")
@@ -743,6 +821,10 @@ class EnsembleV8:
         X_cal, y_cal = X[split:], y[split:]
         if len(X_cal) < 30 or len(set(y_cal.tolist())) < 2: return
         preds = self._raw_predict(X_cal)
+        # Protection NaN : IsotonicRegression ne gère pas NaN
+        if np.isnan(preds).any():
+            med = np.nanmedian(preds) if np.any(~np.isnan(preds)) else 0.5
+            preds = np.where(np.isnan(preds), med, preds)
         raw_brier = brier_score_loss(y_cal, preds)
         try:
             iso = IsotonicRegression(out_of_bounds="clip"); iso.fit(preds, y_cal)
