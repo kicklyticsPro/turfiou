@@ -225,13 +225,16 @@ def augment_course_level(X, y, group_ids):
     
     for gid, indices in course_groups.items():
         n = len(indices)
-        if n < 6:  # Trop petit pour augmenter
+        if n < 8:  # Trop petit pour augmenter
             continue
         
         # Créer 2 sous-courses par course originale
         for _ in range(2):
             # Retirer 1-3 chevaux aléatoirement
-            n_remove = rng.randint(1, min(3, n - 5))
+            max_remove = min(3, n - 6)
+            if max_remove < 2:
+                continue
+            n_remove = rng.randint(1, max_remove)
             keep = rng.choice(indices, size=n - n_remove, replace=False)
             keep = sorted(keep)
             
