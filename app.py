@@ -1107,7 +1107,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     except ImportError:
         return None
 
-    X, y_win, y_top4, y_top3 = [], [], [], []
+    X, y_win, y_top4, y_top3, course_ids = [], [], [], [], []
     today = datetime.now()
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
         max_days=max(HISTORY_DAYS, days_back + exclude_recent))
@@ -1131,6 +1131,9 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     with ThreadPoolExecutor(max_workers=20) as ex:
         results = list(ex.map(_fetch_full, tasks))
 
+    # Course-level accumulator for intra-course features
+    _course_buffers = {}  # course_key -> list of (featurize_vec, y_win, y_top3, y_top4)
+
     for result in results:
         if not result:
             continue
@@ -1141,15 +1144,44 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
                                              elo, elo_hist, horse_races, pedigree,
                                              terrain=None)
         nb = len(analyses)
+        # Clé unique par course pour grouper
+        course_key = f"{parts.get('reunion',{}).get('numOfficiel','')}_{parts.get('numOrdre','')}"
+        _course_buf = []
         for a in analyses:
-            X.append(featurize(a, nb))
+            feat_vec = featurize(a, nb)
             real = next((p for p in parts["participants"]
                         if p.get("numPmu") == a["numPmu"]), None)
             place = (real.get("ordreArrivee") or 0) if real else 0
-            # === TRIPLE LABELS ===
-            y_win.append(1 if place == 1 else 0)
-            y_top3.append(1 if 1 <= place <= 3 else 0)
-            y_top4.append(1 if 1 <= place <= 4 else 0)
+            _course_buf.append({
+                "feat": feat_vec,
+                "y_win": 1 if place == 1 else 0,
+                "y_top3": 1 if 1 <= place <= 3 else 0,
+                "y_top4": 1 if 1 <= place <= 4 else 0,
+            })
+
+        # Stocker le buffer de course pour le traitement intra-course
+        if len(_course_buf) >= 2:
+            _course_buffers[course_key] = _course_buf
+
+    # ===========================================================
+    #  Assembler les features avec ranking intra-course
+    # ===========================================================
+    from lib.ml_v8 import compute_course_ranking_features
+    X, y_win, y_top3, y_top4, course_ids = [], [], [], [], []
+
+    for ck, buf in _course_buffers.items():
+        # Extraire les vecteurs bruts (48 features)
+        course_feats = [b["feat"] for b in buf]
+
+        # Calculer les features de ranking intra-course (14 features)
+        ranking_feats = compute_course_ranking_features(course_feats)
+
+        for i, b in enumerate(buf):
+            X.append(list(b["feat"]) + list(ranking_feats[i]))
+            y_win.append(b["y_win"])
+            y_top3.append(b["y_top3"])
+            y_top4.append(b["y_top4"])
+            course_ids.append(ck)
 
     if len(X) < 100:
         return None
@@ -1170,23 +1202,33 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     #  TRAINING — modèle v8 (Optuna + TS-CV + Feature Eng V8)
     # ===========================================================
     if model_type in ("advanced_v8", "advanced_v8_no_optuna") and HAS_V8:
-        from lib.ml_v8 import engineer_v8
-        # Enrichir les features : 48 → 62 (14 interactions)
-        X_v8 = []
-        for a in analyses_list_v8 if False else []:
-            pass  # placeholder — on utilise X existant
-        # X contient les 48 features de featurize(); on reconstruit depuis raw
-        # Solution: on applique engineer_v8 sur chaque sample
+        # X contient déjà 48+14=62 features (base + ranking intra-course)
+        # Ajouter les 14 interactions → 76 features total
+        from lib.ml_v8 import augment_course_level
         X_v8 = []
         for sample in X:
-            # sample = liste de 48 features depuis featurize()
-            # On a besoin du dict raw, mais ici on n'a que la liste.
-            # Alternative: features d'interaction directes depuis le vecteur
-            X_v8.append(_engineer_v8_from_vector(sample))
+            X_v8.append(_engineer_v8_from_vector(sample[:48]) + list(sample[48:]))
         X = X_v8
-        print(f"[ML v8] Features enrichies : {len(X[0])} features (48 base + 14 interactions)")
 
-        use_optuna = model_type == "advanced_v8"  # Optuna que pour le mode complet
+        # Data augmentation au niveau course
+        X_aug, y_win_aug = augment_course_level(X, y_win, course_ids)
+        _, y_top3_aug = augment_course_level(X, y_top3, course_ids)
+        _, y_top4_aug = augment_course_level(X, y_top4, course_ids)
+
+        # Vérifier cohérence (augment garde les mêmes tailles)
+        if len(X_aug) != len(y_win_aug):
+            X_aug, y_win_aug = X, y_win
+            _, _ = y_top3, y_top4
+            y_top3_aug, y_top4_aug = y_top3, y_top4
+
+        print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-len(X)} augmentés)")
+        print(f"[ML v8] {len(X_aug[0])} features (48 base + 14 ranking + 14 interactions)")
+        X = X_aug
+        y_win = y_win_aug
+        y_top3 = y_top3_aug
+        y_top4 = y_top4_aug
+
+        use_optuna = model_type == "advanced_v8"
 
         # --- Modèle WIN ---
         print("[ML v8] 🔵 Entraînement WIN (Optuna + XGBoost + LightGBM + TabNet)...")
@@ -1200,11 +1242,13 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         print("[ML v8] 🟢 Entraînement TOP4...")
         train_v8(X, y_top4, ML_MODEL_TOP4_V8_FILE, target="top4", use_optuna=use_optuna)
 
-        info["win_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
-        info["top3_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
-        info["top4_model"] = "XGBoost+LGB+HGB+TabNet V8 (Optuna+TS-CV+62feat)"
+        info["win_model"] = f"V8 stack+tabnet ({len(X[0])}feat, {len(X)}samples)"
+        info["top3_model"] = info["win_model"]
+        info["top4_model"] = info["win_model"]
         info["models_trained"] = ["win", "top3", "top4"]
         info["n_features"] = len(X[0])
+        info["n_samples_original"] = len(course_ids)
+        info["n_samples_augmented"] = len(X)
         return info
 
     # ===========================================================
@@ -1423,12 +1467,11 @@ def _engineer_v8_from_vector(v):
 
 def predict_ml(features, model, calibration=None):
     """Prédiction ML — enrichit en v8 si le modèle l'attend."""
-    # Si le modèle v8 attend 62 features et qu'on en a 48, enrichir
+    # Si le modèle v8 attend 62+ features et qu'on en a 48, enrichir
     if HAS_V8 and hasattr(model, 'stacking') and hasattr(model.stacking, 'n_features'):
         if model.stacking.n_features and len(features) < model.stacking.n_features:
             features = _engineer_v8_from_vector(features)
     elif HAS_V8 and hasattr(model, 'model') and isinstance(model.model, dict):
-        # StackingV8 standalone
         nf = model.n_features
         if nf and len(features) < nf:
             features = _engineer_v8_from_vector(features)
@@ -1436,6 +1479,32 @@ def predict_ml(features, model, calibration=None):
     if calibration:
         p = apply_calibration(p, calibration)
     return p
+
+
+def _enrich_features_v8(analyses):
+    """
+    Pour une course complète, enrichit les features de chaque cheval
+    avec le ranking intra-course + interactions v8.
+    Retourne une liste de feature vectors (76 features).
+    """
+    nb = len(analyses)
+    base_feats = [featurize(a, nb) for a in analyses]
+
+    # Features ranking intra-course (14 features)
+    try:
+        from lib.ml_v8 import compute_course_ranking_features
+        ranking_feats = compute_course_ranking_features(base_feats)
+    except Exception:
+        ranking_feats = [np.zeros(14) for _ in base_feats]
+
+    # Combiner : 48 base + 14 ranking + 14 interactions = 76
+    enriched = []
+    for i in range(nb):
+        vec48 = base_feats[i]
+        interactions = _engineer_v8_from_vector(vec48)[48:]  # les 14 interactions
+        full = list(vec48) + list(ranking_feats[i]) + interactions
+        enriched.append(full)
+    return enriched
 
 
 # ============================================================
@@ -1926,9 +1995,21 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     ml_model = load_ml_model() if use_ml else None
     calib = load_calibration() if use_ml else None
     chances_ml = None
+
+    # V8 enrichissement intra-course (ranking + interactions)
+    v8_feats = None
+    if ml_model and HAS_V8:
+        try:
+            v8_feats = _enrich_features_v8(analyses)
+        except Exception:
+            v8_feats = None
+
     if ml_model:
         nb = len(analyses)
-        raw_ml = [predict_ml(featurize(a, nb), ml_model, calib) for a in analyses]
+        if v8_feats and len(v8_feats[0]) >= 62:
+            raw_ml = [predict_ml(v8_feats[i], ml_model, calib) for i in range(nb)]
+        else:
+            raw_ml = [predict_ml(featurize(a, nb), ml_model, calib) for a in analyses]
         total_ml = sum(raw_ml) or 1
         chances_ml = [x / total_ml * 100 for x in raw_ml]
 
@@ -1937,7 +2018,10 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     raw_top4_ml = None
     if ml_top4_model:
         nb = len(analyses)
-        raw_top4_ml = [predict_ml(featurize(a, nb), ml_top4_model) for a in analyses]
+        if v8_feats and len(v8_feats[0]) >= 62:
+            raw_top4_ml = [predict_ml(v8_feats[i], ml_top4_model) for i in range(nb)]
+        else:
+            raw_top4_ml = [predict_ml(featurize(a, nb), ml_top4_model) for a in analyses]
         # Normaliser : dans une course, exactement 4 chevaux sont dans le top 4
         total_top4 = sum(raw_top4_ml) or 1
         raw_top4_ml = [p / total_top4 * 4 for p in raw_top4_ml]
@@ -1947,7 +2031,10 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     raw_top3_ml = None
     if ml_top3_model:
         nb = len(analyses)
-        raw_top3_ml = [predict_ml(featurize(a, nb), ml_top3_model) for a in analyses]
+        if v8_feats and len(v8_feats[0]) >= 62:
+            raw_top3_ml = [predict_ml(v8_feats[i], ml_top3_model) for i in range(nb)]
+        else:
+            raw_top3_ml = [predict_ml(featurize(a, nb), ml_top3_model) for a in analyses]
         # Normaliser : dans une course, exactement 3 chevaux sont dans le top 3
         total_top3 = sum(raw_top3_ml) or 1
         raw_top3_ml = [p / total_top3 * 3 for p in raw_top3_ml]
