@@ -2134,9 +2134,92 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     for a in analyses:
         a["chance"] = round(a["chance"] / total * 100, 2)
 
-    analyses.sort(key=lambda x: -x["chance"])
+    # ═══ SCORE COMPOSITE POUR CLASSEMENT ═══
+    # Au lieu de trier juste par "chance" (WIN ML seul),
+    # on utilise les 3 modèles pour un classement plus robuste.
+    #
+    # La clé : TOP3 ML est le modèle le plus fiable (25% positifs)
+    # Donc il doit dominer le classement.
+    for a in analyses:
+        win_ml = a.get("chanceML") or a.get("chance") or 0
+        top3_ml = a.get("chanceTop3ML") or 0
+        top4_ml = a.get("chanceTop4ML") or 0
+        heur = a.get("chanceHeur") or a.get("chance") or 0
+        cote = a.get("cote") or 0
+
+        # Score composite : TOP3 domine (modèle le plus fiable)
+        # Win ML utile pour trancher les ex-aequo
+        # Cote (inv) comme signal marché
+        inv_cote_score = 100 / max(cote, 1) if cote > 0 else 0
+
+        raw_composite = (
+            top3_ml * 0.40 +     # TOP3 = le plus fiable (25% positifs)
+            win_ml * 0.25 +      # WIN = discriminant mais bruité (8% positifs)
+            top4_ml * 0.15 +     # TOP4 = confirmation placement
+            heur * 0.10 +        # Heuristique = filet de sécurité
+            inv_cote_score * 0.10  # Marché = les cotes ont souvent raison
+        )
+        a["scoreComposite"] = round(raw_composite, 2)
+
+    # Trier par score composite (pas juste chance)
+    analyses.sort(key=lambda x: -(x.get("scoreComposite") or x.get("chance") or 0))
     for rank, a in enumerate(analyses, 1):
         a["rang"] = rank
+
+    # ═══ SCORE DE CONFIANCE ═══
+    # Mesure à quel point on est sûr du #1.
+    # Un score haut = #1 clairement au-dessus = plus de chance de gagner.
+    if len(analyses) >= 2:
+        p1 = analyses[0].get("scoreComposite") or analyses[0].get("chance") or 0
+        p2 = analyses[1].get("scoreComposite") or analyses[1].get("chance") or 0
+
+        # 1) Gap #1 vs #2
+        gap_12 = p1 - p2
+
+        # 2) Accord des modèles : est-ce que WIN, TOP3, TOP4 ont le même #1 ?
+        win_rank = sorted(range(len(analyses)),
+                          key=lambda i: -(analyses[i].get("chanceML") or analyses[i].get("chance") or 0))
+        top3_rank = sorted(range(len(analyses)),
+                           key=lambda i: -(analyses[i].get("chanceTop3ML") or 0))
+        top4_rank = sorted(range(len(analyses)),
+                           key=lambda i: -(analyses[i].get("chanceTop4ML") or 0))
+
+        # Le #1 du classement est-il aussi #1 dans chaque modèle ?
+        idx_top_composite = 0  # analyses[0] après tri
+        win_top1 = win_rank[0] == idx_top_composite if win_rank else True
+        top3_top1 = top3_rank[0] == idx_top_composite if top3_rank else True
+        top4_top1 = top4_rank[0] == idx_top_composite if top4_rank else True
+
+        models_agree = sum([win_top1, top3_top1, top4_top1])
+        # 3/3 = accord total, 2/3 = bon, 1/3 = faible
+
+        # 3) Score composite
+        confiance = 0
+        confiance += min(gap_12, 30) / 30 * 30   # gap : max 30 points
+        confiance += models_agree / 3 * 40         # accord modèles : max 40 points
+        confiance += min(p1, 50) / 50 * 20         # force du #1 : max 20 points
+        # Marché d'accord ? Le favori de la cote est-il notre #1 ?
+        fav_marche = max(analyses, key=lambda a: a.get("probaMarche") or 0)
+        if fav_marche.get("nom") == analyses[0].get("nom"):
+            confiance += 10  # marché confirme
+        confiance = min(round(confiance), 100)
+
+        analyses[0]["confiance"] = confiance
+        analyses[0]["gap12"] = round(gap_12, 1)
+        analyses[0]["modelsAgree"] = f"{models_agree}/3"
+        analyses[0]["winTop1"] = win_top1
+        analyses[0]["top3Top1"] = top3_top1
+        analyses[0]["top4Top1"] = top4_top1
+
+        # Niveau de confiance pour l'UI
+        if confiance >= 70:
+            analyses[0]["confianceNiveau"] = "🔥 HAUTE"
+        elif confiance >= 50:
+            analyses[0]["confianceNiveau"] = "✅ BONNE"
+        elif confiance >= 35:
+            analyses[0]["confianceNiveau"] = "⚠️ MOYENNE"
+        else:
+            analyses[0]["confianceNiveau"] = "❌ FAIBLE"
 
     # Supprimer les données internes non JSON-sérialisables
     for a in analyses:
@@ -2166,6 +2249,11 @@ def backtest(days_back=7, use_ml=False):
         "top3_ml_hit": 0, "top3_ml_total": 0,
         "top3_brier_sum": 0.0,
         "super_base_hit": 0, "super_base_total": 0,  # Super Base = meilleur top3 ML dans top 5
+        # NEW v8 : Confiance tracking
+        "confiance_high": {"win": 0, "total": 0, "gain": 0.0},
+        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0},
+        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0},
+        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0},
     }
 
     tasks = []
@@ -2211,6 +2299,20 @@ def backtest(days_back=7, use_ml=False):
         if top1["ordreArrivee"] == 1: results["top1_winner"] += 1
         if top1["ordreArrivee"] and 1 <= top1["ordreArrivee"] <= 3: results["top1_top3"] += 1
         if any(a["ordreArrivee"] == 1 for a in analyses[:3]): results["top3_winner"] += 1
+
+        # NEW v8 — Confiance tracking
+        confiance_niveau = (top1.get("confianceNiveau") or "").lower()
+        confiance_key = None
+        if "haute" in confiance_niveau: confiance_key = "confiance_high"
+        elif "bonne" in confiance_niveau: confiance_key = "confiance_bonne"
+        elif "moyenne" in confiance_niveau: confiance_key = "confiance_moyenne"
+        elif "faible" in confiance_niveau: confiance_key = "confiance_faible"
+        if confiance_key:
+            results[confiance_key]["total"] += 1
+            if top1["ordreArrivee"] == 1:
+                results[confiance_key]["win"] += 1
+                if top1["cote"]:
+                    results[confiance_key]["gain"] += top1["cote"]
 
         results["mise_totale"] += 1
         if top1["ordreArrivee"] == 1 and top1["cote"]:
@@ -2288,6 +2390,23 @@ def backtest(days_back=7, use_ml=False):
                            max(results["mise_totale"], 1) * 100, 2)
     results["mise_totale"] = round(results["mise_totale"], 2)
     results["gain_total"] = round(results["gain_total"], 2)
+
+    # NEW v8 — Stats par niveau de confiance
+    confiance_stats = {}
+    for key, label in [("confiance_high", "🔥 Haute (≥70)"),
+                       ("confiance_bonne", "✅ Bonne (50-69)"),
+                       ("confiance_moyenne", "⚠️ Moyenne (35-49)"),
+                       ("confiance_faible", "❌ Faible (<35)")]:
+        s = results.get(key, {"win": 0, "total": 0, "gain": 0.0})
+        if s["total"] > 0:
+            confiance_stats[key] = {
+                "label": label,
+                "total": s["total"],
+                "win": s["win"],
+                "taux": round(s["win"] / s["total"] * 100, 1),
+                "roi": round((s["gain"] - s["total"]) / s["total"] * 100, 1),
+            }
+    results["confiance_stats"] = confiance_stats
 
     # Kelly stats
     km_tot = results["kelly_mise_totale"]
