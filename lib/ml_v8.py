@@ -42,12 +42,15 @@ except Exception:
     HAS_HGB = False
 
 HAS_TABNET = False
-try:
-    from pytorch_tabnet.tab_model import TabNetClassifier
-    import torch
-    HAS_TABNET = True
-except Exception:
-    pass
+# TabNet désactivé — cause des crashs PyTorch ("index -1 is out of bounds")
+# avec les features NaN. Le stacking XGB+LGB+HGB est suffisant.
+# Pour réactiver, décommenter ci-dessous :
+# try:
+#     from pytorch_tabnet.tab_model import TabNetClassifier
+#     import torch
+#     HAS_TABNET = True
+# except Exception:
+#     pass
 
 HAS_OPTUNA = False
 try:
@@ -807,19 +810,22 @@ class EnsembleV8:
         self.stacking = StackingV8()
         self.stacking.fit(X, y, target=target, use_optuna=use_optuna)
 
-        self.tabnet = TabNetV8()
-        try:
-            if self.tabnet.fit(X, y, target=target) is None:
+        # ── TabNet (optionnel, souvent instable avec NaN) ──
+        self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
+        if HAS_TABNET:
+            self.tabnet = TabNetV8()
+            try:
+                if self.tabnet.fit(X, y, target=target) is None:
+                    self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
+                else:
+                    s_b = self.stacking.val_score or 0.25
+                    t_b = self.tabnet.val_score or 0.25
+                    s_inv, t_inv = 1.0/max(s_b, 0.001), 1.0/max(t_b, 0.001)
+                    total = s_inv + t_inv
+                    self.w_stack, self.w_tabnet = s_inv/total, t_inv/total
+            except Exception as e:
+                print(f"  [EnsembleV8] ⚠️ TabNet a échoué ({e}), utilisation stacking seul")
                 self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
-            else:
-                s_b = self.stacking.val_score or 0.25
-                t_b = self.tabnet.val_score or 0.25
-                s_inv, t_inv = 1.0/max(s_b, 0.001), 1.0/max(t_b, 0.001)
-                total = s_inv + t_inv
-                self.w_stack, self.w_tabnet = s_inv/total, t_inv/total
-        except Exception as e:
-            print(f"  [EnsembleV8] ⚠️ TabNet a échoué ({e}), utilisation stacking seul")
-            self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
 
         self._final_calibration(X, y)
         elapsed = time.time() - t0
