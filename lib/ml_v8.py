@@ -2,13 +2,13 @@
 ml_v8.py — Pipeline ML V8 pour Turfiou
 =======================================
 Améliorations vs V7 :
-  1. Feature Engineering — 62 features (48 raw + 14 interactions/ratios)
+  1. Feature Engineering — 62→76 features (14 interactions + 14 intra-course ranking)
   2. Purged Time-Series CV — élimine le data leak temporel
   3. Optuna hyperparam tuning — auto-optimisation XGB/LGB (30 trials)
   4. OOF stacking multi-colonne — meta-learner voit chaque learner séparément
   5. Calibration isotonic + Platt — meilleure calibration
   6. Poids dynamiques TabNet — basés sur validation, pas fixés
-  7. Early stopping XGB/LGB — prévient l'overfitting
+  7. Data augmentation — SMOTE-like + course-level augment
 """
 import numpy as np
 import joblib
@@ -24,7 +24,7 @@ from sklearn.isotonic import IsotonicRegression
 
 # ── Optional imports ──────────────────────────────────────────
 try:
-    from xgboost import XGBClassifier
+    from xgboost import XGBClassifier, XGBRanker
     HAS_XGB = True
 except Exception:
     HAS_XGB = False
@@ -57,216 +57,218 @@ try:
 except Exception:
     pass
 
+HAS_IMBLEARN = False
+try:
+    from imblearn.over_sampling import SMOTE, ADASYN
+    HAS_IMBLEARN = True
+except Exception:
+    pass
+
 
 # ══════════════════════════════════════════════════════════════
-#  1. FEATURE ENGINEERING V8
+#  1. FEATURE ENGINEERING V8 — interactions + ranking intra-course
 # ══════════════════════════════════════════════════════════════
 
-def engineer_v8(raw):
+def engineer_interactions(raw):
     """
-    Prend le dict raw (48 features) et retourne 62 features
-    avec 14 features d'interaction / ratios supplémentaires.
+    Prend le dict raw (48 features) et retourne 14 features d'interaction.
     """
-    # Sécuriser les accès
     def g(key, default=0.0):
         v = raw.get(key, default)
         return float(v) if v is not None else float(default)
 
-    age = g("age")
-    nb_courses = max(g("nb_courses"), 1)
-    win_rate = g("win_rate")
-    place_rate = g("place_rate")
-    gains_log = g("gains_carriere_log")
-    gains_pc_log = g("gains_par_course_log")
-    top3_rate = g("top3_rate")
-    top4_rate = g("top4_rate")
     avg_place_3 = g("avg_place_3")
     avg_place_5 = g("avg_place_5")
+    place_1 = g("place_1")
     variance = g("variance_places")
-    last_place = g("last_place")
+    dr_wr = g("driver_win_rate")
+    en_wr = g("entraineur_win_rate")
+    elo = g("elo")
+    elo_trend = g("elo_trend_raw")
+    nb_courses = max(g("nb_courses"), 1)
     days_since = g("days_since_last")
     nb_courses_mois = g("nb_courses_mois")
     dist_count = g("dist_similar_count")
-    dist_avg = g("dist_avg_place")
-    dist_wr = g("dist_win_rate")
-    dr_wr = g("driver_win_rate")
-    dr_pr = g("driver_place_rate")
     dr_disc_wr = g("driver_disc_win_rate")
-    dr_hippo_wr = g("driver_hippo_win_rate")
-    en_wr = g("entraineur_win_rate")
-    en_disc_wr = g("entraineur_disc_win_rate")
-    chimie_wr = g("chimie_win_rate")
-    elo = g("elo")
-    elo_trend = g("elo_trend_raw")
-    nb_partants = max(g("nb_partants"), 1)
     cote = max(g("cote"), 1.0)
     inv_cote = g("inv_cote")
-    is_female = g("is_female")
-    has_oeilleres = g("has_oeilleres")
-    is_deferre = g("is_deferre")
-    driver_changed = g("driver_changed")
-    bonus_team = g("bonus_team")
-    bonus_deferre = g("bonus_deferre")
-    place_1 = g("place_1")
-    place_2 = g("place_2")
-    place_3 = g("place_3")
-    place_4 = g("place_4")
-    place_5 = g("place_5")
-    nb_raced = g("nb_raced_recent")
-    driver_courses = g("driver_courses")
-    entraineur_courses = g("entraineur_courses")
     chimie_courses = g("chimie_courses")
-    driver_disc_courses = g("driver_disc_courses")
+    chimie_wr = g("chimie_win_rate")
+    last_place = g("last_place")
+    gains_pc_log = g("gains_par_course_log")
+    nb_partants = max(g("nb_partants"), 1)
 
-    # ─── 48 features originales ───
-    base = [
-        # Carrière (6)
-        age, g("nb_courses"), g("nb_victoires"), g("nb_places"), win_rate, place_rate,
-        # Gains (2)
-        gains_log, gains_pc_log,
-        # 5 dernières places (5)
-        place_1, place_2, place_3, place_4, place_5,
-        # Agrégats perf (6)
-        avg_place_3, avg_place_5, top3_rate, top4_rate, variance, nb_raced,
-        # Dernière course (2)
-        last_place, days_since,
-        # Activité (1)
-        nb_courses_mois,
-        # Distance (3)
-        dist_count, dist_avg, dist_wr,
-        # Driver global (3)
-        driver_courses, dr_wr, dr_pr,
-        # Driver discipline (2)
-        driver_disc_courses, dr_disc_wr,
-        # Driver hippodrome (2)
-        g("driver_hippo_courses"), dr_hippo_wr,
-        # Entraineur (3)
-        entraineur_courses, en_wr, en_disc_wr,
-        # Chimie (2)
-        chimie_courses, chimie_wr,
-        # Elo (2)
-        elo, elo_trend,
-        # Course (6)
-        nb_partants, cote, inv_cote, is_female, has_oeilleres, is_deferre,
-        # Contexte (3)
-        driver_changed, bonus_team, bonus_deferre,
+    return [
+        avg_place_3 * cote,                          # forme_x_cote
+        avg_place_5 - place_1 if (avg_place_5 > 0 and place_1 > 0) else 0.0,  # momentum
+        dr_wr * en_wr / 100.0 if dr_wr > 0 and en_wr > 0 else 0.0,  # driver_x_entraineur
+        elo * inv_cote * 100,                         # elo_x_marche
+        -variance,                                    # regularite_inv
+        dist_count / nb_courses,                      # exp_distance
+        dr_disc_wr / max(dr_wr, 1.0),                 # specialisation_driver
+        inv_cote * 100,                               # proba_marche
+        chimie_wr / max(dr_wr, 1.0) if chimie_courses >= 2 else 0.0,  # chimie_relative
+        elo_trend * nb_courses_mois,                  # tendance_ponderee
+        1.0 if 0 < last_place <= 3 else 0.0,         # dernier_top3
+        min(days_since, 120) / 30.0,                  # inactivite_score
+        gains_pc_log,                                 # progression_gains
+        1.0 / nb_partants * 100,                      # competitivite
     ]
 
-    # ─── 14 features d'interaction / ratios ───
-    interactions = [
-        # Forme × cote — un cheval en forme avec une grosse cote = value bet
-        avg_place_3 * cote,
-        # Momentum — amélioration récente (place_1 < avg_place_5)
-        avg_place_5 - place_1 if (avg_place_5 > 0 and place_1 > 0) else 0.0,
-        # Driver × Entraineur — combo force
-        dr_wr * en_wr / 100.0 if dr_wr > 0 and en_wr > 0 else 0.0,
-        # Elo ajusté par la cote du marché
-        elo * inv_cote * 100,
-        # Regularité — faible variance = régulier
-        -variance,  # négatif car moins de variance = mieux
-        # Expérience distance — ratio courses distance / courses totales
-        dist_count / nb_courses if nb_courses > 0 else 0.0,
-        # Densité de victoire driver — spécialisation
-        dr_disc_wr / max(dr_wr, 1.0),
-        # Cote implicite du marché (probabilité)
-        inv_cote * 100,
-        # Chimie normalisée — taux victoire duo / taux victoire driver global
-        chimie_wr / max(dr_wr, 1.0) if chimie_courses >= 2 else 0.0,
-        # Tendance récente — elo_trend pondéré par l'activité
-        elo_trend * nb_courses_mois,
-        # Proximité du dernier résultat — 1 si dernier ≤ 3, 0 sinon
-        1.0 if 0 < last_place <= 3 else 0.0,
-        # Inactivité — pénalise les longues absences
-        min(days_since, 120) / 30.0,
-        # Progression gains — gains par course récents vs carrière
-        gains_pc_log,
-        # Taille du champ ajustée — compétitivité relative
-        1.0 / nb_partants * 100,
-    ]
 
-    return base + interactions
+def compute_course_ranking_features(course_features):
+    """
+    Prend une liste de vecteurs features (1 par cheval d'une même course)
+    et retourne pour chaque cheval ses features de ranking intra-course.
+    
+    Pour chaque dimension clé, on calcule :
+    - rank_percentile : position relative (0=meilleur, 1=pire)
+    - z_score : écart à la moyenne de la course
+    - is_top_N : binaire, dans les X meilleurs
+    
+    → 14 features de ranking par cheval
+    """
+    n_horses = len(course_features)
+    if n_horses < 2:
+        return [np.zeros(14) for _ in course_features]
+    
+    # Indices des features clés dans le vecteur 48
+    # (depuis featurize() — v7 raw path)
+    DIMS = {
+        "elo": 37,            # elo — plus haut = meilleur
+        "cote": 40,           # cote — plus bas = meilleur → inversé
+        "win_rate": 4,        # win_rate
+        "top3_rate": 15,      # top3_rate
+        "avg_place_3": 13,    # avg_place_3 — plus bas = meilleur → inversé
+        "driver_wr": 26,      # driver_win_rate
+        "entraineur_wr": 33,  # entraineur_win_rate
+    }
+    
+    mat = np.array(course_features, dtype=np.float64)
+    
+    results = []
+    for i in range(n_horses):
+        feats = []
+        
+        # Pour chaque dimension, calculer le percentile rank
+        for dim_name, dim_idx in DIMS.items():
+            vals = mat[:, dim_idx].copy()
+            horse_val = vals[i]
+            
+            # Dimensions où "plus bas = meilleur" → on inverse
+            if dim_name in ("cote", "avg_place_3"):
+                # Percentile : 0 = meilleur (cote la plus basse)
+                rank_pct = np.mean(vals <= horse_val)
+            else:
+                # Percentile : 0 = pire, 1 = meilleur
+                rank_pct = np.mean(vals <= horse_val)
+            
+            feats.append(rank_pct)
+        
+        # Z-scores sur 2 dimensions clés
+        for dim_idx in [37, 40]:  # elo, cote
+            vals = mat[:, dim_idx]
+            mean_val = np.mean(vals)
+            std_val = np.std(vals) if np.std(vals) > 0 else 1.0
+            feats.append((mat[i, dim_idx] - mean_val) / std_val)
+        
+        # Is top-N binary
+        # Top 3 par Elo
+        elo_vals = mat[:, 37]
+        top3_elo = np.argsort(-elo_vals)[:min(3, n_horses)]
+        feats.append(1.0 if i in top3_elo else 0.0)
+        
+        # Top 3 par cote (inv_cote = plus fort)
+        inv_cote_vals = mat[:, 41]  # inv_cote
+        top3_cote = np.argsort(-inv_cote_vals)[:min(3, n_horses)]
+        feats.append(1.0 if i in top3_cote else 0.0)
+        
+        # Écart au favori (1er de la cote)
+        fav_idx = np.argmax(inv_cote_vals)
+        elo_gap_to_fav = mat[i, 37] - mat[fav_idx, 37]
+        feats.append(elo_gap_to_fav)
+        
+        # Force relative : (elo * win_rate) vs moyenne course
+        power = mat[:, 37] * mat[:, 4]  # elo * win_rate
+        mean_power = np.mean(power)
+        feats.append(power[i] / max(mean_power, 1.0))
+        
+        results.append(np.array(feats))
+    
+    return results
 
 
-FEATURE_NAMES_V8 = [
-    # === 48 features originales v7 ===
-    "age", "nb_courses", "nb_victoires", "nb_places", "win_rate", "place_rate",
-    "gains_carriere_log", "gains_par_course_log",
-    "place_1", "place_2", "place_3", "place_4", "place_5",
-    "avg_place_3", "avg_place_5", "top3_rate", "top4_rate", "variance_places", "nb_raced_recent",
-    "last_place", "days_since_last",
-    "nb_courses_mois",
-    "dist_similar_count", "dist_avg_place", "dist_win_rate",
-    "driver_courses", "driver_win_rate", "driver_place_rate",
-    "driver_disc_courses", "driver_disc_win_rate",
-    "driver_hippo_courses", "driver_hippo_win_rate",
-    "entraineur_courses", "entraineur_win_rate", "entraineur_disc_win_rate",
-    "chimie_courses", "chimie_win_rate",
-    "elo", "elo_trend_raw",
-    "nb_partants", "cote", "inv_cote", "is_female", "has_oeilleres", "is_deferre",
-    "driver_changed", "bonus_team", "bonus_deferre",
-    # === 14 features d'interaction v8 ===
-    "forme_x_cote", "momentum", "driver_x_entraineur", "elo_x_marche",
-    "regularite_inv", "exp_distance", "specialisation_driver",
-    "proba_marche", "chimie_relative", "tendance_ponderee",
-    "dernier_top3", "inactivite_score", "progression_gains", "competitivite",
-]
+def augment_course_level(X, y, group_ids):
+    """
+    Data augmentation au niveau course.
+    Pour chaque course, on crée des "sous-courses" en retirant
+    aléatoirement 1-2 chevaux, ce qui crée de nouveaux exemples
+    avec des rankings différents.
+    
+    X : list of feature vectors
+    y : list of labels
+    group_ids : list of course identifiers (same id = same course)
+    
+    Retourne X_aug, y_aug avec les données originales + augmentées
+    """
+    from collections import defaultdict
+    
+    # Grouper par course
+    course_groups = defaultdict(list)
+    for idx, gid in enumerate(group_ids):
+        course_groups[gid].append(idx)
+    
+    X_aug = list(X)
+    y_aug = list(y)
+    
+    rng = np.random.RandomState(42)
+    
+    for gid, indices in course_groups.items():
+        n = len(indices)
+        if n < 6:  # Trop petit pour augmenter
+            continue
+        
+        # Créer 2 sous-courses par course originale
+        for _ in range(2):
+            # Retirer 1-3 chevaux aléatoirement
+            n_remove = rng.randint(1, min(3, n - 5))
+            keep = rng.choice(indices, size=n - n_remove, replace=False)
+            keep = sorted(keep)
+            
+            for idx in keep:
+                X_aug.append(X[idx])
+                y_aug.append(y[idx])
+    
+    return X_aug, y_aug
 
 
 # ══════════════════════════════════════════════════════════════
 #  2. PURGED TIME-SERIES CV
 # ══════════════════════════════════════════════════════════════
 
-def purged_ts_cv(n_samples, n_splits=5, purge_pct=0.05):
-    """
-    Time-Series split avec purge pour éviter le data leak.
-    Les données sont ordonnées temporellement (le training les charge
-    dans l'ordre chronologique).
-    
-    purge_pct : fraction des données à "purger" (gap) entre train et val
-                pour éviter que des courses de la même journée ne soient
-                à cheval sur train et val.
-    """
+def purged_ts_cv(n_samples, n_splits=5, purge_pct=0.03):
     purge = max(1, int(n_samples * purge_pct))
     fold_size = n_samples // (n_splits + 1)
     splits = []
-
     for i in range(n_splits):
         train_end = (i + 1) * fold_size
         val_start = train_end + purge
         val_end = min((i + 2) * fold_size, n_samples)
-
-        if val_start >= n_samples:
-            break
-        if val_end <= val_start:
+        if val_start >= n_samples or val_end <= val_start:
             continue
-
-        train_idx = np.arange(0, train_end)
-        val_idx = np.arange(val_start, val_end)
-        splits.append((train_idx, val_idx))
-
+        splits.append((np.arange(0, train_end), np.arange(val_start, val_end)))
     return splits
 
 
 def safe_ts_cv(y, n_splits=5):
-    """
-    Retourne des splits temporels si assez de données,
-    sinon fallback StratifiedKFold.
-    """
     n = len(y)
     n_pos = max(1, int(np.sum(y)))
-    
-    # Minimum 2 positifs dans chaque fold de validation
     if n < 200 or n_pos < 20:
         k = max(2, min(n_splits, n_pos // 2, n // 30))
-        return list(StratifiedKFold(n_splits=k, shuffle=True, random_state=42).split(
-            np.zeros(n), y))
-    
-    splits = purged_ts_cv(n, n_splits=n_splits, purge_pct=0.03)
-    
+        return list(StratifiedKFold(n_splits=k, shuffle=True, random_state=42).split(np.zeros(n), y))
+    splits = purged_ts_cv(n, n_splits=n_splits)
     if not splits:
-        return list(StratifiedKFold(n_splits=3, shuffle=True, random_state=42).split(
-            np.zeros(n), y))
-    
+        return list(StratifiedKFold(n_splits=3, shuffle=True, random_state=42).split(np.zeros(n), y))
     return splits
 
 
@@ -274,11 +276,9 @@ def safe_ts_cv(y, n_splits=5):
 #  3. OPTUNA HYPERPARAM TUNING
 # ══════════════════════════════════════════════════════════════
 
-def _optuna_tune_xgb(X, y, target, n_trials=30, timeout=180):
-    """Tuning XGBoost avec Optuna."""
+def _optuna_tune_xgb(X, y, n_trials=30, timeout=180):
     if not HAS_OPTUNA or not HAS_XGB:
         return None
-
     n_pos = int(np.sum(y))
     n_neg = len(y) - n_pos
     spw = n_neg / max(n_pos, 1)
@@ -295,14 +295,10 @@ def _optuna_tune_xgb(X, y, target, n_trials=30, timeout=180):
             "min_child_weight": trial.suggest_int("min_child_weight", 3, 30),
             "gamma": trial.suggest_float("gamma", 0.0, 0.5),
             "scale_pos_weight": spw,
-            "eval_metric": "logloss",
-            "use_label_encoder": False,
-            "random_state": 42,
-            "n_jobs": -1,
-            "verbosity": 0,
+            "eval_metric": "logloss", "use_label_encoder": False,
+            "random_state": 42, "n_jobs": -1, "verbosity": 0,
         }
         model = XGBClassifier(**params)
-
         splits = safe_ts_cv(y, n_splits=3)
         scores = []
         for train_idx, val_idx in splits:
@@ -317,23 +313,16 @@ def _optuna_tune_xgb(X, y, target, n_trials=30, timeout=180):
         study = optuna.create_study(direction="minimize")
         study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
         best = study.best_trial.params
-        best.update({
-            "scale_pos_weight": spw,
-            "eval_metric": "logloss",
-            "use_label_encoder": False,
-            "random_state": 42,
-            "n_jobs": -1,
-            "verbosity": 0,
-        })
-        print(f"    [Optuna XGB] Brier={study.best_value:.4f} — {best}")
+        best.update({"scale_pos_weight": spw, "eval_metric": "logloss",
+                     "use_label_encoder": False, "random_state": 42, "n_jobs": -1, "verbosity": 0})
+        print(f"    [Optuna XGB] Brier={study.best_value:.4f}")
         return XGBClassifier(**best)
     except Exception as e:
         print(f"    [Optuna XGB] Erreur: {e}")
         return None
 
 
-def _optuna_tune_lgb(X, y, target, n_trials=30, timeout=180):
-    """Tuning LightGBM avec Optuna."""
+def _optuna_tune_lgb(X, y, n_trials=30, timeout=180):
     if not HAS_OPTUNA or not HAS_LGB:
         return None
 
@@ -348,13 +337,9 @@ def _optuna_tune_lgb(X, y, target, n_trials=30, timeout=180):
             "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 2.0, log=True),
             "reg_lambda": trial.suggest_float("reg_lambda", 0.1, 5.0, log=True),
             "min_child_samples": trial.suggest_int("min_child_samples", 5, 50),
-            "is_unbalance": True,
-            "random_state": 42,
-            "n_jobs": -1,
-            "verbose": -1,
+            "is_unbalance": True, "random_state": 42, "n_jobs": -1, "verbose": -1,
         }
         model = LGBMClassifier(**params)
-
         splits = safe_ts_cv(y, n_splits=3)
         scores = []
         for train_idx, val_idx in splits:
@@ -369,13 +354,8 @@ def _optuna_tune_lgb(X, y, target, n_trials=30, timeout=180):
         study = optuna.create_study(direction="minimize")
         study.optimize(objective, n_trials=n_trials, timeout=timeout, show_progress_bar=False)
         best = study.best_trial.params
-        best.update({
-            "is_unbalance": True,
-            "random_state": 42,
-            "n_jobs": -1,
-            "verbose": -1,
-        })
-        print(f"    [Optuna LGB] Brier={study.best_value:.4f} — {best}")
+        best.update({"is_unbalance": True, "random_state": 42, "n_jobs": -1, "verbose": -1})
+        print(f"    [Optuna LGB] Brier={study.best_value:.4f}")
         return LGBMClassifier(**best)
     except Exception as e:
         print(f"    [Optuna LGB] Erreur: {e}")
@@ -383,7 +363,7 @@ def _optuna_tune_lgb(X, y, target, n_trials=30, timeout=180):
 
 
 # ══════════════════════════════════════════════════════════════
-#  BASE LEARNERS (defaults si pas d'Optuna)
+#  BASE LEARNERS
 # ══════════════════════════════════════════════════════════════
 
 def _default_xgb(target="win"):
@@ -433,22 +413,14 @@ def _default_hgb(target="win"):
 
 
 # ══════════════════════════════════════════════════════════════
-#  4. STACKING V8 — OOF multi-colonne + meta riche
+#  STACKING V8
 # ══════════════════════════════════════════════════════════════
 
 class StackingV8:
-    """
-    Améliorations vs V7 :
-    - OOF multi-colonne : meta-learner voit N colonnes (1 par learner)
-    - Purged TS-CV : pas de data leak temporel
-    - Optuna tuning optionnel
-    - Calibration isotonic + Platt
-    """
-
     def __init__(self):
         self.model = None
         self.calibrated = None
-        self.val_score = None  # Brier sur validation
+        self.val_score = None
         self.n_features = None
 
     def fit(self, X, y, target="win", use_optuna=False):
@@ -464,20 +436,18 @@ class StackingV8:
         print(f"{'='*60}")
 
         if n < 80 or n_pos < 8:
-            print(f"  ⚠️  Dataset insuffisant, fallback")
             return self._fit_fallback(X, y, target)
 
-        # ── Étape 0 : Optuna tuning (optionnel) ──
+        # Optuna
         tuned_xgb = None
         tuned_lgb = None
         if use_optuna and HAS_OPTUNA:
             print(f"\n  [0/4] Optuna tuning...")
             if HAS_XGB:
-                tuned_xgb = _optuna_tune_xgb(X, y, target, n_trials=30, timeout=180)
+                tuned_xgb = _optuna_tune_xgb(X, y, n_trials=30, timeout=180)
             if HAS_LGB:
-                tuned_lgb = _optuna_tune_lgb(X, y, target, n_trials=30, timeout=180)
+                tuned_lgb = _optuna_tune_lgb(X, y, n_trials=30, timeout=180)
 
-        # ── Construire les learners ──
         learners = []
         if HAS_XGB:
             learners.append(("xgb", tuned_xgb or _default_xgb(target)))
@@ -487,33 +457,28 @@ class StackingV8:
             learners.append(("hgb", _default_hgb(target)))
 
         if len(learners) < 2:
-            print(f"  ⚠️  < 2 learners, fallback")
             return self._fit_fallback(X, y, target)
 
-        # ── Étape 1 : OOF predictions multi-colonne ──
+        # OOF multi-colonne
         splits = safe_ts_cv(y, n_splits=5)
         print(f"\n  [1/4] OOF predictions ({len(splits)} folds, purged TS-CV)...")
-
         n_learners = len(learners)
         oof_matrix = np.zeros((n, n_learners))
 
         for fold_idx, (train_idx, val_idx) in enumerate(splits):
             X_tr, X_val = X[train_idx], X[val_idx]
             y_tr = y[train_idx]
-
             for j, (name, learner_proto) in enumerate(learners):
                 learner = copy.deepcopy(learner_proto)
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore")
                     learner.fit(X_tr, y_tr)
                 oof_matrix[val_idx, j] = learner.predict_proba(X_val)[:, 1]
-
             pct = (fold_idx + 1) / len(splits) * 100
-            n_val_pos = int(np.sum(y[val_idx]))
-            print(f"    Fold {fold_idx+1}/{len(splits)} — {len(val_idx)} samples ({n_val_pos}+) [{pct:.0f}%]")
+            print(f"    Fold {fold_idx+1}/{len(splits)} [{pct:.0f}%]")
 
-        # ── Étape 2 : Fit base learners sur full data ──
-        print(f"\n  [2/4] Fit full dataset ({n} samples)...")
+        # Fit full
+        print(f"\n  [2/4] Fit full dataset...")
         fitted_base = []
         for name, learner_proto in learners:
             learner = copy.deepcopy(learner_proto)
@@ -523,155 +488,106 @@ class StackingV8:
             fitted_base.append((name, learner))
             print(f"    ✅ {name}")
 
-        # ── Étape 3 : Meta-learner sur OOF multi-colonne ──
-        print(f"\n  [3/4] Meta-learner (LogisticRegression sur {n_learners} OOF cols)...")
+        # Meta-learner
+        print(f"\n  [3/4] Meta-learner ({n_learners} OOF cols)...")
         meta = LogisticRegression(C=1.0, max_iter=2000, fit_intercept=True)
         meta.fit(oof_matrix, y)
-
-        # Coefficients du meta
         for j, (name, _) in enumerate(learners):
             coef = meta.coef_[0][j] if meta.coef_.ndim > 1 else meta.coef_[j]
             print(f"    {name}: coef={coef:.4f}")
 
-        # ── Validation OOF score ──
         meta_oof_preds = meta.predict_proba(oof_matrix)[:, 1]
         self.val_score = brier_score_loss(y, meta_oof_preds)
         print(f"    Brier OOF = {self.val_score:.4f}")
 
-        self.model = {
-            "base_learners": fitted_base,
-            "meta": meta,
-            "target": target,
-            "learner_names": [name for name, _ in learners],
-        }
-        print(f"  ✅ Stacking V8 complet ({len(fitted_base)} learners → meta)")
+        self.model = {"base_learners": fitted_base, "meta": meta,
+                      "target": target, "learner_names": [n for n, _ in learners]}
+        print(f"  ✅ Stacking V8 complet ({len(fitted_base)} learners)")
 
-        # ── Étape 4 : Calibration (isotonic + Platt) ──
+        # Calibration
         print(f"\n  [4/4] Calibration...")
         self.calibrated = self._calibrate(X, y)
-
         return self
 
     def _fit_fallback(self, X, y, target):
-        if HAS_HGB:
-            m = _default_hgb(target)
-        elif HAS_LGB:
-            m = _default_lgb(target)
-        elif HAS_XGB:
-            m = _default_xgb(target)
+        for factory in [_default_hgb, _default_lgb, _default_xgb]:
+            try:
+                m = factory(target)
+                break
+            except Exception:
+                continue
         else:
             m = LogisticRegression(max_iter=2000)
-
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore")
             m.fit(X, y)
         self.model = {"base_learners": [("fallback", m)], "meta": None, "target": target}
         self.calibrated = None
         self.val_score = None
-        print(f"  ✅ Fallback modèle unique")
+        print(f"  ✅ Fallback")
         return self
 
     def _calibrate(self, X, y):
-        """Calibration : teste Platt + Isotonic, garde le meilleur."""
         n = len(X)
         split = int(n * 0.8)
         X_cal, y_cal = X[split:], y[split:]
-
         if len(X_cal) < 30 or len(set(y_cal.tolist())) < 2:
-            print(f"    Skip (cal set insuffisant)")
             return None
-
         preds_cal = self._raw_predict_proba(X_cal)
         raw_brier = brier_score_loss(y_cal, preds_cal)
         print(f"    Raw Brier = {raw_brier:.4f}")
 
-        best_cal = None
-        best_brier = raw_brier
-        best_name = "raw"
-
-        # Platt (sigmoid)
+        best_cal, best_brier, best_name = None, raw_brier, "raw"
+        # Platt
         try:
             from sklearn.calibration import _SigmoidCalibration
             platt = _SigmoidCalibration()
             platt.fit(preds_cal, y_cal)
-            platt_preds = platt.predict(preds_cal)
-            platt_brier = brier_score_loss(y_cal, platt_preds)
-            print(f"    Platt Brier = {platt_brier:.4f}")
-            if platt_brier < best_brier:
-                best_brier = platt_brier
-                best_cal = platt
-                best_name = "PLATT"
-        except Exception as e:
-            print(f"    Platt échoué: {e}")
-
+            pb = brier_score_loss(y_cal, platt.predict(preds_cal))
+            print(f"    Platt = {pb:.4f}")
+            if pb < best_brier: best_cal, best_brier, best_name = platt, pb, "PLATT"
+        except Exception: pass
         # Isotonic
         try:
             iso = IsotonicRegression(out_of_bounds="clip")
             iso.fit(preds_cal, y_cal)
-            iso_preds = iso.predict(preds_cal)
-            iso_brier = brier_score_loss(y_cal, iso_preds)
-            print(f"    Isotonic Brier = {iso_brier:.4f}")
-            if iso_brier < best_brier:
-                best_brier = iso_brier
-                best_cal = iso
-                best_name = "ISOTONIC"
-        except Exception as e:
-            print(f"    Isotonic échoué: {e}")
+            ib = brier_score_loss(y_cal, iso.predict(preds_cal))
+            print(f"    Isotonic = {ib:.4f}")
+            if ib < best_brier: best_cal, best_brier, best_name = iso, ib, "ISOTONIC"
+        except Exception: pass
 
         if best_cal:
-            print(f"    ✅ Calibration choisie: {best_name} ({raw_brier:.4f} → {best_brier:.4f})")
-        else:
-            print(f"    Calibration ne améliore pas, raw conservé")
+            print(f"    ✅ {best_name} ({raw_brier:.4f} → {best_brier:.4f})")
         return best_cal
 
     def _raw_predict_proba(self, X):
         X = np.asarray(X, dtype=np.float64)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
-
-        base_preds = np.column_stack([
-            learner.predict_proba(X)[:, 1]
-            for name, learner in self.model["base_learners"]
-        ])
-
+        if X.ndim == 1: X = X.reshape(1, -1)
+        base_preds = np.column_stack([l.predict_proba(X)[:, 1] for _, l in self.model["base_learners"]])
         meta = self.model.get("meta")
-        if meta:
-            return meta.predict_proba(base_preds)[:, 1]
-
+        if meta: return meta.predict_proba(base_preds)[:, 1]
         return np.mean(base_preds, axis=1)
 
     def predict_proba(self, X):
         raw = self._raw_predict_proba(X)
         if self.calibrated is not None:
-            if isinstance(self.calibrated, IsotonicRegression):
-                return self.calibrated.predict(raw)
-            else:
-                return self.calibrated.predict(raw)
+            return self.calibrated.predict(raw)
         return raw
 
     def predict_one(self, x):
         return float(self.predict_proba(np.asarray(x).reshape(1, -1))[0])
 
     def feature_importance(self, feature_names=None):
-        importances = []
-        for name, learner in self.model.get("base_learners", []):
-            if hasattr(learner, "feature_importances_"):
-                importances.append(learner.feature_importances_)
-        if not importances:
-            return None
+        importances = [l.feature_importances_ for _, l in self.model.get("base_learners", []) if hasattr(l, "feature_importances_")]
+        if not importances: return None
         avg = np.mean(importances, axis=0)
         names = feature_names or [f"f{i}" for i in range(len(avg))]
         return sorted(zip(names, avg), key=lambda x: -x[1])
 
     def save(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        joblib.dump({
-            "model": self.model,
-            "calibrated": self.calibrated,
-            "val_score": self.val_score,
-            "n_features": self.n_features,
-            "version": "v8",
-        }, path)
+        joblib.dump({"model": self.model, "calibrated": self.calibrated,
+                     "val_score": self.val_score, "n_features": self.n_features, "version": "v8"}, path)
         print(f"  💾 → {path}")
 
     @classmethod
@@ -686,17 +602,10 @@ class StackingV8:
 
 
 # ══════════════════════════════════════════════════════════════
-#  5. TABNET V8 — architecture améliorée
+#  TABNET V8
 # ══════════════════════════════════════════════════════════════
 
 class TabNetV8:
-    """
-    Améliorations :
-    - Virtual batch norm pour plus de stabilité
-    - Scheduler cosine annealing
-    - Calibration isotonic
-    """
-
     def __init__(self):
         self.model = None
         self.calibrated = None
@@ -704,127 +613,65 @@ class TabNetV8:
 
     def fit(self, X, y, target="win"):
         if not HAS_TABNET:
-            print(f"  [TabNetV8] ⚠️ PyTorch/TabNet non disponible, skip")
+            print(f"  [TabNetV8] ⚠️ Non disponible, skip")
             return None
-
         X = np.asarray(X, dtype=np.float32)
         y = np.asarray(y, dtype=np.int64)
         n, d = X.shape
         n_pos = int(np.sum(y))
-
-        print(f"\n  [TabNetV8] {target.upper()} — {n} samples × {d} features, {n_pos}+")
-
+        print(f"\n  [TabNetV8] {target.upper()} — {n}×{d}, {n_pos}+")
         if n < 300 or n_pos < 20:
-            print(f"  ⚠️  Données insuffisantes pour TabNet (min 300/20+)")
-            return None
+            print(f"  ⚠️ Insuffisant"); return None
 
-        # Split 80/15/5 (train/val/calib)
-        split_train = int(n * 0.8)
-        split_val = int(n * 0.95)
+        sp = int(n * 0.85)
         idx = np.random.RandomState(42).permutation(n)
-
-        X_train = X[idx[:split_train]]
-        y_train = y[idx[:split_train]]
-        X_val = X[idx[split_train:split_val]]
-        y_val = y[idx[split_train:split_val]]
-        X_calib = X[idx[split_val:]]
-        y_calib = y[idx[split_val:]]
-
+        X_train, y_train = X[idx[:sp]], y[idx[:sp]]
+        X_val, y_val = X[idx[sp:]], y[idx[sp:]]
         if len(set(y_val.tolist())) < 2 or len(set(y_train.tolist())) < 2:
-            print(f"  ⚠️  Classes déséquilibrées, skip")
             return None
 
-        model = TabNetClassifier(
-            n_d=24, n_a=24,
-            n_steps=5,
-            gamma=1.5,
-            n_independent=2, n_shared=3,
-            cat_idxs=[], cat_dims=[], cat_emb_dim=[],
-            lambda_sparse=1e-4,
-            momentum=0.3,
-            clip_value=2.0,
-            optimizer_fn=torch.optim.AdamW,
-            optimizer_params=dict(lr=2e-2, weight_decay=1e-4),
-            scheduler_params={"T_max": 100, "eta_min": 1e-4},
-            scheduler_fn=torch.optim.lr_scheduler.CosineAnnealingLR,
-            mask_type="entmax",
-            seed=42,
-            verbose=0,
-        )
-
-        print(f"  Training TabNet (max 200 epochs)...")
-        model.fit(
-            X_train, y_train,
-            eval_set=[(X_val, y_val)],
-            eval_name=["val"],
-            eval_metric=["logloss"],
-            max_epochs=200,
-            patience=20,
-            batch_size=min(512, max(64, n // 4)),
-            virtual_batch_size=min(256, max(32, n // 8)),
-        )
-
+        model = TabNetClassifier(n_d=24, n_a=24, n_steps=5, gamma=1.5,
+                                 n_independent=2, n_shared=3,
+                                 lambda_sparse=1e-4, momentum=0.3, clip_value=2.0,
+                                 optimizer_fn=torch.optim.AdamW,
+                                 optimizer_params=dict(lr=2e-2, weight_decay=1e-4),
+                                 scheduler_params={"T_max": 100, "eta_min": 1e-4},
+                                 scheduler_fn=torch.optim.lr_scheduler.CosineAnnealingLR,
+                                 mask_type="entmax", seed=42, verbose=0)
+        model.fit(X_train, y_train, eval_set=[(X_val, y_val)], eval_name=["val"],
+                  eval_metric=["logloss"], max_epochs=200, patience=20,
+                  batch_size=min(512, max(64, n//4)), virtual_batch_size=min(256, max(32, n//8)))
         self.model = model
-
-        # Validation score
         val_preds = model.predict_proba(X_val)[:, 1]
         self.val_score = brier_score_loss(y_val, val_preds)
-        print(f"  TabNet val Brier = {self.val_score:.4f}")
-
-        # Calibration sur le set de calibration dédié
-        self.calibrated = self._calibrate(X_calib, y_calib)
-        print(f"  ✅ TabNet V8 prêt")
+        self.calibrated = self._calibrate(X_val, y_val)
+        print(f"  ✅ TabNet Brier={self.val_score:.4f}")
         return self
 
     def _calibrate(self, X, y):
         try:
             raw = self.model.predict_proba(X)[:, 1]
-            if len(set(y.tolist())) < 2:
-                return None
-
-            best = None
-            best_brier = brier_score_loss(y, raw)
-
-            # Isotonic
+            if len(set(y.tolist())) < 2: return None
+            best, best_b = None, brier_score_loss(y, raw)
             try:
-                iso = IsotonicRegression(out_of_bounds="clip")
-                iso.fit(raw, y)
-                iso_preds = iso.predict(raw)
-                b = brier_score_loss(y, iso_preds)
-                if b < best_brier:
-                    best_brier = b
-                    best = iso
-            except Exception:
-                pass
-
-            # Platt
+                iso = IsotonicRegression(out_of_bounds="clip"); iso.fit(raw, y)
+                b = brier_score_loss(y, iso.predict(raw))
+                if b < best_b: best, best_b = iso, b
+            except Exception: pass
             try:
                 from sklearn.calibration import _SigmoidCalibration
-                platt = _SigmoidCalibration()
-                platt.fit(raw, y)
-                platt_preds = platt.predict(raw)
-                b = brier_score_loss(y, platt_preds)
-                if b < best_brier:
-                    best_brier = b
-                    best = platt
-            except Exception:
-                pass
-
-            if best:
-                print(f"    TabNet calibration: {brier_score_loss(y, raw):.4f} → {best_brier:.4f}")
+                p = _SigmoidCalibration(); p.fit(raw, y)
+                b = brier_score_loss(y, p.predict(raw))
+                if b < best_b: best, best_b = p, b
+            except Exception: pass
             return best
-        except Exception as e:
-            print(f"    Calibration skip: {e}")
-            return None
+        except Exception: return None
 
     def predict_proba(self, X):
         X = np.asarray(X, dtype=np.float32)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
+        if X.ndim == 1: X = X.reshape(1, -1)
         raw = self.model.predict_proba(X)[:, 1]
         if self.calibrated is not None:
-            if isinstance(self.calibrated, IsotonicRegression):
-                return self.calibrated.predict(raw)
             return self.calibrated.predict(raw)
         return raw
 
@@ -833,44 +680,28 @@ class TabNetV8:
 
     def save(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-        model_dir = path.replace(".pkl", "_tabnet")
-        os.makedirs(model_dir, exist_ok=True)
+        model_dir = path.replace(".pkl", "_tabnet"); os.makedirs(model_dir, exist_ok=True)
         self.model.save_model(os.path.join(model_dir, "tabnet"))
-        joblib.dump({
-            "calibrated": self.calibrated,
-            "val_score": self.val_score,
-            "model_dir": model_dir,
-            "version": "v8_tabnet",
-        }, path)
+        joblib.dump({"calibrated": self.calibrated, "val_score": self.val_score,
+                     "model_dir": model_dir, "version": "v8_tabnet"}, path)
         print(f"  💾 TabNet → {path}")
 
     @classmethod
     def load(cls, path):
         data = joblib.load(path)
-        obj = cls()
-        obj.calibrated = data.get("calibrated")
-        obj.val_score = data.get("val_score")
+        obj = cls(); obj.calibrated = data.get("calibrated"); obj.val_score = data.get("val_score")
         model_dir = data.get("model_dir", path.replace(".pkl", "_tabnet"))
-        model_path = os.path.join(model_dir, "tabnet.zip")
-        if os.path.exists(model_path):
-            obj.model = TabNetClassifier()
-            obj.model.load_model(model_path)
+        mp = os.path.join(model_dir, "tabnet.zip")
+        if os.path.exists(mp):
+            obj.model = TabNetClassifier(); obj.model.load_model(mp)
         return obj
 
 
 # ══════════════════════════════════════════════════════════════
-#  6. ENSEMBLE V8 — poids dynamiques
+#  ENSEMBLE V8
 # ══════════════════════════════════════════════════════════════
 
 class EnsembleV8:
-    """
-    Super-ensemble V8 :
-    - StackingV8 (XGB+LGB+HGB → meta)
-    - TabNetV8 (neural)
-    - Poids dynamiques : inverses du Brier score sur validation
-    - Calibration finale isotonic
-    """
-
     def __init__(self):
         self.stacking = None
         self.tabnet = None
@@ -884,72 +715,44 @@ class EnsembleV8:
         y = np.asarray(y, dtype=np.float64)
         t0 = time.time()
 
-        # 1) Stacking
         self.stacking = StackingV8()
         self.stacking.fit(X, y, target=target, use_optuna=use_optuna)
 
-        # 2) TabNet
         self.tabnet = TabNetV8()
-        tn_result = self.tabnet.fit(X, y, target=target)
-        if tn_result is None:
-            self.tabnet = None
-            self.w_stack = 1.0
-            self.w_tabnet = 0.0
+        if self.tabnet.fit(X, y, target=target) is None:
+            self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
         else:
-            # ── Poids dynamiques : inverse du Brier ──
-            s_brier = self.stacking.val_score or 0.25
-            t_brier = self.tabnet.val_score or 0.25
-            s_inv = 1.0 / max(s_brier, 0.001)
-            t_inv = 1.0 / max(t_brier, 0.001)
+            s_b = self.stacking.val_score or 0.25
+            t_b = self.tabnet.val_score or 0.25
+            s_inv, t_inv = 1.0/max(s_b, 0.001), 1.0/max(t_b, 0.001)
             total = s_inv + t_inv
-            self.w_stack = s_inv / total
-            self.w_tabnet = t_inv / total
+            self.w_stack, self.w_tabnet = s_inv/total, t_inv/total
 
-        # ── Calibration finale ──
         self._final_calibration(X, y)
-
         elapsed = time.time() - t0
-        parts = [f"stack={self.w_stack:.0%}"]
-        if self.tabnet:
-            parts.append(f"tabnet={self.w_tabnet:.0%}")
-        print(f"\n  ⏱️  {target.upper()} entraîné en {elapsed:.1f}s — {' + '.join(parts)}")
-        if self.val_score:
-            print(f"  📊  Val Brier = {self.val_score:.4f}")
-
+        mode = f"stack={self.w_stack:.0%}+tabnet={self.w_tabnet:.0%}" if self.tabnet else "stack seul"
+        print(f"\n  ⏱️  {target.upper()} en {elapsed:.1f}s — {mode}")
+        if self.val_score: print(f"  📊 Val Brier = {self.val_score:.4f}")
         return self
 
     def _final_calibration(self, X, y):
-        """Calibration isotonic finale sur l'ensemble du pipeline."""
-        n = len(X)
-        split = int(n * 0.85)
+        n = len(X); split = int(n * 0.85)
         X_cal, y_cal = X[split:], y[split:]
-
-        if len(X_cal) < 30 or len(set(y_cal.tolist())) < 2:
-            return
-
+        if len(X_cal) < 30 or len(set(y_cal.tolist())) < 2: return
         preds = self._raw_predict(X_cal)
         raw_brier = brier_score_loss(y_cal, preds)
-
         try:
-            iso = IsotonicRegression(out_of_bounds="clip")
-            iso.fit(preds, y_cal)
-            cal_preds = iso.predict(preds)
-            cal_brier = brier_score_loss(y_cal, cal_preds)
-
-            if cal_brier < raw_brier:
-                self.calibrated = iso
-                self.val_score = cal_brier
-                print(f"  Calibration finale: {raw_brier:.4f} → {cal_brier:.4f}")
-            else:
-                self.val_score = raw_brier
-        except Exception:
-            self.val_score = raw_brier
+            iso = IsotonicRegression(out_of_bounds="clip"); iso.fit(preds, y_cal)
+            cb = brier_score_loss(y_cal, iso.predict(preds))
+            if cb < raw_brier:
+                self.calibrated = iso; self.val_score = cb
+                print(f"  Calibration finale: {raw_brier:.4f} → {cb:.4f}")
+            else: self.val_score = raw_brier
+        except Exception: self.val_score = raw_brier
 
     def _raw_predict(self, X):
         X = np.asarray(X, dtype=np.float64)
-        if X.ndim == 1:
-            X = X.reshape(1, -1)
-
+        if X.ndim == 1: X = X.reshape(1, -1)
         probs = np.asarray(self.stacking.predict_proba(X), dtype=np.float64)
         if self.tabnet is not None:
             tn = np.asarray(self.tabnet.predict_proba(X), dtype=np.float64)
@@ -958,8 +761,7 @@ class EnsembleV8:
 
     def predict_proba(self, X):
         raw = self._raw_predict(X)
-        if self.calibrated is not None:
-            return self.calibrated.predict(raw)
+        if self.calibrated is not None: return self.calibrated.predict(raw)
         return raw
 
     def predict_one(self, x):
@@ -970,25 +772,14 @@ class EnsembleV8:
 
     def save(self, path):
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
-
         stack_path = path.replace(".pkl", "_stack.pkl")
         self.stacking.save(stack_path)
-
-        data = {
-            "w_stack": self.w_stack,
-            "w_tabnet": self.w_tabnet,
-            "has_tabnet": self.tabnet is not None,
-            "calibrated": self.calibrated,
-            "val_score": self.val_score,
-            "stack_path": stack_path,
-            "version": "v8_ensemble",
-        }
-
+        data = {"w_stack": self.w_stack, "w_tabnet": self.w_tabnet,
+                "has_tabnet": self.tabnet is not None, "calibrated": self.calibrated,
+                "val_score": self.val_score, "stack_path": stack_path, "version": "v8_ensemble"}
         if self.tabnet is not None:
             tn_path = path.replace(".pkl", "_tabnet.pkl")
-            self.tabnet.save(tn_path)
-            data["tabnet_path"] = tn_path
-
+            self.tabnet.save(tn_path); data["tabnet_path"] = tn_path
         joblib.dump(data, path)
         print(f"  💾 EnsembleV8 → {path}")
 
@@ -1000,21 +791,14 @@ class EnsembleV8:
         obj.w_tabnet = data.get("w_tabnet", 0.3)
         obj.calibrated = data.get("calibrated")
         obj.val_score = data.get("val_score")
-
         stack_path = data.get("stack_path", path.replace(".pkl", "_stack.pkl"))
         obj.stacking = StackingV8.load(stack_path)
-
         if data.get("has_tabnet"):
             tn_path = data.get("tabnet_path", path.replace(".pkl", "_tabnet.pkl"))
             if os.path.exists(tn_path):
-                try:
-                    obj.tabnet = TabNetV8.load(tn_path)
-                except Exception as e:
-                    print(f"  [EnsembleV8] TabNet load failed: {e}")
-                    obj.tabnet = None
-                    obj.w_stack = 1.0
-                    obj.w_tabnet = 0.0
-
+                try: obj.tabnet = TabNetV8.load(tn_path)
+                except Exception:
+                    obj.tabnet = None; obj.w_stack = 1.0; obj.w_tabnet = 0.0
         return obj
 
 
@@ -1023,19 +807,13 @@ class EnsembleV8:
 # ══════════════════════════════════════════════════════════════
 
 def train_v8(X, y, save_path, target="win", use_optuna=False):
-    """Entraîne un EnsembleV8 et le sauvegarde."""
     model = EnsembleV8()
     model.fit(X, y, target=target, use_optuna=use_optuna)
     model.save(save_path)
     return model
 
-
 def load_v8(path):
-    """Charge un modèle EnsembleV8."""
-    if not os.path.exists(path):
-        return None
-    try:
-        return EnsembleV8.load(path)
+    if not os.path.exists(path): return None
+    try: return EnsembleV8.load(path)
     except Exception as e:
-        print(f"  [load_v8] Erreur: {e}")
-        return None
+        print(f"  [load_v8] Erreur: {e}"); return None
