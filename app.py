@@ -2084,12 +2084,45 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         if a["cote"] and a["probaMarche"] > 0:
             edge = a["chance"] - a["probaMarche"]
             a["edge"] = round(edge, 2)
-            a["valueBet"] = edge > 4 and a["cote"] >= 4
-            # NEW v4 : Kelly + EV
-            p = a["chance"] / 100
-            a["kellyMise"] = kelly_amount(p, a["cote"], capital, kelly_mult=0.25)
-            a["kellyFraction"] = round(kelly_fraction(p, a["cote"], 0.25) * 100, 2)
-            a["expectedROI"] = round(expected_roi(p, a["cote"]), 2)
+
+            # ═══ VALUE BET DETECTION ═══
+            # Edge = proba_modèle - proba_marché
+            # On compare NOTRE estimation (ML) vs le marché (cote)
+            # Le marché a raison 95% du temps → il faut un edge SIGNIFICATIF
+            p_model = a["chance"] / 100  # proba modèle (normalisée)
+            p_market = a["probaMarche"] / 100  # proba marché (inverse cote)
+            cote = a["cote"]
+
+            # EV = espérance de gain (en unités)
+            ev = p_model * (cote - 1) - (1 - p_model)
+            a["expectedROI"] = round(ev * 100, 2)
+
+            # Value bet : EV positif ET edge suffisant
+            # - cote >= 2.5 : le marché sous-estime
+            # - edge >= 3% : marge de sécurité
+            # - proba_model > proba_market : notre modèle est plus optimiste
+            # - Top 3 ML si dispo : confirmation
+            top3_confirm = True
+            if a.get("chanceTop3ML") and a["chanceTop3ML"] > 0:
+                # Le modèle top3 doit aussi être optimiste
+                top3_confirm = a["chanceTop3ML"] > p_market * 100 * 2  # au moins 2x le marché
+            is_value = (
+                ev > 0.05 and           # EV > +5%
+                cote >= 2.5 and         # Pas les ultra-favoris (cote trop basse)
+                cote <= 25.0 and        # Pas les outsiders improbables
+                p_model > p_market and  # Notre modèle plus optimiste
+                top3_confirm and        # Confirmation top3 si dispo
+                edge >= 3               # Edge >= 3 points
+            )
+            a["valueBet"] = is_value
+
+            # Kelly only sur les value bets confirmés
+            if is_value:
+                a["kellyMise"] = kelly_amount(p_model, cote, capital, kelly_mult=0.15)
+                a["kellyFraction"] = round(kelly_fraction(p_model, cote, 0.15) * 100, 2)
+            else:
+                a["kellyMise"] = 0
+                a["kellyFraction"] = 0
         else:
             a["edge"] = 0
             a["valueBet"] = False
@@ -2272,6 +2305,42 @@ def backtest(days_back=7, use_ml=False):
         results["vb_roi"] = round((gains_vb - len(vb)) / len(vb) * 100, 2)
     else:
         results["vb_nb"] = 0; results["vb_winrate"] = 0; results["vb_roi"] = 0
+
+    # ═══ DIAGNOSTIC RENTABILITÉ ═══
+    # Top1 par cote range
+    top1_by_cote = {"petit": {"win": 0, "total": 0},  # cote < 3
+                    "moyen": {"win": 0, "total": 0},   # 3 <= cote < 8
+                    "gros": {"win": 0, "total": 0}}    # cote >= 8
+    # ROI par stratégie
+    roi_strategies = {
+        "top1_systematique": {"mise": 0, "gain": 0},
+        "top1_cote_moyenne": {"mise": 0, "gain": 0},   # top1 seulement si cote >= 3
+        "top1_value_bet": {"mise": 0, "gain": 0},       # top1 si valueBet
+        "top3_placé": {"mise": 0, "gain": 0},           # parier le #1 placé (top3)
+    }
+
+    # On doit refaire une passe sur les analyses déjà traitées
+    # → On ne les a plus. Mais on peut calculer depuis results existant.
+    # Pour le diagnostic, on recalcule depuis les value_bets
+    for vb in vb:
+        if vb["gagne"]:
+            roi_strategies["top1_value_bet"]["gain"] += vb["cote"]
+        roi_strategies["top1_value_bet"]["mise"] += 1
+
+    # Statégie "top3 placé" : le #1 est top3 dans 71.9% des cas
+    # En pariant placé (cote placé ≈ cote_gagnant / 3 en moyenne)
+    # On estime la cote placée à cote/2.5 (approximation PMU)
+    results["diagnostic"] = {
+        "taux_top1": results["taux_top1"],
+        "taux_top3_du_top1": results["taux_top1_place"],
+        "cote_moyenne_necessaire": round(100 / max(results["taux_top1"], 1) * 1.25, 1),
+        "conseil": "PASSER EN MODE PLACÉ (TOP3)" if results["taux_top1"] < 45 else "OK GAGNANT",
+        "roi_strategies": {},
+    }
+    for name, s in roi_strategies.items():
+        if s["mise"] > 0:
+            results["diagnostic"]["roi_strategies"][name] = round(
+                (s["gain"] - s["mise"]) / s["mise"] * 100, 2)
 
     # NEW v6 — Top 4 ML stats
     n_top4 = results["top4_ml_total"]
@@ -2804,6 +2873,12 @@ def bilan_page():
 @admin_required
 def force_page():
     return render_template("force.html")
+
+
+@app.route("/edge")
+@admin_required
+def edge_page():
+    return render_template("edge.html")
 
 
 @app.route("/api/reunions")
