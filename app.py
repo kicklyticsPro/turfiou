@@ -779,6 +779,94 @@ def _is_nan(v):
         return False
 
 
+# ── Nouvelles features v8.1 : momentum, streak, compétitivité ──
+
+def _compute_momentum(perfs_detail):
+    """Progression du cheval : avg_place_3récentes - avg_place_3précédentes.
+    Négatif = en progression (places plus basses = mieux).
+    NaN si moins de 4 courses."""
+    _nan = float('nan')
+    if not perfs_detail:
+        return _nan
+    places = []
+    for course in perfs_detail[:6]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    places.append(place)
+                break
+    if len(places) < 4:
+        return _nan
+    recent = sum(places[:3]) / 3
+    older_count = min(3, len(places) - 3)
+    if older_count == 0:
+        return _nan
+    older = sum(places[3:3 + older_count]) / older_count
+    return recent - older
+
+
+def _compute_top3_streak(perfs_detail):
+    """Nombre de top3 consécutifs en partant de la course la plus récente.
+    Un cheval sur une série de 3+ top3 a une forte confiance."""
+    if not perfs_detail:
+        return 0
+    streak = 0
+    for course in perfs_detail[:10]:
+        found = False
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if 0 < place <= 3:
+                    streak += 1
+                else:
+                    return streak
+                found = True
+                break
+        if not found:
+            return streak
+    return streak
+
+
+def _compute_pct_battus(perfs_detail):
+    """Pourcentage moyen de concurrents battus sur les 6 dernières courses.
+    Finir 3e dans un plateau de 18 est beaucoup plus fort que 3e sur 6.
+    NaN si pas assez de données."""
+    _nan = float('nan')
+    if not perfs_detail:
+        return _nan
+    pcts = []
+    for course in perfs_detail[:6]:
+        parts = course.get("participants", [])
+        nb = len(parts)
+        if nb < 2:
+            continue
+        for p in parts:
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    pcts.append((nb - place) / (nb - 1) * 100)
+                break
+    return sum(pcts) / len(pcts) if len(pcts) >= 2 else _nan
+
+
+def _compute_worst_recent(perfs_detail, n=5):
+    """Pire place parmi les N dernières courses (indicateur de fragilité).
+    NaN si pas de données."""
+    _nan = float('nan')
+    if not perfs_detail:
+        return _nan
+    places = []
+    for course in perfs_detail[:n]:
+        for p in course.get("participants", []):
+            if p.get("itsHim"):
+                place = (p.get("place") or {}).get("place", 0) or 0
+                if place > 0:
+                    places.append(place)
+                break
+    return max(places) if places else _nan
+
+
 def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
                        cheval, team_stats, horse_stats, elo_ratings, elo_hist,
                        discipline, hippodrome, nb_partants):
@@ -922,6 +1010,19 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
         # Bonus contextuels (2)
         "bonus_team": 1 if driver and entraineur and driver == entraineur else 0,
         "bonus_deferre": 1 if "DEFERRE" in (p.get("deferre", "") or "") else 0,
+        # ═══ Momentum & forme avancée (6) — v8.1 ═══
+        # Progression : négatif = en amélioration (places plus basses)
+        "momentum_3": _compute_momentum(perfs_detail),
+        # Série de top3 consécutifs (0 = pas de série)
+        "nb_top3_consecutif": _compute_top3_streak(perfs_detail),
+        # % de concurrents battus (finir 3e/18 > 3e/6)
+        "pct_battus_recent": _compute_pct_battus(perfs_detail),
+        # Discipline : 0=TROT_ATTELE, 1=TROT_MONTE, 2=GALOP, 3=AUTRE
+        "discipline_code": {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3),
+        # Position de départ (numPmu = numéro de corde, avantage au trot)
+        "corde_numero": p.get("numPmu", 0) or 0,
+        # Pire place récente (indicateur fragilité)
+        "worst_recent_place": _compute_worst_recent(perfs_detail),
     }
 
 
@@ -929,8 +1030,8 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
 #  ML featurization v7 — 44 features brutes (0% synthétique)
 # ============================================================
 def featurize(p, nb_partants):
-    """ML featurization v7 — 44 features brutes (0% synthétique).
-    Utilise p["raw"] si disponible (v7), sinon fallback sur p["scores"] (v6).
+    """ML featurization v8.1 — 54 features brutes (0% synthétique).
+    Utilise p["raw"] si disponible (v7+), sinon fallback sur p["scores"] (v6).
     """
     raw = p.get("raw")
     if raw:
@@ -996,6 +1097,13 @@ def featurize(p, nb_partants):
             raw["driver_changed"],
             raw["bonus_team"],
             raw["bonus_deferre"],
+            # Momentum & forme avancée (6) — v8.1
+            raw["momentum_3"],
+            raw["nb_top3_consecutif"],
+            raw["pct_battus_recent"],
+            raw["discipline_code"],
+            raw["corde_numero"],
+            raw["worst_recent_place"],
         ]
 
     # === Fallback v6 : scores synthétiques (compatibilité anciens modèles) ===
@@ -1054,6 +1162,9 @@ FEATURE_NAMES = [
     "nb_partants","cote","inv_cote","is_female","has_oeilleres","is_deferre",
     # Contexte (3)
     "driver_changed","bonus_team","bonus_deferre",
+    # Momentum & forme avancée (6) — v8.1
+    "momentum_3","nb_top3_consecutif","pct_battus_recent",
+    "discipline_code","corde_numero","worst_recent_place",
 ]
 
 
@@ -1257,12 +1368,12 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     #  TRAINING — modèle v8 (Optuna + TS-CV + Feature Eng V8)
     # ===========================================================
     if model_type in ("advanced_v8", "advanced_v8_no_optuna") and HAS_V8:
-        # X contient déjà 48+14=62 features (base + ranking intra-course)
-        # Ajouter les 14 interactions → 76 features total
+        # X contient déjà 54+14=68 features (base + ranking intra-course)
+        # Ajouter les 16 interactions → 84 features total
         from lib.ml_v8 import augment_course_level
         X_v8 = []
         for sample in X:
-            X_v8.append(_engineer_v8_from_vector(sample[:48]) + list(sample[48:]))
+            X_v8.append(_engineer_v8_from_vector(sample[:54]) + list(sample[54:]))
         X = X_v8
 
         # Data augmentation au niveau course
@@ -1277,7 +1388,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             y_top3_aug, y_top4_aug = y_top3, y_top4
 
         print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-len(X)} augmentés)")
-        print(f"[ML v8] {len(X_aug[0])} features (48 base + 14 ranking + 14 interactions)")
+        print(f"[ML v8] {len(X_aug[0])} features (54 base + 14 ranking + 16 interactions)")
         X = X_aug
         y_win = y_win_aug
         y_top3 = y_top3_aug
@@ -1430,10 +1541,10 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
 
 def _engineer_v8_from_vector(v):
     """
-    Prend le vecteur de 48 features (depuis featurize()) et retourne
-    62 features avec les 14 interactions v8.
+    Prend le vecteur de 54 features (depuis featurize()) et retourne
+    54 + 16 = 70 features avec les 16 interactions v8.1.
     
-    Index mapping du vecteur v (48 features v7) :
+    Index mapping du vecteur v (54 features v8.1) :
       0-5   : carrière (age, nb_courses, nb_victoires, nb_places, win_rate, place_rate)
       6-7   : gains (gains_carriere_log, gains_par_course_log)
       8-12  : 5 dernières places (place_1..5)
@@ -1449,6 +1560,8 @@ def _engineer_v8_from_vector(v):
       37-38 : elo (elo, elo_trend)
       39-44 : course (nb_partants, cote, inv_cote, is_female, has_oeilleres, is_deferre)
       45-47 : contexte (driver_changed, bonus_team, bonus_deferre)
+      48-53 : momentum & forme avancée (momentum_3, nb_top3_consecutif, pct_battus,
+                                        discipline_code, corde_numero, worst_recent_place)
     """
     # Sécuriser
     def safe(idx, default=0.0):
@@ -1487,6 +1600,14 @@ def _engineer_v8_from_vector(v):
     inv_cote = safe(41)
     driver_courses = safe(25)
 
+    # v8.1 : nouvelles features momentum & forme
+    momentum_3 = safe(48)
+    streak = safe(49)
+    pct_battus = safe(50)
+    discipline_code = safe(51)
+    corde_num = safe(52)
+    worst_recent = safe(53)
+
     interactions = [
         # 1. forme × cote (value bet signal)
         avg_place_3 * cote,
@@ -1516,6 +1637,11 @@ def _engineer_v8_from_vector(v):
         gains_pc_log,
         # 14. compétitivité
         1.0 / nb_partants * 100,
+        # ═══ v8.1 : 2 nouvelles interactions haute valeur ═══
+        # 15. momentum × marché : cheval en progression + sous-estimé par le marché
+        momentum_3 * inv_cote * 100,
+        # 16. puissance_série : streak × pct_battus (confiance + compétitivité)
+        streak * pct_battus / 100.0,
     ]
     return list(v) + interactions
 
@@ -1540,7 +1666,7 @@ def _enrich_features_v8(analyses):
     """
     Pour une course complète, enrichit les features de chaque cheval
     avec le ranking intra-course + interactions v8.
-    Retourne une liste de feature vectors (76 features).
+    Retourne une liste de feature vectors (84 features).
     """
     nb = len(analyses)
     base_feats = [featurize(a, nb) for a in analyses]
@@ -1552,12 +1678,12 @@ def _enrich_features_v8(analyses):
     except Exception:
         ranking_feats = [np.zeros(14) for _ in base_feats]
 
-    # Combiner : 48 base + 14 ranking + 14 interactions = 76
+    # Combiner : 54 base + 14 ranking + 16 interactions = 84
     enriched = []
     for i in range(nb):
-        vec48 = base_feats[i]
-        interactions = _engineer_v8_from_vector(vec48)[48:]  # les 14 interactions
-        full = list(vec48) + list(ranking_feats[i]) + interactions
+        vec54 = base_feats[i]
+        interactions = _engineer_v8_from_vector(vec54)[54:]  # les 16 interactions
+        full = list(vec54) + list(ranking_feats[i]) + interactions
         enriched.append(full)
     return enriched
 
