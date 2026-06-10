@@ -3188,6 +3188,23 @@ def api_backtest():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/train-reset", methods=["POST"])
+@admin_required
+def api_train_reset():
+    """Force le déblocage du training (en cas de lock mort)."""
+    current = _load_ml_status()
+    if current and current.get("status") == "training":
+        started = current.get("started_at", "?")
+        _save_ml_status({
+            "status": "reset",
+            "finished_at": datetime.now().isoformat(),
+            "source": "manual_reset",
+            "error": f"Reset forcé (était bloqué depuis {started})",
+        })
+        return jsonify({"ok": True, "message": "Lock de training supprimé"})
+    return jsonify({"ok": True, "message": "Aucun training en cours"})
+
+
 @app.route("/api/train", methods=["POST"])
 @admin_required
 def api_train():
@@ -3198,7 +3215,27 @@ def api_train():
     # Vérifier si un training est déjà en cours
     current_status = _load_ml_status()
     if current_status and current_status.get("status") == "training":
-        return jsonify({"error": "Un entraînement est déjà en cours"}), 409
+        # Auto-reset si le training est bloqué depuis + de 30 min
+        started = current_status.get("started_at", "")
+        if started:
+            try:
+                from datetime import datetime as _dt
+                start_time = _dt.fromisoformat(started)
+                elapsed_min = (_dt.now() - start_time).total_seconds() / 60
+                if elapsed_min > 30:
+                    print(f"[Train] ⚠️ Training bloqué depuis {elapsed_min:.0f}min, auto-reset")
+                    _save_ml_status({
+                        "status": "timeout",
+                        "finished_at": datetime.now().isoformat(),
+                        "source": "manual",
+                        "error": f"Auto-reset après {elapsed_min:.0f} min (probable crash)",
+                    })
+                else:
+                    return jsonify({"error": "Un entraînement est déjà en cours"}), 409
+            except Exception:
+                pass
+        else:
+            return jsonify({"error": "Un entraînement est déjà en cours"}), 409
 
     # Lancer le training en arrière-plan (async)
     def _train_bg():
