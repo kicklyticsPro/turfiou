@@ -58,7 +58,7 @@ except:
 
 # NEW v8 - pipeline V8 (Optuna + Purged TS-CV + Feature Eng + Poids dynamiques)
 try:
-    from lib.ml_v8 import train_v8, load_v8, engineer_v8
+    from lib.ml_v8 import train_v8, load_v8, engineer_interactions
     HAS_V8 = True
 except:
     HAS_V8 = False
