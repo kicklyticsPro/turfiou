@@ -1132,7 +1132,8 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         results = list(ex.map(_fetch_full, tasks))
 
     # Course-level accumulator for intra-course features
-    _course_buffers = {}  # course_key -> list of (featurize_vec, y_win, y_top3, y_top4)
+    _course_buffers = {}  # course_key -> list of feature dicts (for v8 ranking)
+    _course_idx = 0  # simple counter for unique keys
 
     for result in results:
         if not result:
@@ -1144,8 +1145,8 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
                                              elo, elo_hist, horse_races, pedigree,
                                              terrain=None)
         nb = len(analyses)
-        # Clé unique par course pour grouper
-        course_key = f"{parts.get('reunion',{}).get('numOfficiel','')}_{parts.get('numOrdre','')}"
+        _course_key = f"c{_course_idx}"
+        _course_idx += 1
         _course_buf = []
         for a in analyses:
             feat_vec = featurize(a, nb)
@@ -1159,25 +1160,36 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
                 "y_top4": 1 if 1 <= place <= 4 else 0,
             })
 
-        # Stocker le buffer de course pour le traitement intra-course
+        # Toujours stocker le buffer
         if len(_course_buf) >= 2:
-            _course_buffers[course_key] = _course_buf
+            _course_buffers[_course_key] = _course_buf
 
     # ===========================================================
-    #  Assembler les features avec ranking intra-course
+    #  Assembler les features avec ranking intra-course (v8)
+    #  ou sans ranking (autres modes)
     # ===========================================================
-    from lib.ml_v8 import compute_course_ranking_features
     X, y_win, y_top3, y_top4, course_ids = [], [], [], [], []
 
+    is_v8_mode = model_type in ("advanced_v8", "advanced_v8_no_optuna") and HAS_V8
+
     for ck, buf in _course_buffers.items():
-        # Extraire les vecteurs bruts (48 features)
         course_feats = [b["feat"] for b in buf]
 
-        # Calculer les features de ranking intra-course (14 features)
-        ranking_feats = compute_course_ranking_features(course_feats)
+        # Calculer les features de ranking intra-course (14 features) seulement en v8
+        if is_v8_mode:
+            try:
+                from lib.ml_v8 import compute_course_ranking_features
+                ranking_feats = compute_course_ranking_features(course_feats)
+            except Exception:
+                ranking_feats = [np.zeros(14) for _ in buf]
+        else:
+            ranking_feats = None
 
         for i, b in enumerate(buf):
-            X.append(list(b["feat"]) + list(ranking_feats[i]))
+            if ranking_feats is not None:
+                X.append(list(b["feat"]) + list(ranking_feats[i]))
+            else:
+                X.append(list(b["feat"]))
             y_win.append(b["y_win"])
             y_top3.append(b["y_top3"])
             y_top4.append(b["y_top4"])
