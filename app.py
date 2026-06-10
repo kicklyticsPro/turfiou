@@ -59,6 +59,7 @@ except:
 # NEW v8 - pipeline V8 (Optuna + Purged TS-CV + Feature Eng + Poids dynamiques)
 try:
     from lib.ml_v8 import train_v8, load_v8, engineer_interactions
+    from lib.ml_v8 import train_ranker_v8, load_ranker_v8
     HAS_V8 = True
 except:
     HAS_V8 = False
@@ -138,6 +139,13 @@ ML_MODEL_TOP4_V7_FILE = os.path.join(CACHE_DIR, "ml_top4_v7.pkl")
 ML_MODEL_WIN_V8_FILE = os.path.join(CACHE_DIR, "ml_win_v8.pkl")
 ML_MODEL_TOP3_V8_FILE = os.path.join(CACHE_DIR, "ml_top3_v8.pkl")
 ML_MODEL_TOP4_V8_FILE = os.path.join(CACHE_DIR, "ml_top4_v8.pkl")
+# NEW v8.1 — Modèles par discipline
+ML_MODEL_WIN_V8_TROT_FILE = os.path.join(CACHE_DIR, "ml_win_v8_trot.pkl")
+ML_MODEL_TOP3_V8_TROT_FILE = os.path.join(CACHE_DIR, "ml_top3_v8_trot.pkl")
+ML_MODEL_WIN_V8_GALOP_FILE = os.path.join(CACHE_DIR, "ml_win_v8_galop.pkl")
+ML_MODEL_TOP3_V8_GALOP_FILE = os.path.join(CACHE_DIR, "ml_top3_v8_galop.pkl")
+# NEW v8.1 — Ranker séquentiel
+ML_MODEL_RANKER_V8_FILE = os.path.join(CACHE_DIR, "ml_ranker_v8.pkl")
 CALIBRATION_FILE = os.path.join(CACHE_DIR, "calibration_v4.pkl")
 BETS_FILE = os.path.join(CACHE_DIR, "bets_v4.json")                   # NEW v4
 ML_STATUS_FILE = os.path.join(CACHE_DIR, "ml_status.json")            # Auto-train status
@@ -1242,6 +1250,48 @@ def save_calibration(c):
     save_pickle(CALIBRATION_FILE, c)
 
 
+def load_ml_model_discipline(discipline):
+    """Charge le modèle WIN spécifique à la discipline (TROT ou GALOP).
+    Fallback sur le modèle générique si pas disponible.
+    """
+    if not HAS_V8:
+        return load_ml_model()
+    code = {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3)
+    if code in (0, 1):  # TROT
+        m = load_v8(ML_MODEL_WIN_V8_TROT_FILE)
+        if m:
+            return m
+    elif code == 2:  # GALOP
+        m = load_v8(ML_MODEL_WIN_V8_GALOP_FILE)
+        if m:
+            return m
+    # Fallback : modèle générique
+    return load_ml_model()
+
+
+def load_ml_model_top3_discipline(discipline):
+    """Charge le modèle TOP3 spécifique à la discipline."""
+    if not HAS_V8:
+        return load_ml_model_top3()
+    code = {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3)
+    if code in (0, 1):
+        m = load_v8(ML_MODEL_TOP3_V8_TROT_FILE)
+        if m:
+            return m
+    elif code == 2:
+        m = load_v8(ML_MODEL_TOP3_V8_GALOP_FILE)
+        if m:
+            return m
+    return load_ml_model_top3()
+
+
+def load_ml_ranker():
+    """Charge le modèle Ranker séquentiel (XGBRanker)."""
+    if not HAS_V8:
+        return None
+    return load_ranker_v8(ML_MODEL_RANKER_V8_FILE)
+
+
 def _fetch_full(args):
     date_str, r_num, c_num, distance, discipline, hippodrome, type_corde = args
     try:
@@ -1252,7 +1302,7 @@ def _fetch_full(args):
         return None
 
 
-def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30,
+def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30,
                    model_type="ensemble"):
     """Entraîne 2 modèles : WIN (y=1 si gagnant) + TOP4 (y=1 si ≤4e).
     Les deux partagent les mêmes features X mais ont des labels différents."""
@@ -1312,6 +1362,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
                 "y_win": 1 if place == 1 else 0,
                 "y_top3": 1 if 1 <= place <= 3 else 0,
                 "y_top4": 1 if 1 <= place <= 4 else 0,
+                "y_place": place,  # place réelle pour le ranker
             })
 
         # Toujours stocker le buffer
@@ -1322,7 +1373,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
     #  Assembler les features avec ranking intra-course (v8)
     #  ou sans ranking (autres modes)
     # ===========================================================
-    X, y_win, y_top3, y_top4, course_ids = [], [], [], [], []
+    X, y_win, y_top3, y_top4, y_places, course_ids = [], [], [], [], [], []
 
     is_v8_mode = model_type in ("advanced_v8", "advanced_v8_no_optuna") and HAS_V8
 
@@ -1347,6 +1398,7 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             y_win.append(b["y_win"])
             y_top3.append(b["y_top3"])
             y_top4.append(b["y_top4"])
+            y_places.append(b["y_place"])
             course_ids.append(ck)
 
     if len(X) < 100:
@@ -1408,12 +1460,23 @@ def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         print("[ML v8] 🟢 Entraînement TOP4...")
         train_v8(X, y_top4, ML_MODEL_TOP4_V8_FILE, target="top4", use_optuna=use_optuna)
 
-        info["win_model"] = f"V8 stack+tabnet ({len(X[0])}feat, {len(X)}samples)"
+        # --- Ranker séquentiel (XGBRanker) ---
+        print("[ML v8] 🏆 Entraînement Ranker (XGBRanker — ordre d'arrivée)...")
+        ranker_groups = course_ids  # utiliser les course_ids comme groupes
+        if len(X) >= 200:
+            train_ranker_v8(X, y_places, ranker_groups, ML_MODEL_RANKER_V8_FILE)
+        else:
+            print("  ⚠️ Pas assez de données pour le ranker")
+
+        # --- Modèles par discipline (TROT vs GALOP) ---
+        _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna)
+
+        info["win_model"] = f"V8 stack ({len(X[0])}feat, {len(X)}samples)"
         info["top3_model"] = info["win_model"]
         info["top4_model"] = info["win_model"]
-        info["models_trained"] = ["win", "top3", "top4"]
+        info["models_trained"] = ["win", "top3", "top4", "ranker"]
         info["n_features"] = len(X[0])
-        info["n_samples_original"] = len(course_ids)
+        info["n_samples_original"] = len(set(course_ids))
         info["n_samples_augmented"] = len(X)
         return info
 
@@ -1660,6 +1723,64 @@ def predict_ml(features, model, calibration=None):
     if calibration:
         p = apply_calibration(p, calibration)
     return p
+
+
+def _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna=False):
+    """Entraîne des modèles séparés pour TROT et GALOP.
+    Les courses de trot et de galop ont des dynamiques fondamentalement différentes.
+    Chaque discipline a son propre ensemble WIN + TOP3 + Ranker.
+    """
+    import numpy as _np
+    
+    X = _np.asarray(X)
+    y_win = _np.asarray(y_win)
+    y_top3 = _np.asarray(y_top3)
+    y_places = _np.asarray(y_places, dtype=float)
+    course_ids = list(course_ids)
+    
+    # Feature 51 = discipline_code (0=TROT_ATTELE, 1=TROT_MONTE, 2=GALOP)
+    disc_col = 51
+    if X.shape[1] <= disc_col:
+        print("  [Discipline] ⚠️ discipline_code pas dans les features, skip")
+        return
+    
+    disc_vals = X[:, disc_col]
+    
+    # Regrouper : TROT (0+1) vs GALOP (2)
+    trot_mask = _np.isin(disc_vals, [0, 1])
+    galop_mask = disc_vals == 2
+    
+    for label, mask, win_file, top3_file in [
+        ("TROT", trot_mask, ML_MODEL_WIN_V8_TROT_FILE, ML_MODEL_TOP3_V8_TROT_FILE),
+        ("GALOP", galop_mask, ML_MODEL_WIN_V8_GALOP_FILE, ML_MODEL_TOP3_V8_GALOP_FILE),
+    ]:
+        n_samples = mask.sum()
+        n_pos = y_win[mask].sum()
+        if n_samples < 200 or n_pos < 10:
+            print(f"  [Discipline] ⚠️ {label}: {n_samples} samples ({int(n_pos)}+) — pas assez, skip")
+            continue
+        
+        X_disc = X[mask]
+        y_win_disc = y_win[mask]
+        y_top3_disc = y_top3[mask]
+        
+        # Reconstruire les course_ids pour cette discipline
+        disc_indices = _np.where(mask)[0]
+        disc_course_ids = [course_ids[i] for i in disc_indices]
+        # Re-numéroter pour éviter les conflits
+        unique_courses = list(set(disc_course_ids))
+        course_map = {c: f"{label[0]}_{i}" for i, c in enumerate(unique_courses)}
+        disc_course_ids = [course_map[c] for c in disc_course_ids]
+        
+        print(f"\n  [Discipline] 🏇 {label}: {n_samples} samples, {int(n_pos)}+ ({n_pos/n_samples*100:.1f}%)")
+        
+        try:
+            print(f"  [Discipline] {label} — WIN...")
+            train_v8(X_disc, y_win_disc, win_file, target=f"win_{label.lower()}", use_optuna=use_optuna)
+            print(f"  [Discipline] {label} — TOP3...")
+            train_v8(X_disc, y_top3_disc, top3_file, target=f"top3_{label.lower()}", use_optuna=use_optuna)
+        except Exception as e:
+            print(f"  [Discipline] ⚠️ {label} erreur: {e}")
 
 
 def _enrich_features_v8(analyses):
@@ -2173,7 +2294,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     for a in analyses:
         a["chanceTop4"] = compute_placement_probability(a, nb_partants)
 
-    ml_model = load_ml_model() if use_ml else None
+    ml_model = load_ml_model_discipline(discipline) if use_ml else None
     calib = load_calibration() if use_ml else None
     chances_ml = None
 
@@ -2194,6 +2315,19 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         total_ml = sum(raw_ml) or 1
         chances_ml = [x / total_ml * 100 for x in raw_ml]
 
+    # NEW v8.1 — Ranker séquentiel (XGBRanker)
+    ml_ranker = load_ml_ranker() if use_ml else None
+    raw_ranker_scores = None
+    if ml_ranker:
+        nb = len(analyses)
+        if v8_feats and len(v8_feats[0]) >= 62:
+            raw_ranker_scores = [predict_ml(v8_feats[i], ml_ranker) for i in range(nb)]
+        else:
+            raw_ranker_scores = [predict_ml(featurize(a, nb), ml_ranker) for a in analyses]
+        # Normaliser les scores du ranker en probabilités relatives
+        total_ranker = sum(raw_ranker_scores) or 1
+        raw_ranker_scores = [s / total_ranker * 100 for s in raw_ranker_scores]
+
     # NEW v6 — Top 4 ML model (modèle binaire placement)
     ml_top4_model = load_ml_model_top4() if use_ml else None
     raw_top4_ml = None
@@ -2208,7 +2342,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         raw_top4_ml = [p / total_top4 * 4 for p in raw_top4_ml]
 
     # NEW v6.1 — Top 3 ML model (modèle dédié placement top3, ~25% positifs)
-    ml_top3_model = load_ml_model_top3() if use_ml else None
+    ml_top3_model = load_ml_model_top3_discipline(discipline) if use_ml else None
     raw_top3_ml = None
     if ml_top3_model:
         nb = len(analyses)
@@ -2249,6 +2383,12 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
             a["chanceTop3ML"] = round(ml_top3_prob, 2)
         else:
             a["chanceTop3ML"] = None
+
+        # NEW v8.1 — Ranker séquentiel (XGBRanker)
+        if raw_ranker_scores:
+            a["chanceRanker"] = round(raw_ranker_scores[i], 2)
+        else:
+            a["chanceRanker"] = None
 
         if a["cote"] and a["probaMarche"] > 0:
             edge = a["chance"] - a["probaMarche"]
@@ -2315,19 +2455,28 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         top4_ml = a.get("chanceTop4ML") or 0
         heur = a.get("chanceHeur") or a.get("chance") or 0
         cote = a.get("cote") or 0
+        ranker_score = a.get("chanceRanker") or 0
 
-        # Score composite : TOP3 domine (modèle le plus fiable)
-        # Win ML utile pour trancher les ex-aequo
-        # Cote (inv) comme signal marché
+        # Score composite v8.1 : TOP3 + WIN + Ranker + TOP4 + heur + marché
         inv_cote_score = 100 / max(cote, 1) if cote > 0 else 0
 
-        raw_composite = (
-            top3_ml * 0.40 +     # TOP3 = le plus fiable (25% positifs)
-            win_ml * 0.25 +      # WIN = discriminant mais bruité (8% positifs)
-            top4_ml * 0.15 +     # TOP4 = confirmation placement
-            heur * 0.10 +        # Heuristique = filet de sécurité
-            inv_cote_score * 0.10  # Marché = les cotes ont souvent raison
-        )
+        if ranker_score > 0:
+            raw_composite = (
+                top3_ml * 0.30 +       # TOP3 = fiable
+                win_ml * 0.15 +        # WIN = discriminant
+                ranker_score * 0.25 +  # RANKER = signal séquentiel fort
+                top4_ml * 0.10 +       # TOP4 = confirmation
+                heur * 0.05 +          # Heuristique = filet
+                inv_cote_score * 0.15   # Marché
+            )
+        else:
+            raw_composite = (
+                top3_ml * 0.40 +
+                win_ml * 0.25 +
+                top4_ml * 0.15 +
+                heur * 0.10 +
+                inv_cote_score * 0.10
+            )
         a["scoreComposite"] = round(raw_composite, 2)
 
     # Trier par score composite (pas juste chance)
