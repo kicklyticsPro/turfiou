@@ -664,27 +664,27 @@ def score_distance(perfs_detail, distance_course):
 # ============================================================
 
 def _extract_last_places(perfs_detail, n=5):
-    """Extrait les N dernières places brutes. 0 = pas de donnée."""
+    """Extrait les N dernières places brutes. NaN = pas de donnée."""
     places = []
     for course in (perfs_detail or [])[:n]:
         found = False
         for p in course.get("participants", []):
             if p.get("itsHim"):
                 place = (p.get("place") or {}).get("place", 0) or 0
-                places.append(place)
+                places.append(place if place > 0 else float('nan'))
                 found = True
                 break
         if not found:
-            places.append(0)
+            places.append(float('nan'))
     while len(places) < n:
-        places.append(0)
+        places.append(float('nan'))
     return places
 
 
 def _extract_distance_raw(perfs_detail, distance_course):
-    """Stats brutes sur courses à distance similaire (±200m)."""
+    """Stats brutes sur courses à distance similaire (±200m). NaN si pas de données."""
     if not perfs_detail or not distance_course:
-        return 0, 0.0, 0.0  # count, avg_place, win_rate
+        return 0, float('nan'), float('nan')  # count, avg_place, win_rate
     places = []
     wins = 0
     for course in perfs_detail:
@@ -700,14 +700,17 @@ def _extract_distance_raw(perfs_detail, distance_course):
                             wins += 1
                     break
     if not places:
-        return 0, 0.0, 0.0
+        return 0, float('nan'), float('nan')
     return len(places), sum(places) / len(places), wins / len(places)
 
 
 def _extract_team_raw(name, kind, team_stats, discipline=None, hippodrome=None):
-    """Extrait les stats brutes d'un driver/entraineur : (courses, victoires, places)."""
+    """Extrait les stats brutes d'un driver/entraineur.
+    Retourne NaN pour les taux quand pas de données (le ML les ignore).
+    """
+    _nan = float('nan')
     if not team_stats or not name:
-        return 0, 0, 0, 0, 0, 0, 0  # courses, vict, places, disc_courses, disc_vict, hippo_courses, hippo_vict
+        return 0, _nan, _nan, 0, _nan, 0, _nan
 
     if kind == "drivers":
         gb = team_stats.get("drivers", {}).get(name)
@@ -730,22 +733,32 @@ def _extract_team_raw(name, kind, team_stats, discipline=None, hippodrome=None):
 
 
 def _extract_chimie_raw(cheval, driver, horse_stats):
-    """Taux de victoire brut du duo cheval/driver."""
+    """Taux de victoire brut du duo cheval/driver. NaN si pas de données."""
+    _nan = float('nan')
     if not cheval or not driver or not horse_stats:
-        return 0, 0  # courses, victoires
+        return 0, _nan
     data = horse_stats.get("with_driver", {}).get(cheval, {}).get(driver)
     if not data:
-        return 0, 0
+        return 0, _nan
     return data.get("c", 0), data.get("v", 0)
+
+
+def _is_nan(v):
+    """Teste si une valeur est NaN (int/float safe)."""
+    try:
+        return v != v  # NaN est le seul != lui-même
+    except Exception:
+        return False
 
 
 def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
                        cheval, team_stats, horse_stats, elo_ratings, elo_hist,
                        discipline, hippodrome, nb_partants):
     """Construit le dict de features brutes pour le ML.
-    Tout est en valeurs réelles, pas de scoring synthétique.
+    NaN pour les données manquantes — XGBoost/LightGBM les ignorent nativement.
     """
     import math as _math
+    _nan = float('nan')
 
     # --- Carrière ---
     nb_courses = p.get("nombreCourses", 0) or 0
@@ -762,15 +775,17 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
     top3_rate = compute_top3_rate(perfs_detail)
     top4_rate = compute_top4_rate(perfs_detail)
     avg_place_3 = compute_avg_place_recent(perfs_detail, 3)
-    all_places = [pl for pl in last5 if pl > 0]
-    avg_place_5 = sum(all_places) / len(all_places) if all_places else 0.0
+    all_places = [pl for pl in last5 if not _is_nan(pl) and pl > 0]
+    avg_place_5 = sum(all_places) / len(all_places) if all_places else _nan
     variance_places = 0.0
     if len(all_places) >= 3:
         mean_p = sum(all_places) / len(all_places)
         variance_places = sum((x - mean_p) ** 2 for x in all_places) / len(all_places)
+    elif not all_places:
+        variance_places = _nan
 
     # --- Jours depuis dernière course ---
-    days_since = 0.0
+    days_since = _nan
     if perfs_detail:
         for course in perfs_detail[:1]:
             date_ms = course.get("date")
@@ -805,7 +820,7 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
 
     # --- Elo ---
     elo_val = elo_ratings.get(cheval, 1500) if elo_ratings else 1500
-    elo_trend_raw = 0.0
+    elo_trend_raw = _nan
     if elo_hist and cheval in elo_hist:
         hist = elo_hist[cheval]
         if len(hist) >= 2:
@@ -819,7 +834,7 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
     age = p.get("age") or 0
 
     return {
-        # Carrière (6)
+        # Carrière (6) — données réelles du cheval, pas de NaN ici
         "age": age,
         "nb_courses": nb_courses,
         "nb_victoires": nb_vict,
@@ -829,14 +844,14 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
         # Gains (2)
         "gains_carriere_log": _math.log10(max(gains_carriere, 1)),
         "gains_par_course_log": _math.log10(max(gains_carriere / max(nb_courses, 1), 1)),
-        # 5 dernières places (5)
+        # 5 dernières places (5) — NaN si pas de course
         "place_1": last5[0], "place_2": last5[1], "place_3": last5[2],
         "place_4": last5[3], "place_5": last5[4],
-        # Agrégats perf (6)
-        "avg_place_3": avg_place_3,
+        # Agrégats perf (6) — NaN si pas de perfs
+        "avg_place_3": avg_place_3 if avg_place_3 > 0 else _nan,
         "avg_place_5": avg_place_5,
-        "top3_rate": top3_rate,
-        "top4_rate": top4_rate,
+        "top3_rate": top3_rate if top3_rate > 0 else _nan,
+        "top4_rate": top4_rate if top4_rate > 0 else _nan,
         "variance_places": variance_places,
         "nb_raced_recent": len(all_places),
         # Dernière course (2)
@@ -844,27 +859,27 @@ def build_raw_features(p, perfs_detail, distance_course, driver, entraineur,
         "days_since_last": days_since,
         # Activité (1)
         "nb_courses_mois": nb_courses_mois,
-        # Distance (3)
+        # Distance (3) — NaN si pas de course à cette distance
         "dist_similar_count": dist_count,
         "dist_avg_place": dist_avg_place,
-        "dist_win_rate": dist_win_rate * 100,
-        # Driver global (3)
+        "dist_win_rate": dist_win_rate * 100 if not _is_nan(dist_win_rate) else _nan,
+        # Driver global (3) — NaN si driver inconnu
         "driver_courses": dr_c,
-        "driver_win_rate": dr_v / dr_c * 100 if dr_c > 0 else 0,
-        "driver_place_rate": dr_p / dr_c * 100 if dr_c > 0 else 0,
-        # Driver discipline (2)
+        "driver_win_rate": dr_v / dr_c * 100 if dr_c > 0 else _nan,
+        "driver_place_rate": dr_p / dr_c * 100 if dr_c > 0 else _nan,
+        # Driver discipline (2) — NaN si jamais couru dans cette discipline
         "driver_disc_courses": dr_dc,
-        "driver_disc_win_rate": dr_dv / dr_dc * 100 if dr_dc > 0 else 0,
-        # Driver hippodrome (2)
+        "driver_disc_win_rate": dr_dv / dr_dc * 100 if dr_dc > 0 else _nan,
+        # Driver hippodrome (2) — NaN si jamais couru sur cet hippo
         "driver_hippo_courses": dr_hc,
-        "driver_hippo_win_rate": dr_hv / dr_hc * 100 if dr_hc > 0 else 0,
-        # Entraineur (3)
+        "driver_hippo_win_rate": dr_hv / dr_hc * 100 if dr_hc > 0 else _nan,
+        # Entraineur (3) — NaN si entraineur inconnu
         "entraineur_courses": en_c,
-        "entraineur_win_rate": en_v / en_c * 100 if en_c > 0 else 0,
-        "entraineur_disc_win_rate": en_dv / en_dc * 100 if en_dc > 0 else 0,
-        # Chimie cheval/driver (2)
+        "entraineur_win_rate": en_v / en_c * 100 if en_c > 0 else _nan,
+        "entraineur_disc_win_rate": en_dv / en_dc * 100 if en_dc > 0 else _nan,
+        # Chimie cheval/driver (2) — NaN si jamais associé
         "chimie_courses": chimie_c,
-        "chimie_win_rate": chimie_v / chimie_c * 100 if chimie_c > 0 else 0,
+        "chimie_win_rate": chimie_v / chimie_c * 100 if chimie_c > 0 else _nan,
         # Elo (2)
         "elo": elo_val,
         "elo_trend_raw": elo_trend_raw,
