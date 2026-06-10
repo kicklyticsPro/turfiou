@@ -145,7 +145,8 @@
           <option value="30">30</option>
         </select>
       </label>
-      <button class="purple" onclick="trainModel()">🚀 Entraîner les 2 modèles</button>
+      <button class="purple" onclick="trainModel()">🚀 Entraîner les 3 modèles</button>
+      <button class="red" onclick="resetTraining()" style="margin-left:8px;padding:6px 12px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;">🔓 Débloquer</button>
     </div>
     <div id="trainResult"></div>
   </div>
@@ -185,6 +186,22 @@
 
 <script>
 let trainPollInterval = null;
+
+async function resetTraining() {
+  const res_div = document.getElementById('trainResult');
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Déblocage en cours…</div>';
+  try {
+    const r = await fetch('/api/train-reset', {method: 'POST'});
+    const d = await r.json();
+    if (d.ok) {
+      res_div.innerHTML = '<div style="color:#22c55e;padding:8px;">✅ ' + d.message + '</div>';
+    } else {
+      res_div.innerHTML = '<div style="color:#ef4444;padding:8px;">❌ ' + (d.error || 'Erreur') + '</div>';
+    }
+  } catch(e) {
+    res_div.innerHTML = '<div style="color:#ef4444;padding:8px;">❌ ' + e.message + '</div>';
+  }
+}
 
 async function trainModel() {
   const days = document.getElementById('trainDays').value;
@@ -384,5 +401,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09548edcabcd107',t:'MTc4MTA2MjA5NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
