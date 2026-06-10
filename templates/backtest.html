@@ -112,6 +112,7 @@
     <a href="/backtest" class="active">Backtest & ML</a>
     <a href="/bilan">📊 Bilan</a>
     <a href="/force">💪 Force</a>
+    <a href="/edge">⚡ EDGE</a>
     <a href="/paris">📋 Mes paris</a>
     <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
   </div>
@@ -289,6 +290,18 @@ function renderBacktest(d) {
       <div class="stat-card"><div class="value">${d.gain_total}€</div><div class="label">Gain</div></div>
     </div>
 
+    ${d.diagnostic ? `
+    <div style="margin:12px 0;padding:12px;border-radius:8px;background:${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? 'rgba(250,204,21,0.1)' : 'rgba(16,185,129,0.1)'};border:1px solid ${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? '#f59e0b' : '#10b981'};">
+      <div style="font-size:13px;color:#f59e0b;margin-bottom:6px;">💡 Diagnostic Rentabilité</div>
+      <div style="font-size:12px;color:#cbd5e1;line-height:1.8;">
+        → <strong>${d.taux_top1}%</strong> de réussite = cote moyenne nécessaire ≥ <strong>${d.diagnostic.cote_moyenne_necessaire}</strong> pour être rentable<br>
+        → <strong>${d.taux_top1_place}%</strong> en top3 → <span style="color:#10b981;">parier PLACÉ est plus rentable</span> (cote placé ≈ cote/2.5)<br>
+        → Conseil : <strong style="color:${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? '#f59e0b' : '#10b981'}">${d.diagnostic.conseil}</strong>
+        ${d.diagnostic.roi_strategies && Object.keys(d.diagnostic.roi_strategies).length > 0 ? `<br>→ ROI value bets : <strong style="color:${(d.diagnostic.roi_strategies.top1_value_bet||0) >= 0 ? '#10b981' : '#ef4444'}">${(d.diagnostic.roi_strategies.top1_value_bet||0)}%</strong>` : ''}
+      </div>
+    </div>
+    ` : ''}
+
     <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Value Bets (mise 1€)</h3>
     <div class="results-grid">
       <div class="stat-card"><div class="value">${d.vb_nb}</div><div class="label">Total</div></div>
@@ -401,5 +414,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09548edcabcd107',t:'MTc4MTA2MjA5NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0979323cd609952',t:'MTc4MTA4NjEwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>

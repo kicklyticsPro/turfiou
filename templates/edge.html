@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EDGE — Turf Analyzer v8</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh;
+  }
+  header {
+    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+  }
+  header h1 {
+    font-size: 20px;
+    background: linear-gradient(90deg, #10b981, #06b6d4);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a {
+    color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px; transition: all .2s;
+  }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=date], select, button {
+    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 6px 10px; border-radius: 7px; font-size: 12px;
+  }
+  button { background: #10b981; border: none; cursor: pointer; font-weight: 600; color: #0f172a; }
+  button:hover { background: #059669; }
+
+  .layout { display: grid; grid-template-columns: 280px 1fr; gap: 16px; padding: 16px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .sidebar {
+    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 14px;
+    max-height: calc(100vh - 110px); overflow-y: auto; border: 1px solid #334155;
+  }
+  .reunion-block { margin-bottom: 14px; }
+  .reunion-title { font-size: 12px; font-weight: 700; color: #06b6d4; margin-bottom: 6px;
+    text-transform: uppercase; letter-spacing: 0.5px; }
+  .course-btn {
+    width: 100%; text-align: left; background: #1e293b; color: #cbd5e1;
+    padding: 7px 9px; margin-bottom: 3px; border-radius: 6px;
+    font-size: 11px; border: 1px solid transparent; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .course-btn:hover { border-color: #10b981; background: #263548; }
+  .course-btn.active { background: #064e3b; border-color: #10b981; }
+  .course-btn .time { color: #94a3b8; font-size: 10px; }
+
+  .main { min-height: 400px; }
+  .placeholder { text-align: center; padding: 60px 20px; color: #64748b; }
+  .placeholder .emoji { font-size: 56px; margin-bottom: 16px; }
+  .placeholder h2 { color: #e2e8f0; font-size: 22px; margin-bottom: 10px; }
+
+  .course-header {
+    background: rgba(30, 41, 59, 0.8); padding: 16px 20px; border-radius: 12px;
+    margin-bottom: 14px; border-left: 4px solid #10b981;
+  }
+  .course-header h2 { font-size: 18px; margin-bottom: 4px; }
+  .course-header .meta { display: flex; gap: 14px; flex-wrap: wrap; color: #94a3b8; font-size: 12px; }
+  .course-header .meta span strong { color: #e2e8f0; }
+
+  /* Edge cards */
+  .edge-list { display: flex; flex-direction: column; gap: 10px; }
+  .edge-card {
+    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 16px 20px;
+    border: 1px solid #334155; display: grid;
+    grid-template-columns: 60px 1fr 220px;
+    gap: 14px; align-items: center; transition: all .2s;
+  }
+  .edge-card:hover { border-color: #10b981; }
+
+  .edge-card.pos-1 { background: linear-gradient(90deg, rgba(16,185,129,0.15), rgba(30,41,59,0.6)); border-color: #10b981; }
+  .edge-card.pos-2 { background: linear-gradient(90deg, rgba(6,182,212,0.12), rgba(30,41,59,0.6)); border-color: #06b6d4; }
+
+  .edge-pos {
+    text-align: center;
+  }
+  .edge-num { font-size: 14px; font-weight: 800; line-height: 1; color: #10b981; }
+  .edge-pmu {
+    background: #0f172a; color: #f59e0b; border-radius: 50%;
+    width: 36px; height: 36px; display: inline-flex; align-items: center;
+    justify-content: center; font-weight: 700; margin-top: 5px;
+    border: 2px solid #f59e0b; font-size: 14px;
+  }
+  .edge-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 800; margin-top: 4px;
+  }
+  .pos-1 .edge-badge { background: #10b981; color: #0f172a; }
+  .pos-2 .edge-badge { background: #06b6d4; color: #0f172a; }
+
+  .edge-info h3 { font-size: 17px; margin-bottom: 3px; }
+  .edge-info .sub { color: #94a3b8; font-size: 11px; margin-bottom: 2px; }
+  .edge-info .musique {
+    font-family: 'Courier New', monospace; background: #0f172a;
+    padding: 2px 6px; border-radius: 3px; display: inline-block;
+    color: #f59e0b; font-size: 11px; margin-top: 3px;
+  }
+
+  /* Edge metrics */
+  .edge-metrics { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .edge-tag {
+    font-size: 10px; padding: 3px 7px; border-radius: 4px;
+    background: #0f172a; font-weight: 600;
+  }
+  .edge-tag.cote { color: #3b82f6; border: 1px solid #3b82f633; }
+  .edge-tag.win { color: #10b981; border: 1px solid #10b98133; }
+  .edge-tag.top3 { color: #fbbf24; border: 1px solid #fbbf2433; }
+  .edge-tag.edge-positive { color: #10b981; border: 1px solid #10b98133; background: rgba(16,185,129,0.1); }
+  .edge-tag.ev { color: #a78bfa; border: 1px solid #a78bfa33; }
+  .edge-tag.kelly { color: #f97316; border: 1px solid #f9731633; }
+  .edge-tag.value { color: #10b981; border: 1px solid #10b981; background: rgba(16,185,129,0.15); font-weight: 700; font-size: 11px; }
+
+  /* Edge meter */
+  .edge-meter { text-align: right; }
+  .edge-pct {
+    font-size: 36px; font-weight: 800; line-height: 1;
+  }
+  .pos-1 .edge-pct { background: linear-gradient(90deg, #10b981, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .pos-2 .edge-pct { background: linear-gradient(90deg, #06b6d4, #22d3ee); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .edge-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; margin-top: 2px; }
+  .edge-bar-bg {
+    height: 8px; background: #0f172a; border-radius: 4px;
+    margin-top: 8px; overflow: hidden; width: 100%;
+  }
+  .edge-bar-fill {
+    height: 100%; border-radius: 4px; transition: width .6s ease;
+  }
+  .pos-1 .edge-bar-fill { background: linear-gradient(90deg, #10b981, #34d399); }
+  .pos-2 .edge-bar-fill { background: linear-gradient(90deg, #06b6d4, #22d3ee); }
+
+  /* No edge */
+  .no-edge {
+    text-align: center; padding: 40px 20px;
+    background: rgba(30, 41, 59, 0.5); border-radius: 12px;
+    border: 1px dashed #475569;
+  }
+  .no-edge .emoji { font-size: 40px; margin-bottom: 10px; }
+  .no-edge h3 { color: #94a3b8; margin-bottom: 6px; }
+  .no-edge p { color: #64748b; font-size: 12px; }
+
+  /* Stats bar */
+  .edge-stats {
+    background: rgba(30, 41, 59, 0.5); border-radius: 10px; padding: 12px 16px;
+    margin-bottom: 16px; display: flex; gap: 20px; flex-wrap: wrap; align-items: center;
+    font-size: 12px; color: #94a3b8; border: 1px solid #334155;
+  }
+  .edge-stat-item { display: flex; flex-direction: column; align-items: center; }
+  .edge-stat-item .val { font-size: 18px; font-weight: 800; color: #10b981; }
+  .edge-stat-item .lbl { font-size: 10px; color: #64748b; text-transform: uppercase; }
+
+  .loading { text-align: center; padding: 50px; color: #94a3b8; }
+  .spinner {
+    border: 3px solid #334155; border-top: 3px solid #10b981;
+    border-radius: 50%; width: 32px; height: 32px;
+    animation: spin 1s linear infinite; margin: 0 auto 14px;
+  }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  .disclaimer {
+    background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981;
+    border-radius: 8px; padding: 8px 12px; margin-top: 12px;
+    font-size: 11px; color: #6ee7b7;
+  }
+
+  @media (max-width: 800px) {
+    .edge-card { grid-template-columns: 50px 1fr; }
+    .edge-meter { grid-column: 1 / -1; text-align: left; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚡ Turf Analyzer — EDGE<span class="version-tag">v8</span></h1>
+  <div class="nav-links">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest & ML</a>
+    <a href="/bilan">📊 Bilan</a>
+    <a href="/force">💪 Force</a>
+    <a href="/edge" class="active">⚡ EDGE</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
+  </div>
+  <div class="controls">
+    <input type="date" id="datePicker">
+    <button onclick="loadReunions()">Charger</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <div id="reunionsList" class="loading"><div class="spinner"></div>Chargement…</div>
+  </aside>
+
+  <main class="main" id="mainContent">
+    <div class="placeholder">
+      <div class="emoji">⚡</div>
+      <h2>EDGE</h2>
+      <p>Les chevaux positionnés #1 ou #2 avec un edge positif uniquement</p>
+      <p style="font-size:12px; margin-top:8px; color:#6ee7b7;">Edge = proba_modèle − proba_marché. Un edge positif signifie que notre modèle est plus optimiste que le marché.</p>
+      <p style="font-size:12px; margin-top:10px;">Sélectionnez une course.</p>
+    </div>
+  </main>
+</div>
+
+<script>
+let currentDate = '';
+let currentR = null, currentC = null;
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
+
+async function loadReunions() {
+  currentDate = toApiDate(document.getElementById('datePicker').value);
+  const list = document.getElementById('reunionsList');
+  list.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement…</div>';
+  try {
+    const res = await fetch(`/api/reunions?date=${currentDate}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.reunions || !data.reunions.length) {
+      list.innerHTML = '<p style="color:#94a3b8;padding:20px;">Aucune réunion</p>';
+      return;
+    }
+    list.innerHTML = data.reunions.map(r => `
+      <div class="reunion-block">
+        <div class="reunion-title">R${r.numReunion} · ${r.hippodrome}</div>
+        ${r.courses.map(c => `
+          <button class="course-btn" onclick="loadEdge(${r.numReunion}, ${c.numCourse}, this)">
+            <span>C${c.numCourse} · ${(c.libelle||'').substring(0,26)}</span>
+            <span>${c.arriveeDefinitive ? '<span style="color:#10b981;">✓</span> ' : ''}<span class="time">${c.heure}</span></span>
+          </button>
+        `).join('')}
+      </div>
+    `).join('');
+  } catch(e) {
+    list.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
+  }
+}
+
+async function loadEdge(r, c, btn) {
+  currentR = r; currentC = c;
+  if (btn) {
+    document.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const main = document.getElementById('mainContent');
+  main.innerHTML = '<div class="loading"><div class="spinner"></div>Analyse EDGE…</div>';
+  try {
+    const res = await fetch(`/api/course/${r}/${c}?date=${currentDate}&ml=1&capital=100`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderEdge(data);
+  } catch(e) {
+    main.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
+  }
+}
+
+function renderEdge(data) {
+  const { reunion, course, analyses } = data;
+  const main = document.getElementById('mainContent');
+  const nb = analyses.length;
+
+  // Les analyses sont déjà triées par chance décroissante
+  // Prendre #1 et #2 SEULEMENT si edge > 0
+  const edgeHorses = [];
+  for (let i = 0; i < Math.min(2, nb); i++) {
+    const a = analyses[i];
+    const edge = a.edge || 0;
+    if (edge > 0) {
+      edgeHorses.push({ ...a, posAlgo: i + 1 });
+    }
+  }
+
+  // Header
+  let html = `
+    <div class="course-header">
+      <h2>${course.libelle}
+        ${data.ml_active ? '<span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:700;">🧠 ML</span>' : ''}
+      </h2>
+      <div class="meta">
+        <span>📍 <strong>${reunion.hippodrome}</strong></span>
+        <span>🕐 <strong>${course.heure}</strong></span>
+        <span>🏁 <strong>${course.discipline}</strong></span>
+        <span>📏 <strong>${course.distance}m</strong></span>
+        <span>🐎 <strong>${nb} partants</strong></span>
+      </div>
+    </div>
+  `;
+
+  // Stats résumé
+  const totalEdge = edgeHorses.reduce((s, a) => s + (a.edge || 0), 0);
+  const avgEdge = edgeHorses.length ? (totalEdge / edgeHorses.length).toFixed(1) : 0;
+  const hasValueBet = edgeHorses.some(a => a.valueBet);
+
+  html += `
+    <div class="edge-stats">
+      <div class="edge-stat-item"><div class="val">${edgeHorses.length}</div><div class="lbl">Chevaux edge+</div></div>
+      <div class="edge-stat-item"><div class="val">${avgEdge}%</div><div class="lbl">Edge moyen</div></div>
+      <div class="edge-stat-item"><div class="val">${edgeHorses.reduce((s,a) => s + (a.expectedROI||0), 0).toFixed(0)}%</div><div class="lbl">EV total</div></div>
+      <div class="edge-stat-item"><div class="val" style="color:${hasValueBet ? '#10b981' : '#64748b'}">${hasValueBet ? '✅ OUI' : '❌ NON'}</div><div class="lbl">Value bet</div></div>
+    </div>
+  `;
+
+  // Edge cards
+  if (edgeHorses.length === 0) {
+    html += `
+      <div class="no-edge">
+        <div class="emoji">🚫</div>
+        <h3>Aucun edge positif sur les #1 et #2</h3>
+        <p>Le marché a bien pricé les favoris de cette course. Pas de value bet à signaler.</p>
+        <p style="margin-top:8px;color:#94a3b8;">#1 edge: ${(analyses[0]?.edge||0)}% · #2 edge: ${(analyses[1]?.edge||0)}%</p>
+      </div>
+    `;
+  } else {
+    html += '<div class="edge-list">';
+    edgeHorses.forEach(a => {
+      const posClass = a.posAlgo === 1 ? 'pos-1' : 'pos-2';
+      const posLabel = a.posAlgo === 1 ? '#1 ALGO' : '#2 ALGO';
+      const barWidth = Math.min(Math.abs(a.edge) * 5, 100); // 5x pour visuel
+
+      html += `
+        <div class="edge-card ${posClass}">
+          <div class="edge-pos">
+            <div class="edge-num">${posLabel}</div>
+            <div class="edge-pmu">${a.numPmu}</div>
+            <div class="edge-badge">${a.valueBet ? '⚡ VALUE' : '+'+a.edge+'%'}</div>
+          </div>
+          <div class="edge-info">
+            <h3>${a.nom}</h3>
+            <div class="sub">${a.age} ans · ${a.sexe||''} · 🏇 <strong>${a.driver}</strong> · 👤 ${a.entraineur}</div>
+            <div class="sub">${a.nbCourses}c · ${a.nbVictoires}V · ${a.nbPlaces}P · 💰 ${(a.gainsCarriere||0).toLocaleString()}€</div>
+            ${a.musique ? `<span class="musique">${a.musique}</span>` : ''}
+            <div class="edge-metrics">
+              <span class="edge-tag cote">🎯 Cote ${a.cote}</span>
+              <span class="edge-tag win">🏆 Modèle ${(a.chance||0).toFixed(1)}%</span>
+              <span class="edge-tag top3">🏅 Marché ${(a.probaMarche||0).toFixed(1)}%</span>
+              <span class="edge-tag edge-positive">⚡ Edge +${a.edge}%</span>
+              ${a.expectedROI ? `<span class="edge-tag ev">📈 EV ${a.expectedROI>0?'+':''}${a.expectedROI}%</span>` : ''}
+              ${a.kellyMise > 0 ? `<span class="edge-tag kelly">💰 Kelly ${a.kellyMise}€ (${a.kellyFraction}%)</span>` : ''}
+              ${a.valueBet ? `<span class="edge-tag value">✅ VALUE BET</span>` : ''}
+            </div>
+          </div>
+          <div class="edge-meter">
+            <div class="edge-pct">+${a.edge}%</div>
+            <div class="edge-label">EDGE</div>
+            <div class="edge-bar-bg"><div class="edge-bar-fill" style="width:${barWidth}%"></div></div>
+            ${a.chanceTop3ML ? `<div style="margin-top:10px;font-size:11px;color:#fbbf24;">🏅 Top3 ML: ${Math.round(a.chanceTop3ML)}%</div>` : ''}
+            ${a.chanceTop4ML ? `<div style="font-size:11px;color:#06b6d4;">🎯 Top4 ML: ${Math.round(a.chanceTop4ML)}%</div>` : ''}
+          </div>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  html += `
+    <div class="disclaimer">
+      ⚡ EDGE = proba_modèle − proba_marché. Edge positif = notre modèle est plus optimiste que le marché.
+      Seuls les chevaux en position #1 ou #2 de l'algorithme avec un edge positif sont affichés.
+      <br>⚠️ Les paris hippiques comportent des risques : pertes financières, dépendance.
+      Appelez le 09 74 75 13 13 (joueurs-info-service.fr).
+    </div>
+  `;
+
+  main.innerHTML = html;
+}
+
+document.getElementById('datePicker').value = todayStr();
+loadReunions();
+</script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09797c30f8b9eed',t:'MTc4MTA4NjI5NQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
