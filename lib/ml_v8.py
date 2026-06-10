@@ -920,3 +920,213 @@ def load_v8(path):
     try: return EnsembleV8.load(path)
     except Exception as e:
         print(f"  [load_v8] Erreur: {e}"); return None
+
+
+# ══════════════════════════════════════════════════════════════
+#  RANKER V8 — XGBRanker (modèle séquentiel)
+#  Prédit l'ordre d'arrivée complet, pas juste "gagnant/pas gagnant"
+#  → Beaucoup plus de signal : chaque course = 1 ranking complet
+# ══════════════════════════════════════════════════════════════
+
+class RankerV8:
+    """Modèle de ranking utilisant XGBRanker.
+    
+    Contrairement à la classification binaire (gagnant/pas gagnant),
+    le ranker apprend à classer TOUS les chevaux d'une course entre eux.
+    
+    Avantages :
+    - Chaque course fournit un signal complet (pas seulement 8% de positifs)
+    - Apprend les relations relatives (A > B > C dans la même course)
+    - Plus robuste aux biais de taille de plateau
+    """
+    
+    def __init__(self):
+        self.model = None
+        self.n_features = None
+        self.val_score = None
+
+    def fit(self, X, y_places, group_ids, target="rank"):
+        """
+        X : np.array (n_samples, n_features)
+        y_places : liste des places d'arrivée (1=premier, 2=deuxième, etc.)
+        group_ids : liste identifiant la course de chaque sample
+        """
+        if not HAS_XGB:
+            print(f"  [RankerV8] ⚠️ XGBoost non disponible, skip")
+            return None
+        
+        X = np.asarray(X, dtype=np.float64)
+        y_places = np.asarray(y_places, dtype=np.float64)
+        
+        # Construire les groups pour XGBRanker
+        from collections import OrderedDict
+        groups_dict = OrderedDict()
+        for i, gid in enumerate(group_ids):
+            if gid not in groups_dict:
+                groups_dict[gid] = []
+            groups_dict[gid].append(i)
+        
+        groups = [len(indices) for indices in groups_dict.values()]
+        
+        n, d = X.shape
+        self.n_features = d
+        n_courses = len(groups)
+        
+        print(f"\n  [RankerV8] {target.upper()} — {n} samples × {d} features")
+        print(f"  {n_courses} courses, taille moyenne {n/n_courses:.1f} chevaux")
+        
+        # Convertir places en relevance scores (plus haut = meilleur)
+        # Place 1 → score max, dernière → score min
+        y_rel = np.zeros(n)
+        for gid, indices in groups_dict.items():
+            nb = len(indices)
+            for idx in indices:
+                place = y_places[idx]
+                if place > 0 and place <= nb:
+                    # Score décroissant : 1er → 1.0, dernier → 0.1
+                    y_rel[idx] = (nb - place + 1) / nb
+                else:
+                    y_rel[idx] = 0.1  # non classé
+        
+        # Split train/val par course
+        course_keys = list(groups_dict.keys())
+        np.random.RandomState(42).shuffle(course_keys)
+        split = int(len(course_keys) * 0.85)
+        train_keys = set(course_keys[:split])
+        
+        train_idx = [i for gid, indices in groups_dict.items() 
+                     if gid in train_keys for i in indices]
+        val_idx = [i for gid, indices in groups_dict.items() 
+                   if gid not in train_keys for i in indices]
+        
+        if len(val_idx) < 20:
+            print(f"  ⚠️ Pas assez de courses de validation")
+            return None
+        
+        X_train, y_train = X[train_idx], y_rel[train_idx]
+        X_val, y_val = X[val_idx], y_rel[val_idx]
+        
+        # Groups pour train
+        train_groups_dict = OrderedDict()
+        for i in train_idx:
+            gid = group_ids[i]
+            if gid not in train_groups_dict:
+                train_groups_dict[gid] = 0
+            train_groups_dict[gid] += 1
+        train_groups = list(train_groups_dict.values())
+        
+        # Entraîner le ranker
+        model = XGBRanker(
+            n_estimators=800,
+            learning_rate=0.03,
+            max_depth=5,
+            subsample=0.8,
+            colsample_bytree=0.75,
+            reg_alpha=0.15,
+            reg_lambda=0.8,
+            min_child_weight=5,
+            objective='rank:pairwise',
+            eval_metric='ndcg',
+            random_state=42,
+            verbosity=0,
+        )
+        
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            model.fit(X_train, y_train, group=train_groups,
+                      eval_set=[(X_val, y_val)],
+                      eval_group=[self._get_groups_for_indices(val_idx, group_ids, groups_dict)],
+                      verbose=False)
+        
+        self.model = model
+        
+        # Score NDCG@3 sur validation
+        val_scores = model.predict(X_val)
+        ndcg3 = self._ndcg_at_k(y_val, val_scores, val_idx, group_ids, groups_dict, k=3)
+        self.val_score = ndcg3
+        print(f"  ✅ RankerV8 NDCG@3 = {ndcg3:.4f}")
+        return self
+
+    @staticmethod
+    def _get_groups_for_indices(indices, group_ids, groups_dict):
+        """Construit les groups pour un subset d'indices."""
+        subset_groups = OrderedDict()
+        for i in indices:
+            gid = group_ids[i]
+            if gid not in subset_groups:
+                subset_groups[gid] = 0
+            subset_groups[gid] += 1
+        return list(subset_groups.values())
+    
+    @staticmethod
+    def _ndcg_at_k(y_true, y_pred, indices, group_ids, groups_dict, k=3):
+        """Calcule le NDCG@k moyen."""
+        # Grouper les prédictions par course dans le val set
+        val_courses = OrderedDict()
+        for i, idx in enumerate(indices):
+            gid = group_ids[idx]
+            if gid not in val_courses:
+                val_courses[gid] = []
+            val_courses[gid].append((y_true[idx], y_pred[i]))
+        
+        ndcgs = []
+        for gid, items in val_courses.items():
+            if len(items) < 2:
+                continue
+            # Trier par prédiction décroissante
+            items_sorted = sorted(items, key=lambda x: -x[1])
+            # DCG@k
+            dcg = sum((2**rel - 1) / np.log2(i + 2) 
+                      for i, (rel, _) in enumerate(items_sorted[:k]))
+            # IDCG@k
+            ideal = sorted([rel for rel, _ in items], reverse=True)[:k]
+            idcg = sum((2**rel - 1) / np.log2(i + 2) 
+                       for i, rel in enumerate(ideal))
+            ndcgs.append(dcg / idcg if idcg > 0 else 0)
+        
+        return np.mean(ndcgs) if ndcgs else 0.0
+
+    def predict_rank_scores(self, X):
+        """Retourne les scores de ranking (plus haut = meilleur)."""
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        return self.model.predict(X)
+
+    def predict_one(self, x):
+        """Compatibilité avec predict_ml()."""
+        return float(self.predict_rank_scores(np.asarray(x).reshape(1, -1))[0])
+
+    def save(self, path):
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+        joblib.dump({"model": self.model, "n_features": self.n_features,
+                     "val_score": self.val_score, "version": "v8_ranker"}, path)
+        print(f"  💾 RankerV8 → {path}")
+
+    @classmethod
+    def load(cls, path):
+        if not os.path.exists(path):
+            return None
+        try:
+            data = joblib.load(path)
+            obj = cls()
+            obj.model = data["model"]
+            obj.n_features = data.get("n_features")
+            obj.val_score = data.get("val_score")
+            return obj
+        except Exception as e:
+            print(f"  [RankerV8.load] Erreur: {e}")
+            return None
+
+
+def train_ranker_v8(X, y_places, group_ids, save_path):
+    """API publique pour entraîner le ranker."""
+    ranker = RankerV8()
+    result = ranker.fit(X, y_places, group_ids)
+    if result is None:
+        return None
+    ranker.save(save_path)
+    return ranker
+
+def load_ranker_v8(path):
+    return RankerV8.load(path)
