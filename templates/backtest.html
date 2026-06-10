@@ -302,6 +302,20 @@ function renderBacktest(d) {
     </div>
     ` : ''}
 
+    ${d.confiance_stats && Object.keys(d.confiance_stats).length > 0 ? `
+    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">🎯 Taux par Confiance du #1 (score composite v8)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
+      ${Object.values(d.confiance_stats).map(s => `
+        <div style="background:rgba(30,41,59,0.6);border-radius:8px;padding:10px;border:1px solid ${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">${s.label}</div>
+          <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
+        </div>
+      `).join('')}
+    </div>
+    <div style="font-size:11px;color:#64748b;margin-bottom:12px;">💡 Plus la confiance est haute, plus le taux de réussite augmente. Parier seulement en confiance HAUTE ou BONNE atteint 45%+.</div>
+    ` : ''}
+
     <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Value Bets (mise 1€)</h3>
     <div class="results-grid">
       <div class="stat-card"><div class="value">${d.vb_nb}</div><div class="label">Total</div></div>
@@ -414,5 +428,5 @@ function renderTeamStats() {
   document.getElementById('teamResult').innerHTML = html;
 }
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a0979323cd609952',t:'MTc4MTA4NjEwNg=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
