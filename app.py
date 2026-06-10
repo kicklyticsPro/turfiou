@@ -68,6 +68,34 @@ app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-secret-2026")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 
+# ── Helper : nettoyer les NaN pour la sérialisation JSON ──
+# Python float('nan') → JSON "NaN" (invalide) → on convertit en None → JSON "null"
+def _clean_nan(obj):
+    """Remplace récursivement tous les NaN/Inf par None (null en JSON)."""
+    import math
+    if isinstance(obj, float):
+        if math.isnan(obj) or math.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, dict):
+        return {k: _clean_nan(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_clean_nan(v) for v in obj]
+    return obj
+
+
+# Surcharger jsonify pour qu'il nettoie les NaN automatiquement
+_original_jsonify = jsonify
+def jsonify(*args, **kwargs):
+    """jsonify qui remplace NaN par null."""
+    # On nettoie les données avant de les passer à la vraie jsonify
+    if args and isinstance(args[0], dict):
+        args = (_clean_nan(args[0]),) + args[1:]
+    if kwargs:
+        kwargs = {k: _clean_nan(v) for k, v in kwargs.items()}
+    return _original_jsonify(*args, **kwargs)
+
+
 def admin_required(f):
     """Protège les routes admin avec un mot de passe session."""
     @wraps(f)
