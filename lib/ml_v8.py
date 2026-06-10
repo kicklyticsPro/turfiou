@@ -121,27 +121,27 @@ def compute_course_ranking_features(course_features):
     Prend une liste de vecteurs features (1 par cheval d'une même course)
     et retourne pour chaque cheval ses features de ranking intra-course.
     
-    Pour chaque dimension clé, on calcule :
-    - rank_percentile : position relative (0=meilleur, 1=pire)
-    - z_score : écart à la moyenne de la course
-    - is_top_N : binaire, dans les X meilleurs
-    
-    → 14 features de ranking par cheval
+    → 14 features de ranking par cheval :
+      - 7 percentile ranks (elo, cote, win_rate, top3_rate, avg_place_3, driver_wr, entraineur_wr)
+      - 2 z-scores (elo, cote)
+      - 1 top3_elo binary
+      - 1 top3_cote binary
+      - 1 elo_gap_to_favori
+      - 1 power_relative
+      - 1 combined_rank_score (rang moyen multi-dimensions)
     """
     n_horses = len(course_features)
     if n_horses < 2:
         return [np.zeros(14) for _ in course_features]
     
-    # Indices des features clés dans le vecteur 48
-    # (depuis featurize() — v7 raw path)
     DIMS = {
-        "elo": 37,            # elo — plus haut = meilleur
-        "cote": 40,           # cote — plus bas = meilleur → inversé
-        "win_rate": 4,        # win_rate
-        "top3_rate": 15,      # top3_rate
-        "avg_place_3": 13,    # avg_place_3 — plus bas = meilleur → inversé
-        "driver_wr": 26,      # driver_win_rate
-        "entraineur_wr": 33,  # entraineur_win_rate
+        "elo": 37,
+        "cote": 40,
+        "win_rate": 4,
+        "top3_rate": 15,
+        "avg_place_3": 13,
+        "driver_wr": 26,
+        "entraineur_wr": 33,
     }
     
     mat = np.array(course_features, dtype=np.float64)
@@ -149,13 +149,13 @@ def compute_course_ranking_features(course_features):
     results = []
     for i in range(n_horses):
         feats = []
+        rank_sum = 0.0
+        rank_count = 0
         
-        # Pour chaque dimension, calculer le percentile rank
+        # 7 percentile ranks
         for dim_name, dim_idx in DIMS.items():
             vals = mat[:, dim_idx].copy()
             horse_val = vals[i]
-            
-            # Ignorer les NaN dans le ranking
             valid_mask = ~np.isnan(vals)
             if not np.isnan(horse_val) and valid_mask.sum() > 0:
                 valid_vals = vals[valid_mask]
@@ -164,12 +164,13 @@ def compute_course_ranking_features(course_features):
                 else:
                     rank_pct = np.mean(valid_vals <= horse_val)
             else:
-                rank_pct = 0.5  # neutre si NaN
-            
+                rank_pct = 0.5
             feats.append(rank_pct)
+            rank_sum += rank_pct
+            rank_count += 1
         
-        # Z-scores sur 2 dimensions clés
-        for dim_idx in [37, 40]:  # elo, cote
+        # 2 z-scores (elo, cote)
+        for dim_idx in [37, 40]:
             vals = mat[:, dim_idx]
             valid_mask = ~np.isnan(vals)
             if valid_mask.sum() > 1 and not np.isnan(mat[i, dim_idx]):
@@ -179,12 +180,11 @@ def compute_course_ranking_features(course_features):
             else:
                 feats.append(0.0)
         
-        # Is top-N binary
         # Top 3 par Elo
         elo_vals = mat[:, 37].copy()
         valid_elo = ~np.isnan(elo_vals)
         if valid_elo.sum() >= 3:
-            elo_ranked = np.argsort(-elo_vals, axis=0)  # NaN goes to end
+            elo_ranked = np.argsort(-elo_vals, axis=0)
             top3_elo = set()
             for idx in elo_ranked:
                 if valid_elo[idx] and len(top3_elo) < 3:
@@ -193,8 +193,8 @@ def compute_course_ranking_features(course_features):
         else:
             feats.append(0.0)
         
-        # Top 3 par cote (inv_cote = plus fort)
-        inv_cote_vals = mat[:, 41].copy()  # inv_cote
+        # Top 3 par cote (inv_cote)
+        inv_cote_vals = mat[:, 41].copy()
         valid_inv = ~np.isnan(inv_cote_vals)
         if valid_inv.sum() >= 3:
             inv_ranked = np.argsort(-inv_cote_vals, axis=0)
@@ -206,7 +206,7 @@ def compute_course_ranking_features(course_features):
         else:
             feats.append(0.0)
         
-        # Écart au favori (1er de la cote)
+        # Écart au favori
         if valid_inv.sum() > 0:
             valid_indices = np.where(valid_inv)[0]
             fav_idx = valid_indices[np.argmax(inv_cote_vals[valid_inv])]
@@ -218,8 +218,8 @@ def compute_course_ranking_features(course_features):
             elo_gap_to_fav = 0.0
         feats.append(elo_gap_to_fav)
         
-        # Force relative : (elo * win_rate) vs moyenne course
-        power = mat[:, 37] * mat[:, 4]  # elo * win_rate
+        # Force relative
+        power = mat[:, 37] * mat[:, 4]
         valid_power = ~np.isnan(power)
         if valid_power.sum() > 0 and not np.isnan(power[i]):
             mean_power = np.mean(power[valid_power])
@@ -227,7 +227,15 @@ def compute_course_ranking_features(course_features):
         else:
             feats.append(1.0)
         
+        # 14ème feature : rang moyen multi-dimensions (score composite)
+        avg_rank = rank_sum / max(rank_count, 1)
+        feats.append(avg_rank)
+        
         results.append(np.array(feats))
+    
+    # Vérification stricte : 14 features par cheval
+    for r in results:
+        assert len(r) == 14, f"compute_course_ranking_features: {len(r)} feats au lieu de 14"
     
     return results
 
@@ -800,14 +808,18 @@ class EnsembleV8:
         self.stacking.fit(X, y, target=target, use_optuna=use_optuna)
 
         self.tabnet = TabNetV8()
-        if self.tabnet.fit(X, y, target=target) is None:
+        try:
+            if self.tabnet.fit(X, y, target=target) is None:
+                self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
+            else:
+                s_b = self.stacking.val_score or 0.25
+                t_b = self.tabnet.val_score or 0.25
+                s_inv, t_inv = 1.0/max(s_b, 0.001), 1.0/max(t_b, 0.001)
+                total = s_inv + t_inv
+                self.w_stack, self.w_tabnet = s_inv/total, t_inv/total
+        except Exception as e:
+            print(f"  [EnsembleV8] ⚠️ TabNet a échoué ({e}), utilisation stacking seul")
             self.tabnet = None; self.w_stack = 1.0; self.w_tabnet = 0.0
-        else:
-            s_b = self.stacking.val_score or 0.25
-            t_b = self.tabnet.val_score or 0.25
-            s_inv, t_inv = 1.0/max(s_b, 0.001), 1.0/max(t_b, 0.001)
-            total = s_inv + t_inv
-            self.w_stack, self.w_tabnet = s_inv/total, t_inv/total
 
         self._final_calibration(X, y)
         elapsed = time.time() - t0
