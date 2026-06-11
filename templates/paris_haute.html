@@ -155,7 +155,7 @@
     <div class="empty-state">
       <div class="emoji">🔥</div>
       <h2>PARIS HAUTE</h2>
-      <p>Scannez toutes les courses du jour et ne gardez que les chevaux avec confiance <strong>🔥 HAUTE (≥70)</strong></p>
+      <p>Scannez toutes les courses du jour et ne gardez que les chevaux avec confiance <strong>🔥 HAUTE (≥80)</strong></p>
       <p style="font-size:12px; margin-top:10px; color:#fcd34d;">Backtest: 84.9% top1 · ROI +436%</p>
       <p style="font-size:12px; margin-top:6px; color:#94a3b8;">Sélectionnez une date et cliquez sur Scanner.</p>
     </div>
@@ -226,7 +226,7 @@ async function scanDay(live=false) {
         const conf = top1.confiance || 0;
         const niveau = (top1.confianceNiveau || '').toUpperCase();
 
-        if (conf >= 70 && niveau.includes('HAUTE')) {
+        if (conf >= 80 && niveau.includes('HAUTE')) {
           // Trouver le 2ème cheval pour comparaison
           const top2 = analyses[1] || {};
           hauteCourses.push({
@@ -248,7 +248,7 @@ async function scanDay(live=false) {
       results.innerHTML = `<div class="empty-state">
         <div class="emoji">😐</div>
         <h2>Aucun paris HAUTE aujourd'hui</h2>
-        <p style="color:#94a3b8;">${totalScanned} courses scannées, aucune avec confiance ≥ 70</p>
+        <p style="color:#94a3b8;">${totalScanned} courses scannées, aucune avec confiance ≥ 80</p>
         <p style="color:#94a3b8; margin-top:8px;">C'est normal — mieux vaut ne pas parier que parier sans confiance.</p>
       </div>`;
       return;
