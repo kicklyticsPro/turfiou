@@ -1250,46 +1250,60 @@ def save_calibration(c):
     save_pickle(CALIBRATION_FILE, c)
 
 
+# Cache en mémoire pour les modèles discipline (évite rechargement disque)
+_disc_model_cache = {}
+_disc_model_top3_cache = {}
+_ranker_cache = [None]
+
 def load_ml_model_discipline(discipline):
     """Charge le modèle WIN spécifique à la discipline (TROT ou GALOP).
     Fallback sur le modèle générique si pas disponible.
+    Cache en mémoire pour éviter les rechargements disque.
     """
+    if discipline in _disc_model_cache:
+        return _disc_model_cache[discipline]
     if not HAS_V8:
         return load_ml_model()
     code = {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3)
+    m = None
     if code in (0, 1):  # TROT
         m = load_v8(ML_MODEL_WIN_V8_TROT_FILE)
-        if m:
-            return m
     elif code == 2:  # GALOP
         m = load_v8(ML_MODEL_WIN_V8_GALOP_FILE)
-        if m:
-            return m
-    # Fallback : modèle générique
-    return load_ml_model()
+    if m is None:
+        m = load_ml_model()  # fallback générique
+    _disc_model_cache[discipline] = m
+    return m
 
 
 def load_ml_model_top3_discipline(discipline):
-    """Charge le modèle TOP3 spécifique à la discipline."""
+    """Charge le modèle TOP3 spécifique à la discipline (avec cache)."""
+    key = f"top3_{discipline}"
+    if key in _disc_model_top3_cache:
+        return _disc_model_top3_cache[key]
     if not HAS_V8:
         return load_ml_model_top3()
     code = {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3)
+    m = None
     if code in (0, 1):
         m = load_v8(ML_MODEL_TOP3_V8_TROT_FILE)
-        if m:
-            return m
     elif code == 2:
         m = load_v8(ML_MODEL_TOP3_V8_GALOP_FILE)
-        if m:
-            return m
-    return load_ml_model_top3()
+    if m is None:
+        m = load_ml_model_top3()
+    _disc_model_top3_cache[key] = m
+    return m
 
 
 def load_ml_ranker():
-    """Charge le modèle Ranker séquentiel (XGBRanker)."""
+    """Charge le modèle Ranker séquentiel (XGBRanker) avec cache."""
+    if _ranker_cache[0] is not None:
+        return _ranker_cache[0]
     if not HAS_V8:
         return None
-    return load_ranker_v8(ML_MODEL_RANKER_V8_FILE)
+    m = load_ranker_v8(ML_MODEL_RANKER_V8_FILE)
+    _ranker_cache[0] = m
+    return m
 
 
 def _fetch_full(args):
@@ -1302,7 +1316,7 @@ def _fetch_full(args):
         return None
 
 
-def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30,
+def train_ml_model(days_back=21, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30,
                    model_type="ensemble"):
     """Entraîne 2 modèles : WIN (y=1 si gagnant) + TOP4 (y=1 si ≤4e).
     Les deux partagent les mêmes features X mais ont des labels différents."""
@@ -1428,34 +1442,13 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             X_v8.append(_engineer_v8_from_vector(sample[:54]) + list(sample[54:]))
         X = X_v8
 
-        # Data augmentation au niveau course
+        # ── PAS d'augmentation — elle biait le modèle ──
+        # On garde les données originales pour la qualité
+        y_places = y_places  # déjà défini
         n_orig = len(X)
-        X_aug, y_win_aug = augment_course_level(X, y_win, course_ids)
-        _, y_top3_aug = augment_course_level(X, y_top3, course_ids)
-        _, y_top4_aug = augment_course_level(X, y_top4, course_ids)
-        _, y_places_aug = augment_course_level(X, y_places, course_ids)
-        _, course_ids_aug = augment_course_level(X, course_ids, course_ids)
 
-        # Vérifier cohérence stricte de toutes les tailles
-        sizes = [len(X_aug), len(y_win_aug), len(y_top3_aug),
-                 len(y_top4_aug), len(y_places_aug), len(course_ids_aug)]
-        if len(set(sizes)) != 1:
-            print(f"  ⚠️ Tailles incohérentes après augmentation: {sizes}, on utilise les données originales")
-            X_aug = X
-            y_win_aug = y_win
-            y_top3_aug = y_top3
-            y_top4_aug = y_top4
-            y_places_aug = y_places
-            course_ids_aug = course_ids
-
-        print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-n_orig} augmentés)")
-        print(f"[ML v8] {len(X_aug[0])} features (54 base + 14 ranking + 16 interactions)")
-        X = X_aug
-        y_win = y_win_aug
-        y_top3 = y_top3_aug
-        y_top4 = y_top4_aug
-        y_places = y_places_aug
-        course_ids = course_ids_aug
+        print(f"[ML v8] {len(X)} échantillons")
+        print(f"[ML v8] {len(X[0])} features (54 base + 14 ranking + 16 interactions)")
 
         use_optuna = model_type == "advanced_v8"
 
@@ -1477,7 +1470,7 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             if len(X) >= 200 and len(X) == len(y_places) == len(course_ids):
                 train_ranker_v8(X, y_places, course_ids, ML_MODEL_RANKER_V8_FILE)
             else:
-                print(f"  ⚠️ Tailles incohérentes (X={len(X)}, places={len(y_places)}, ids={len(course_ids)}), ranker ignoré")
+                print(f"  ⚠️ Tailles incohérentes, ranker ignoré")
         except Exception as e:
             print(f"  ⚠️ Ranker échoué ({e}), ignoré")
 
@@ -1486,15 +1479,13 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
             _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna)
         except Exception as e:
             print(f"  ⚠️ Modèles discipline échoués ({e}), ignorés")
-        _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna)
 
         info["win_model"] = f"V8 stack ({len(X[0])}feat, {len(X)}samples)"
         info["top3_model"] = info["win_model"]
         info["top4_model"] = info["win_model"]
-        info["models_trained"] = ["win", "top3", "top4", "ranker"]
+        info["models_trained"] = ["win", "top3", "top4"]
         info["n_features"] = len(X[0])
-        info["n_samples_original"] = len(set(course_ids))
-        info["n_samples_augmented"] = len(X)
+        info["n_samples"] = len(X)
         return info
 
     # ===========================================================
@@ -2617,11 +2608,17 @@ def backtest(days_back=7, use_ml=False):
         if not result:
             continue
         parts, perfs, distance, discipline, hippodrome, type_corde = result
-        analyses = analyser_course(parts, perfs, distance, discipline, hippodrome,
-                                    type_corde,
-                                    team_stats, horse_stats, elo, elo_hist,
-                                    horse_races, pedigree, use_ml=use_ml,
-                                    capital=100)
+        try:
+            analyses = analyser_course(parts, perfs, distance, discipline, hippodrome,
+                                        type_corde,
+                                        team_stats, horse_stats, elo, elo_hist,
+                                        horse_races, pedigree, use_ml=use_ml,
+                                        capital=100)
+        except Exception as e:
+            import traceback
+            print(f"  [Backtest] Erreur analyse course: {e}")
+            traceback.print_exc()
+            continue
         if not analyses:
             continue
 
@@ -2872,11 +2869,14 @@ def bilan(days_back=7, use_ml=False):
             if not result:
                 continue
             parts, perfs, distance, discipline, hippodrome, type_corde = result
-            analyses = analyser_course(parts, perfs, distance, discipline,
-                                        hippodrome, type_corde,
-                                        team_stats, horse_stats, elo, elo_hist,
-                                        horse_races, pedigree, use_ml=use_ml,
-                                        capital=100)
+            try:
+                analyses = analyser_course(parts, perfs, distance, discipline,
+                                            hippodrome, type_corde,
+                                            team_stats, horse_stats, elo, elo_hist,
+                                            horse_races, pedigree, use_ml=use_ml,
+                                            capital=100)
+            except Exception:
+                continue
             if not analyses:
                 continue
 
