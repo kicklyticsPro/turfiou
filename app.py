@@ -1176,108 +1176,134 @@ FEATURE_NAMES = [
 ]
 
 
-def load_ml_model():
-    # Priorité : v8 > v7 > v5 > v4
-    if HAS_V8:
-        v8 = load_v8(ML_MODEL_WIN_V8_FILE)
-        if v8:
-            return v8
-    if HAS_V7:
-        v7 = load_v7(ML_MODEL_WIN_V7_FILE)
-        if v7:
-            return v7
-    if HAS_ADVANCED:
-        adv = load_advanced(ML_MODEL_FILE_V5)
-        if adv:
-            return adv
-    payload = load_pickle(ML_MODEL_FILE, max_age_hours=24*14)
-    return load_model_from_dict(payload) if payload else None
-
-
-def save_ml_model(model):
-    save_pickle(ML_MODEL_FILE, model.to_dict())
-
-
-def load_ml_model_top4():
-    """Charge le modèle Top 4 (placement binaire)."""
-    if HAS_V8:
-        v8 = load_v8(ML_MODEL_TOP4_V8_FILE)
-        if v8:
-            return v8
-    if HAS_V7:
-        v7 = load_v7(ML_MODEL_TOP4_V7_FILE)
-        if v7:
-            return v7
-    if HAS_ADVANCED:
-        adv = load_advanced(ML_MODEL_TOP4_V5_FILE)
-        if adv:
-            return adv
-    payload = load_pickle(ML_MODEL_TOP4_FILE, max_age_hours=24*14)
-    return load_model_from_dict(payload) if payload else None
-
-
-def save_ml_model_top4(model):
-    save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
-
-def load_ml_model_top3():
-    """Charge le modèle TOP3 (v8 > v7 > advanced > ensemble numpy)."""
-    if HAS_V8:
-        v8 = load_v8(ML_MODEL_TOP3_V8_FILE)
-        if v8:
-            return v8
-    if HAS_V7:
-        v7 = load_v7(ML_MODEL_TOP3_V7_FILE)
-        if v7:
-            return v7
-    if HAS_ADVANCED:
-        adv = load_advanced(ML_MODEL_TOP3_V5_FILE)
-        if adv:
-            return adv
-    payload = load_pickle(ML_MODEL_TOP3_FILE, max_age_hours=24*14)
-    if payload:
-        return load_model_from_dict(payload)
-    return None
-
-def save_ml_model_top3(model):
-    save_pickle(ML_MODEL_TOP3_FILE, model.to_dict())
-
-
-def load_calibration():
-    return load_pickle(CALIBRATION_FILE, max_age_hours=24*7)
-
-
-def save_calibration(c):
-    save_pickle(CALIBRATION_FILE, c)
-
-
-# Cache en mémoire pour les modèles discipline (évite rechargement disque)
+# Cache en mémoire pour tous les modèles — évite joblib.load() à chaque course
+_model_cache = {}
+_model_cache_top4 = [None]
+_model_cache_top3 = [None]
+_model_cache_calib = [None]
 _disc_model_cache = {}
 _disc_model_top3_cache = {}
 _ranker_cache = [None]
 
+
+def load_ml_model():
+    if _model_cache.get("win"):
+        return _model_cache["win"]
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_WIN_V8_FILE)
+        if v8:
+            _model_cache["win"] = v8
+            return v8
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_WIN_V7_FILE)
+        if v7:
+            _model_cache["win"] = v7
+            return v7
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_FILE_V5)
+        if adv:
+            _model_cache["win"] = adv
+            return adv
+    payload = load_pickle(ML_MODEL_FILE, max_age_hours=24*14)
+    m = load_model_from_dict(payload) if payload else None
+    _model_cache["win"] = m
+    return m
+
+
+def save_ml_model(model):
+    save_pickle(ML_MODEL_FILE, model.to_dict())
+    _model_cache.pop("win", None)
+
+
+def load_ml_model_top4():
+    if _model_cache_top4[0] is not None:
+        return _model_cache_top4[0]
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_TOP4_V8_FILE)
+        if v8:
+            _model_cache_top4[0] = v8
+            return v8
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_TOP4_V7_FILE)
+        if v7:
+            _model_cache_top4[0] = v7
+            return v7
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_TOP4_V5_FILE)
+        if adv:
+            _model_cache_top4[0] = adv
+            return adv
+    payload = load_pickle(ML_MODEL_TOP4_FILE, max_age_hours=24*14)
+    m = load_model_from_dict(payload) if payload else None
+    _model_cache_top4[0] = m
+    return m
+
+
+def save_ml_model_top4(model):
+    save_pickle(ML_MODEL_TOP4_FILE, model.to_dict())
+    _model_cache_top4[0] = None
+
+
+def load_ml_model_top3():
+    if _model_cache_top3[0] is not None:
+        return _model_cache_top3[0]
+    if HAS_V8:
+        v8 = load_v8(ML_MODEL_TOP3_V8_FILE)
+        if v8:
+            _model_cache_top3[0] = v8
+            return v8
+    if HAS_V7:
+        v7 = load_v7(ML_MODEL_TOP3_V7_FILE)
+        if v7:
+            _model_cache_top3[0] = v7
+            return v7
+    if HAS_ADVANCED:
+        adv = load_advanced(ML_MODEL_TOP3_V5_FILE)
+        if adv:
+            _model_cache_top3[0] = adv
+            return adv
+    payload = load_pickle(ML_MODEL_TOP3_FILE, max_age_hours=24*14)
+    m = load_model_from_dict(payload) if payload else None
+    _model_cache_top3[0] = m
+    return m
+
+
+def save_ml_model_top3(model):
+    save_pickle(ML_MODEL_TOP3_FILE, model.to_dict())
+    _model_cache_top3[0] = None
+
+
+def load_calibration():
+    if _model_cache_calib[0] is not None:
+        return _model_cache_calib[0]
+    payload = load_pickle(CALIBRATION_FILE, max_age_hours=24*7)
+    _model_cache_calib[0] = payload
+    return payload
+
+
+def save_calibration(c):
+    save_pickle(CALIBRATION_FILE, c)
+    _model_cache_calib[0] = None
+
+
 def load_ml_model_discipline(discipline):
-    """Charge le modèle WIN spécifique à la discipline (TROT ou GALOP).
-    Fallback sur le modèle générique si pas disponible.
-    Cache en mémoire pour éviter les rechargements disque.
-    """
     if discipline in _disc_model_cache:
         return _disc_model_cache[discipline]
     if not HAS_V8:
         return load_ml_model()
     code = {"TROT_ATTELE": 0, "TROT_MONTE": 1, "GALOP": 2}.get(discipline, 3)
     m = None
-    if code in (0, 1):  # TROT
+    if code in (0, 1):
         m = load_v8(ML_MODEL_WIN_V8_TROT_FILE)
-    elif code == 2:  # GALOP
+    elif code == 2:
         m = load_v8(ML_MODEL_WIN_V8_GALOP_FILE)
     if m is None:
-        m = load_ml_model()  # fallback générique
+        m = load_ml_model()
     _disc_model_cache[discipline] = m
     return m
 
 
 def load_ml_model_top3_discipline(discipline):
-    """Charge le modèle TOP3 spécifique à la discipline (avec cache)."""
     key = f"top3_{discipline}"
     if key in _disc_model_top3_cache:
         return _disc_model_top3_cache[key]
@@ -1296,7 +1322,6 @@ def load_ml_model_top3_discipline(discipline):
 
 
 def load_ml_ranker():
-    """Charge le modèle Ranker séquentiel (XGBRanker) avec cache."""
     if _ranker_cache[0] is not None:
         return _ranker_cache[0]
     if not HAS_V8:
@@ -1304,6 +1329,18 @@ def load_ml_ranker():
     m = load_ranker_v8(ML_MODEL_RANKER_V8_FILE)
     _ranker_cache[0] = m
     return m
+
+
+def clear_model_cache():
+    """Vide le cache — à appeler après un training."""
+    _model_cache.clear()
+    _model_cache_top4[0] = None
+    _model_cache_top3[0] = None
+    _model_cache_calib[0] = None
+    _disc_model_cache.clear()
+    _disc_model_top3_cache.clear()
+    _ranker_cache[0] = None
+
 
 
 def _fetch_full(args):
@@ -3335,6 +3372,12 @@ def edge_page():
     return render_template("edge.html")
 
 
+@app.route("/paris-haute")
+@admin_required
+def paris_haute_page():
+    return render_template("paris_haute.html")
+
+
 @app.route("/api/reunions")
 @admin_required
 def api_reunions():
@@ -3791,6 +3834,7 @@ def api_train():
         try:
             info = train_ml_model(days_back=days, model_type=model_type)
             if info:
+                clear_model_cache()  # Vider le cache pour charger les nouveaux modèles
                 _save_ml_status({
                     "status": "ok",
                     "finished_at": datetime.now().isoformat(),
