@@ -22,6 +22,25 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import brier_score_loss
 from sklearn.isotonic import IsotonicRegression
 
+
+def _impute_nan(X):
+    """Impute NaN par médiane de colonne. Retourne une copie propre.
+    Utilisé pour les composants sklearn (LogisticRegression, calibration)
+    qui ne supportent pas les NaN nativement.
+    Les base learners XGB/LGB/HGB reçoivent le X original (NaN inclus).
+    """
+    X = np.asarray(X, dtype=np.float64)
+    if not np.isnan(X).any():
+        return X
+    X_clean = X.copy()
+    for col in range(X_clean.shape[1]):
+        col_nan = np.isnan(X_clean[:, col])
+        if col_nan.any():
+            valid = X_clean[~col_nan, col]
+            med = np.median(valid) if len(valid) > 0 else 0.0
+            X_clean[col_nan, col] = med
+    return X_clean
+
 # ── Optional imports ──────────────────────────────────────────
 try:
     from xgboost import XGBClassifier, XGBRanker
@@ -483,18 +502,26 @@ class StackingV8:
         print(f"  {n_pos} positifs ({n_pos/n*100:.1f}%) — ratio 1:{(n-n_pos)/max(n_pos,1):.0f}")
         print(f"{'='*60}")
 
+        # X_original garde les NaN (pour XGB/LGB/HGB qui les gèrent nativement)
+        # X_clean est imputé (pour LogisticRegression, calibration, etc.)
+        X_original = X
+        X = _impute_nan(X)
+        _nan_count = int(np.isnan(X_original).sum())
+        if _nan_count > 0:
+            print(f"  📊 {_nan_count} NaN imputés (médiane/colonne) — base learners gardent NaN")
+
         if n < 80 or n_pos < 8:
             return self._fit_fallback(X, y, target)
 
-        # Optuna
+        # Optuna — utiliser X original (NaN OK pour XGB/LGB)
         tuned_xgb = None
         tuned_lgb = None
         if use_optuna and HAS_OPTUNA:
             print(f"\n  [0/4] Optuna tuning...")
             if HAS_XGB:
-                tuned_xgb = _optuna_tune_xgb(X, y, n_trials=30, timeout=180)
+                tuned_xgb = _optuna_tune_xgb(X_original, y, n_trials=30, timeout=180)
             if HAS_LGB:
-                tuned_lgb = _optuna_tune_lgb(X, y, n_trials=30, timeout=180)
+                tuned_lgb = _optuna_tune_lgb(X_original, y, n_trials=30, timeout=180)
 
         learners = []
         if HAS_XGB:
@@ -514,7 +541,7 @@ class StackingV8:
         oof_matrix = np.zeros((n, n_learners))
 
         for fold_idx, (train_idx, val_idx) in enumerate(splits):
-            X_tr, X_val = X[train_idx], X[val_idx]
+            X_tr, X_val = X_original[train_idx], X_original[val_idx]
             y_tr = y[train_idx]
             for j, (name, learner_proto) in enumerate(learners):
                 learner = copy.deepcopy(learner_proto)
@@ -522,8 +549,6 @@ class StackingV8:
                     warnings.filterwarnings("ignore")
                     learner.fit(X_tr, y_tr)
                 preds = learner.predict_proba(X_val)[:, 1]
-                # Protection NaN : les base learners gèrent NaN en input
-                # mais peuvent exceptionnellement produire des NaN en output
                 nan_count = np.isnan(preds).sum()
                 if nan_count > 0:
                     med = np.nanmedian(preds) if np.any(~np.isnan(preds)) else 0.5
@@ -533,14 +558,14 @@ class StackingV8:
             pct = (fold_idx + 1) / len(splits) * 100
             print(f"    Fold {fold_idx+1}/{len(splits)} [{pct:.0f}%]")
 
-        # Fit full
+        # Fit full — base learners sur X_original (NaN OK)
         print(f"\n  [2/4] Fit full dataset...")
         fitted_base = []
         for name, learner_proto in learners:
             learner = copy.deepcopy(learner_proto)
             with warnings.catch_warnings():
                 warnings.filterwarnings("ignore")
-                learner.fit(X, y)
+                learner.fit(X_original, y)
             fitted_base.append((name, learner))
             print(f"    ✅ {name}")
 
