@@ -16,6 +16,7 @@ import os
 import warnings
 import time
 import copy
+from collections import OrderedDict
 
 from sklearn.model_selection import StratifiedKFold
 from sklearn.linear_model import LogisticRegression
@@ -984,7 +985,6 @@ class RankerV8:
         y_places = np.asarray(y_places, dtype=np.float64)
         
         # Construire les groups pour XGBRanker
-        from collections import OrderedDict
         groups_dict = OrderedDict()
         for i, gid in enumerate(group_ids):
             if gid not in groups_dict:
