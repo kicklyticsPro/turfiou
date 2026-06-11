@@ -1000,18 +1000,17 @@ class RankerV8:
         print(f"\n  [RankerV8] {target.upper()} — {n} samples × {d} features")
         print(f"  {n_courses} courses, taille moyenne {n/n_courses:.1f} chevaux")
         
-        # Convertir places en relevance scores (plus haut = meilleur)
-        # Place 1 → score max, dernière → score min
-        y_rel = np.zeros(n)
+        # Convertir places en relevance scores entiers (requis par XGBRanker)
+        # Plus haut = meilleur. Place 1 → nb-1, dernière → 0
+        y_rel = np.zeros(n, dtype=np.int32)
         for gid, indices in groups_dict.items():
             nb = len(indices)
             for idx in indices:
                 place = y_places[idx]
                 if place > 0 and place <= nb:
-                    # Score décroissant : 1er → 1.0, dernier → 0.1
-                    y_rel[idx] = (nb - place + 1) / nb
+                    y_rel[idx] = nb - int(place)  # 1er → nb-1, 2e → nb-2, etc.
                 else:
-                    y_rel[idx] = 0.1  # non classé
+                    y_rel[idx] = 0  # non classé
         
         # Split train/val par course
         course_keys = list(groups_dict.keys())
