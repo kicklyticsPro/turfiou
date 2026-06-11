@@ -1001,16 +1001,17 @@ class RankerV8:
         print(f"  {n_courses} courses, taille moyenne {n/n_courses:.1f} chevaux")
         
         # Convertir places en relevance scores entiers (requis par XGBRanker)
-        # Plus haut = meilleur. Place 1 → nb-1, dernière → 0
+        # Plus haut = meilleur. Place 1 → max, dernière → 0
+        # Clamp à 30 max car XGBoost limite les labels NDCG à 31
         y_rel = np.zeros(n, dtype=np.int32)
         for gid, indices in groups_dict.items():
             nb = len(indices)
             for idx in indices:
                 place = y_places[idx]
                 if place > 0 and place <= nb:
-                    y_rel[idx] = nb - int(place)  # 1er → nb-1, 2e → nb-2, etc.
+                    y_rel[idx] = min(nb - int(place), 30)
                 else:
-                    y_rel[idx] = 0  # non classé
+                    y_rel[idx] = 0
         
         # Split train/val par course
         course_keys = list(groups_dict.keys())
@@ -1051,6 +1052,7 @@ class RankerV8:
             min_child_weight=5,
             objective='rank:pairwise',
             eval_metric='ndcg',
+            ndcg_exp_gain=False,
             random_state=42,
             verbosity=0,
         )
