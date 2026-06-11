@@ -1432,12 +1432,14 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         X_aug, y_win_aug = augment_course_level(X, y_win, course_ids)
         _, y_top3_aug = augment_course_level(X, y_top3, course_ids)
         _, y_top4_aug = augment_course_level(X, y_top4, course_ids)
+        _, y_places_aug = augment_course_level(X, y_places, course_ids)
+        _, course_ids_aug = augment_course_level(X, course_ids, course_ids)
 
         # Vérifier cohérence (augment garde les mêmes tailles)
         if len(X_aug) != len(y_win_aug):
             X_aug, y_win_aug = X, y_win
-            _, _ = y_top3, y_top4
             y_top3_aug, y_top4_aug = y_top3, y_top4
+            y_places_aug, course_ids_aug = y_places, course_ids
 
         print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-len(X)} augmentés)")
         print(f"[ML v8] {len(X_aug[0])} features (54 base + 14 ranking + 16 interactions)")
@@ -1445,6 +1447,8 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         y_win = y_win_aug
         y_top3 = y_top3_aug
         y_top4 = y_top4_aug
+        y_places = y_places_aug
+        course_ids = course_ids_aug
 
         use_optuna = model_type == "advanced_v8"
 
