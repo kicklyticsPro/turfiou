@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔥 PARIS HAUTE — Turf Analyzer v8</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    color: #e2e8f0; min-height: 100vh;
+  }
+  header {
+    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #f59e0b;
+    padding: 14px 20px; display: flex; justify-content: space-between;
+    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
+  }
+  header h1 {
+    font-size: 20px;
+    background: linear-gradient(90deg, #f59e0b, #ef4444);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .version-tag { background: #ef4444; color: white; padding: 2px 6px;
+    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
+  .nav-links { display: flex; gap: 8px; }
+  .nav-links a {
+    color: #94a3b8; text-decoration: none; font-size: 13px;
+    padding: 6px 12px; border-radius: 6px; transition: all .2s;
+  }
+  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #f59e0b; }
+  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  input[type=date], select { background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
+    padding: 6px 10px; border-radius: 7px; font-size: 12px; }
+  button { background: #f59e0b; border: none; cursor: pointer; font-weight: 600;
+    color: #0f172a; padding: 6px 14px; border-radius: 7px; font-size: 12px; }
+  button:hover { background: #d97706; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+  .stat-box {
+    background: rgba(30, 41, 59, 0.8); border-radius: 10px; padding: 14px;
+    text-align: center; border: 1px solid #334155;
+  }
+  .stat-box .val { font-size: 26px; font-weight: 800; }
+  .stat-box .val.green { color: #10b981; }
+  .stat-box .val.gold { color: #f59e0b; }
+  .stat-box .val.red { color: #ef4444; }
+  .stat-box .lbl { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+
+  /* Course cards */
+  .course-card {
+    background: rgba(30, 41, 59, 0.7); border-radius: 12px; padding: 18px;
+    margin-bottom: 14px; border: 1px solid #334155; border-left: 4px solid #f59e0b;
+    transition: all .2s;
+  }
+  .course-card:hover { border-color: #f59e0b; box-shadow: 0 0 20px rgba(245, 158, 11, 0.1); }
+  .course-card .card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px; flex-wrap: wrap; gap: 8px;
+  }
+  .course-card .card-header h3 { font-size: 15px; color: #f59e0b; }
+  .course-card .card-header .meta { font-size: 12px; color: #94a3b8; display: flex; gap: 12px; flex-wrap: wrap; }
+  .course-card .card-header .meta strong { color: #e2e8f0; }
+
+  /* Horse info */
+  .horse-row {
+    display: grid; grid-template-columns: 50px 1fr 100px 100px 80px 100px;
+    gap: 10px; align-items: center; padding: 10px 0;
+    border-top: 1px solid rgba(51, 65, 85, 0.5);
+  }
+  .horse-num {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 16px; color: #0f172a;
+  }
+  .horse-info h4 { font-size: 14px; color: #f1f5f9; }
+  .horse-info .detail { font-size: 11px; color: #94a3b8; }
+  .metric { text-align: center; }
+  .metric .val { font-size: 16px; font-weight: 700; }
+  .metric .lbl { font-size: 10px; color: #94a3b8; }
+  .val.green { color: #10b981; }
+  .val.gold { color: #f59e0b; }
+  .val.blue { color: #3b82f6; }
+
+  /* Kelly mise */
+  .kelly-box {
+    background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981;
+    border-radius: 8px; padding: 8px 12px; text-align: center;
+  }
+  .kelly-box .val { font-size: 18px; font-weight: 800; color: #10b981; }
+  .killy-box .lbl { font-size: 10px; color: #6ee7b7; }
+
+  /* Confiance badge */
+  .badge {
+    display: inline-block; padding: 3px 8px; border-radius: 4px;
+    font-size: 11px; font-weight: 700;
+  }
+  .badge.haute { background: #ef4444; color: white; }
+
+  /* Loading / empty */
+  .loading { text-align: center; padding: 40px; color: #94a3b8; }
+  .spinner { width: 32px; height: 32px; border: 3px solid #334155;
+    border-top-color: #f59e0b; border-radius: 50%; margin: 0 auto 12px;
+    animation: spin .8s linear infinite; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  .empty-state { text-align: center; padding: 60px 20px; }
+  .empty-state .emoji { font-size: 56px; margin-bottom: 16px; }
+  .empty-state h2 { color: #e2e8f0; font-size: 22px; margin-bottom: 10px; }
+
+  .disclaimer {
+    background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b;
+    border-radius: 8px; padding: 10px 14px; margin-top: 16px;
+    font-size: 11px; color: #fcd34d;
+  }
+
+  @media (max-width: 700px) {
+    .horse-row { grid-template-columns: 40px 1fr; gap: 6px; }
+    .metric, .kelly-box { text-align: left; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔥 Turf Analyzer — PARIS HAUTE<span class="version-tag">v8</span></h1>
+  <div class="nav-links">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest</a>
+    <a href="/bilan">📊 Bilan</a>
+    <a href="/force">💪 Force</a>
+    <a href="/edge">⚡ EDGE</a>
+    <a href="/paris-haute" class="active">🔥 Paris Haute</a>
+    <a href="/paris">📋 Mes paris</a>
+    <a href="/logout" style="color:#ef4444;">🔓</a>
+  </div>
+  <div class="controls">
+    <input type="date" id="datePicker">
+    <button onclick="scanDay()">🔥 Scanner le jour</button>
+    <button onclick="scanDay(true)" style="background:#3b82f6;">📡 Live</button>
+  </div>
+</header>
+
+<div class="container">
+  <div class="stats-bar" id="statsBar" style="display:none;"></div>
+  <div id="results">
+    <div class="empty-state">
+      <div class="emoji">🔥</div>
+      <h2>PARIS HAUTE</h2>
+      <p>Scannez toutes les courses du jour et ne gardez que les chevaux avec confiance <strong>🔥 HAUTE (≥70)</strong></p>
+      <p style="font-size:12px; margin-top:10px; color:#fcd34d;">Backtest: 84.9% top1 · ROI +436%</p>
+      <p style="font-size:12px; margin-top:6px; color:#94a3b8;">Sélectionnez une date et cliquez sur Scanner.</p>
+    </div>
+  </div>
+  <div class="disclaimer" id="disclaimer" style="display:none;">
+    ⚠️ Les pronostics sont basés sur des modèles statistiques. Ni Turf Analyzer ni ses créateurs ne sauraient être tenus responsables des pertes. Pariez de manière responsable.
+  </div>
+</div>
+
+<script>
+let currentDate = '';
+
+function todayStr() { return new Date().toISOString().slice(0,10); }
+function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
+
+// Init date picker
+document.getElementById('datePicker').value = todayStr();
+
+async function scanDay(live=false) {
+  const dateVal = document.getElementById('datePicker').value;
+  currentDate = toApiDate(dateVal);
+  const results = document.getElementById('results');
+  const statsBar = document.getElementById('statsBar');
+  results.innerHTML = '<div class="loading"><div class="spinner"></div>Scan de toutes les courses en cours…</div>';
+  statsBar.style.display = 'none';
+
+  try {
+    // 1. Charger les réunions
+    const res = await fetch(`/api/reunions?date=${currentDate}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!data.reunions || !data.reunions.length) {
+      results.innerHTML = '<div class="empty-state"><div class="emoji">😴</div><h2>Aucune réunion</h2></div>';
+      return;
+    }
+
+    // 2. Collecter toutes les courses
+    const allCourses = [];
+    for (const r of data.reunions) {
+      for (const c of r.courses) {
+        allCourses.push({ r: r.numReunion, c: c.numCourse, hippo: r.hippodrome, libelle: c.libelle, heure: c.heure });
+      }
+    }
+
+    // 3. Analyser chaque course en parallèle
+    let hauteCourses = [];
+    let totalScanned = 0;
+    const batchSize = 5;
+
+    for (let i = 0; i < allCourses.length; i += batchSize) {
+      const batch = allCourses.slice(i, i + batchSize);
+      const promises = batch.map(course =>
+        fetch(`/api/course/${course.r}/${course.c}?date=${currentDate}&ml=1${live ? '&live=1' : ''}`)
+          .then(r => r.json())
+          .then(d => ({ ...course, data: d }))
+          .catch(() => null)
+      );
+      const batchResults = await Promise.all(promises);
+
+      for (const br of batchResults) {
+        totalScanned++;
+        if (!br || !br.data || br.data.error || !br.data.analyses) continue;
+
+        const analyses = br.data.analyses;
+        const top1 = analyses[0];
+        if (!top1) continue;
+
+        const conf = top1.confiance || 0;
+        const niveau = (top1.confianceNiveau || '').toUpperCase();
+
+        if (conf >= 70 && niveau.includes('HAUTE')) {
+          // Trouver le 2ème cheval pour comparaison
+          const top2 = analyses[1] || {};
+          hauteCourses.push({
+            ...br,
+            top1,
+            top2,
+            conf,
+            gap: top1.gap12 || 0,
+            courseInfo: br.data.course || {},
+          });
+        }
+      }
+      // Update progress
+      results.innerHTML = `<div class="loading"><div class="spinner"></div>Analyse ${totalScanned}/${allCourses.length} courses… ${hauteCourses.length} HAUTE trouvées</div>`;
+    }
+
+    // 4. Afficher les résultats
+    if (hauteCourses.length === 0) {
+      results.innerHTML = `<div class="empty-state">
+        <div class="emoji">😐</div>
+        <h2>Aucun paris HAUTE aujourd'hui</h2>
+        <p style="color:#94a3b8;">${totalScanned} courses scannées, aucune avec confiance ≥ 70</p>
+        <p style="color:#94a3b8; margin-top:8px;">C'est normal — mieux vaut ne pas parier que parier sans confiance.</p>
+      </div>`;
+      return;
+    }
+
+    // Stats
+    const totalHaute = hauteCourses.length;
+    const avgConf = hauteCourses.reduce((s, c) => s + c.conf, 0) / totalHaute;
+    const avgCote = hauteCourses.reduce((s, c) => s + (c.top1.cote || 0), 0) / totalHaute;
+    const totalKelly = hauteCourses.reduce((s, c) => s + (c.top1.kellyMise || 0), 0);
+
+    statsBar.style.display = 'grid';
+    statsBar.innerHTML = `
+      <div class="stat-box"><div class="val gold">${totalHaute}</div><div class="lbl">Paris HAUTE</div></div>
+      <div class="stat-box"><div class="val green">${avgConf.toFixed(0)}</div><div class="lbl">Confiance moy.</div></div>
+      <div class="stat-box"><div class="val blue">${avgCote.toFixed(1)}</div><div class="lbl">Cote moyenne</div></div>
+      <div class="stat-box"><div class="val green">${totalKelly.toFixed(1)}€</div><div class="lbl">Mise Kelly totale</div></div>
+      <div class="stat-box"><div class="val gold">${totalScanned}</div><div class="lbl">Courses scannées</div></div>
+    `;
+
+    // Cards
+    let html = '';
+    for (const hc of hauteCourses) {
+      const t1 = hc.top1;
+      const t2 = hc.top2;
+      const ci = hc.courseInfo;
+      const kelly = t1.kellyMise || 0;
+      const kellyPct = t1.kellyFraction || 0;
+      const edge = t1.edge || 0;
+      const ev = t1.expectedROI || 0;
+
+      html += `
+      <div class="course-card">
+        <div class="card-header">
+          <h3>R${hc.r}C${hc.c} · ${hc.libelle || 'Course'}</h3>
+          <div class="meta">
+            <span>📍 ${hc.hippo}</span>
+            <span>🏃 ${ci.nbPartants || '?'} partants</span>
+            <span>📏 ${ci.distance || '?'}m ${ci.discipline || ''}</span>
+            <span>🕐 ${hc.heure || ''}</span>
+          </div>
+        </div>
+        <div class="horse-row">
+          <div class="horse-num">${t1.numPmu || t1.rang || '#'}</div>
+          <div class="horse-info">
+            <h4>${t1.nom || 'Cheval'} <span class="badge haute">🔥 HAUTE ${hc.conf}</span></h4>
+            <div class="detail">
+              Gap +${hc.gap.toFixed(1)} · Accord ${t1.modelsAgree || '?'} · Score ${t1.scoreComposite ? t1.scoreComposite.toFixed(1) : '?'}
+            </div>
+          </div>
+          <div class="metric">
+            <div class="val ${ev > 0 ? 'green' : 'red'}">${ev > 0 ? '+' : ''}${ev.toFixed(0)}%</div>
+            <div class="lbl">EV</div>
+          </div>
+          <div class="metric">
+            <div class="val blue">${(t1.cote || 0).toFixed(1)}</div>
+            <div class="lbl">Cote</div>
+          </div>
+          <div class="metric">
+            <div class="val ${edge > 0 ? 'green' : ''}">${edge > 0 ? '+' : ''}${edge.toFixed(1)}</div>
+            <div class="lbl">Edge</div>
+          </div>
+          <div class="kelly-box">
+            <div class="val">${kelly.toFixed(1)}€</div>
+            <div class="lbl">Kelly ${kellyPct.toFixed(1)}%</div>
+          </div>
+        </div>
+        ${t2 && t2.nom ? `
+        <div class="horse-row" style="opacity: 0.6;">
+          <div class="horse-num" style="background:#475569; color:#e2e8f0; font-size:14px;">${t2.numPmu || t2.rang || '#'}</div>
+          <div class="horse-info">
+            <h4 style="color:#94a3b8;">${t2.nom || 'Cheval'} <span style="font-size:11px; color:#64748b;">#2</span></h4>
+            <div class="detail">Cote ${(t2.cote||0).toFixed(1)} · Score ${t2.scoreComposite ? t2.scoreComposite.toFixed(1) : '?'}</div>
+          </div>
+        </div>
+        ` : ''}
+      </div>`;
+    }
+
+    results.innerHTML = html;
+    document.getElementById('disclaimer').style.display = 'block';
+
+  } catch(e) {
+    results.innerHTML = `<div class="empty-state"><div class="emoji">❌</div><h2>Erreur</h2><p style="color:#ef4444;">${e.message}</p></div>`;
+  }
+}
+</script>
+</body>
+</html>
