@@ -314,16 +314,23 @@ def _fetch_course_full(args):
         return None
 
 
-def compute_all_stats(max_days=HISTORY_DAYS):
-    """Construit tous les caches en parallèle (v4)."""
-    cached_t = load_pickle(STATS_CACHE_FILE)
-    cached_h = load_pickle(HORSE_STATS_FILE)
-    cached_e = load_pickle(ELO_CACHE_FILE)
-    cached_eh = load_pickle(ELO_HIST_FILE)
-    cached_hr = load_pickle(HORSE_RACES_FILE)
-    cached_p = load_pickle(PEDIGREE_FILE)
-    if all([cached_t, cached_h, cached_e, cached_eh, cached_hr, cached_p]):
-        return cached_t, cached_h, cached_e, cached_eh, cached_hr, cached_p
+def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
+    """Construit tous les caches en parallèle (v4).
+    
+    exclude_recent_days : si > 0, exclut les N derniers jours des stats.
+    Utilisé par le backtest pour éviter le data leak temporel
+    (les stats ne doivent pas contenir les résultats des courses testées).
+    """
+    # Cache seulement si pas d'exclusion (backtest = toujours recalculer)
+    if exclude_recent_days == 0:
+        cached_t = load_pickle(STATS_CACHE_FILE)
+        cached_h = load_pickle(HORSE_STATS_FILE)
+        cached_e = load_pickle(ELO_CACHE_FILE)
+        cached_eh = load_pickle(ELO_HIST_FILE)
+        cached_hr = load_pickle(HORSE_RACES_FILE)
+        cached_p = load_pickle(PEDIGREE_FILE)
+        if all([cached_t, cached_h, cached_e, cached_eh, cached_hr, cached_p]):
+            return cached_t, cached_h, cached_e, cached_eh, cached_hr, cached_p
 
     team_stats = {
         "drivers": defaultdict(_empty_bucket),
@@ -349,7 +356,9 @@ def compute_all_stats(max_days=HISTORY_DAYS):
 
     tasks = []
     today = datetime.now()
-    for delta in range(1, max_days + 1):
+    # Commencer après exclude_recent_days pour éviter le data leak
+    start_delta = exclude_recent_days + 1 if exclude_recent_days > 0 else 1
+    for delta in range(start_delta, max_days + 1):
         d = today - timedelta(days=delta)
         date_str = fmt_date(d)
         try:
@@ -2595,8 +2604,10 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
 #  Backtest v4
 # ============================================================
 def backtest(days_back=7, use_ml=False):
+    # ANTI-LEAK : exclure les jours testés des stats
+    # Les stats elo/driver/cheval ne doivent pas voir les résultats futurs
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
-        max_days=HISTORY_DAYS)
+        max_days=HISTORY_DAYS, exclude_recent_days=days_back)
     today = datetime.now()
     results = {
         "total_courses": 0, "top1_winner": 0, "top1_top3": 0, "top3_winner": 0,
@@ -2868,8 +2879,9 @@ def backtest(days_back=7, use_ml=False):
 # ============================================================
 def bilan(days_back=7, use_ml=False):
     """Stats par jour : où finit le #1 de l'algo (1er, 2e, 3e, hors podium)."""
+    # ANTI-LEAK : exclure les jours testés des stats
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
-        max_days=HISTORY_DAYS)
+        max_days=HISTORY_DAYS, exclude_recent_days=days_back)
     today = datetime.now()
     daily_results = []
 
