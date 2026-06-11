@@ -2562,33 +2562,65 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         top3_top1 = top3_rank[0] == idx_top_composite if top3_rank else True
         top4_top1 = top4_rank[0] == idx_top_composite if top4_rank else True
 
-        models_agree = sum([win_top1, top3_top1, top4_top1])
-        # 3/3 = accord total, 2/3 = bon, 1/3 = faible
+        # Ajouter le Ranker comme 4ème signal d'accord
+        ranker_rank = sorted(range(len(analyses)),
+                             key=lambda i: -(analyses[i].get("chanceRanker") or 0))
+        ranker_top1 = ranker_rank[0] == idx_top_composite if ranker_rank else True
 
-        # 3) Score composite
+        models_agree = sum([win_top1, top3_top1, top4_top1, ranker_top1])
+        models_total = 4
+
+        # ═══ CONFIANCE v8.2 — recalibrée ═══
+        # Problème v8.1 : 58% des courses en HAUTE → trop facile
+        # Solution : gap relatif + ranker accord + poids recalibrés
         confiance = 0
-        confiance += min(gap_12, 30) / 30 * 30   # gap : max 30 points
-        confiance += models_agree / 3 * 40         # accord modèles : max 40 points
-        confiance += min(p1, 50) / 50 * 20         # force du #1 : max 20 points
-        # Marché d'accord ? Le favori de la cote est-il notre #1 ?
+
+        # 1) Gap absolu #1 vs #2 (max 20 pts)
+        confiance += min(gap_12, 25) / 25 * 20
+
+        # 2) Gap relatif — domination claire (max 15 pts)
+        if p2 > 0:
+            gap_ratio = p1 / p2
+            confiance += min(max(gap_ratio - 1.0, 0), 1.0) / 1.0 * 15
+
+        # 3) Accord des 4 modèles WIN/TOP3/TOP4/RANKER (max 25 pts)
+        confiance += models_agree / models_total * 25
+
+        # 4) Force absolue du #1 (max 15 pts)
+        confiance += min(p1, 60) / 60 * 15
+
+        # 5) Marché confirme (max 10 pts)
         fav_marche = max(analyses, key=lambda a: a.get("probaMarche") or 0)
         if fav_marche.get("nom") == analyses[0].get("nom"):
-            confiance += 10  # marché confirme
+            confiance += 10
+
+        # 6) Cote basse bonus — favori marché fiable (max 15 pts)
+        cote_top1 = analyses[0].get("cote") or 0
+        if cote_top1 > 0:
+            if cote_top1 <= 2.5:
+                confiance += 15
+            elif cote_top1 <= 3.5:
+                confiance += 10
+            elif cote_top1 <= 5.0:
+                confiance += 5
+
         confiance = min(round(confiance), 100)
 
         analyses[0]["confiance"] = confiance
         analyses[0]["gap12"] = round(gap_12, 1)
-        analyses[0]["modelsAgree"] = f"{models_agree}/3"
+        analyses[0]["gapRatio"] = round(p1 / max(p2, 0.01), 2) if p2 > 0 else 0
+        analyses[0]["modelsAgree"] = f"{models_agree}/{models_total}"
         analyses[0]["winTop1"] = win_top1
         analyses[0]["top3Top1"] = top3_top1
         analyses[0]["top4Top1"] = top4_top1
+        analyses[0]["rankerTop1"] = ranker_top1
 
-        # Niveau de confiance pour l'UI
-        if confiance >= 70:
+        # Niveaux de confiance v8.2 — seuils recalés
+        if confiance >= 80:
             analyses[0]["confianceNiveau"] = "🔥 HAUTE"
-        elif confiance >= 50:
+        elif confiance >= 60:
             analyses[0]["confianceNiveau"] = "✅ BONNE"
-        elif confiance >= 35:
+        elif confiance >= 40:
             analyses[0]["confianceNiveau"] = "⚠️ MOYENNE"
         else:
             analyses[0]["confianceNiveau"] = "❌ FAIBLE"
@@ -2773,10 +2805,10 @@ def backtest(days_back=7, use_ml=False):
 
     # NEW v8 — Stats par niveau de confiance
     confiance_stats = {}
-    for key, label in [("confiance_high", "🔥 Haute (≥70)"),
-                       ("confiance_bonne", "✅ Bonne (50-69)"),
-                       ("confiance_moyenne", "⚠️ Moyenne (35-49)"),
-                       ("confiance_faible", "❌ Faible (<35)")]:
+    for key, label in [("confiance_high", "🔥 Haute (≥80)"),
+                       ("confiance_bonne", "✅ Bonne (60-79)"),
+                       ("confiance_moyenne", "⚠️ Moyenne (40-59)"),
+                       ("confiance_faible", "❌ Faible (<40)")]:
         s = results.get(key, {"win": 0, "total": 0, "gain": 0.0})
         if s["total"] > 0:
             confiance_stats[key] = {
