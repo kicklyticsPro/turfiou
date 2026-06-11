@@ -1429,19 +1429,26 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         X = X_v8
 
         # Data augmentation au niveau course
+        n_orig = len(X)
         X_aug, y_win_aug = augment_course_level(X, y_win, course_ids)
         _, y_top3_aug = augment_course_level(X, y_top3, course_ids)
         _, y_top4_aug = augment_course_level(X, y_top4, course_ids)
         _, y_places_aug = augment_course_level(X, y_places, course_ids)
         _, course_ids_aug = augment_course_level(X, course_ids, course_ids)
 
-        # Vérifier cohérence (augment garde les mêmes tailles)
-        if len(X_aug) != len(y_win_aug):
-            X_aug, y_win_aug = X, y_win
-            y_top3_aug, y_top4_aug = y_top3, y_top4
-            y_places_aug, course_ids_aug = y_places, course_ids
+        # Vérifier cohérence stricte de toutes les tailles
+        sizes = [len(X_aug), len(y_win_aug), len(y_top3_aug),
+                 len(y_top4_aug), len(y_places_aug), len(course_ids_aug)]
+        if len(set(sizes)) != 1:
+            print(f"  ⚠️ Tailles incohérentes après augmentation: {sizes}, on utilise les données originales")
+            X_aug = X
+            y_win_aug = y_win
+            y_top3_aug = y_top3
+            y_top4_aug = y_top4
+            y_places_aug = y_places
+            course_ids_aug = course_ids
 
-        print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-len(X)} augmentés)")
+        print(f"[ML v8] {len(X_aug)} échantillons (dont {len(X_aug)-n_orig} augmentés)")
         print(f"[ML v8] {len(X_aug[0])} features (54 base + 14 ranking + 16 interactions)")
         X = X_aug
         y_win = y_win_aug
@@ -1453,7 +1460,7 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         use_optuna = model_type == "advanced_v8"
 
         # --- Modèle WIN ---
-        print("[ML v8] 🔵 Entraînement WIN (Optuna + XGBoost + LightGBM + TabNet)...")
+        print("[ML v8] 🔵 Entraînement WIN...")
         train_v8(X, y_win, ML_MODEL_WIN_V8_FILE, target="win", use_optuna=use_optuna)
 
         # --- Modèle TOP3 ---
@@ -1464,15 +1471,21 @@ def train_ml_model(days_back=45, exclude_recent=0, n_trees_gbm=50, n_trees_rf=30
         print("[ML v8] 🟢 Entraînement TOP4...")
         train_v8(X, y_top4, ML_MODEL_TOP4_V8_FILE, target="top4", use_optuna=use_optuna)
 
-        # --- Ranker séquentiel (XGBRanker) ---
-        print("[ML v8] 🏆 Entraînement Ranker (XGBRanker — ordre d'arrivée)...")
-        ranker_groups = course_ids  # utiliser les course_ids comme groupes
-        if len(X) >= 200:
-            train_ranker_v8(X, y_places, ranker_groups, ML_MODEL_RANKER_V8_FILE)
-        else:
-            print("  ⚠️ Pas assez de données pour le ranker")
+        # --- Ranker séquentiel (XGBRanker) — protégé ---
+        try:
+            print("[ML v8] 🏆 Entraînement Ranker (XGBRanker)...")
+            if len(X) >= 200 and len(X) == len(y_places) == len(course_ids):
+                train_ranker_v8(X, y_places, course_ids, ML_MODEL_RANKER_V8_FILE)
+            else:
+                print(f"  ⚠️ Tailles incohérentes (X={len(X)}, places={len(y_places)}, ids={len(course_ids)}), ranker ignoré")
+        except Exception as e:
+            print(f"  ⚠️ Ranker échoué ({e}), ignoré")
 
-        # --- Modèles par discipline (TROT vs GALOP) ---
+        # --- Modèles par discipline (TROT vs GALOP) — protégé ---
+        try:
+            _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna)
+        except Exception as e:
+            print(f"  ⚠️ Modèles discipline échoués ({e}), ignorés")
         _train_discipline_models(X, y_win, y_top3, y_places, course_ids, use_optuna)
 
         info["win_model"] = f"V8 stack ({len(X[0])}feat, {len(X)}samples)"
