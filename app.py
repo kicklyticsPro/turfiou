@@ -2511,8 +2511,11 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         cote = a.get("cote") or 0
         ranker_score = a.get("chanceRanker") or 0
 
-        # Score composite v8.1 : TOP3 + WIN + Ranker + TOP4 + heur + marché
-        inv_cote_score = 100 / max(cote, 1) if cote > 0 else 0
+        # Score composite v8.4 : TOP3 + WIN + Ranker + TOP4 + heur + marché
+        # v8.4: remplace inv_cote_score par probaMarche (normalisé)
+        marche = a.get("probaMarche") or 0
+        if marche == 0 and cote > 0:
+            marche = 100 / max(cote, 1)  # fallback
 
         if ranker_score > 0:
             raw_composite = (
@@ -2521,7 +2524,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
                 ranker_score * 0.25 +  # RANKER = signal séquentiel fort
                 top4_ml * 0.10 +       # TOP4 = confirmation
                 heur * 0.05 +          # Heuristique = filet
-                inv_cote_score * 0.15   # Marché
+                marche * 0.15           # Marché (probaMarche normalisé)
             )
         else:
             raw_composite = (
@@ -2529,7 +2532,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
                 win_ml * 0.25 +
                 top4_ml * 0.15 +
                 heur * 0.10 +
-                inv_cote_score * 0.10
+                marche * 0.10
             )
         a["scoreComposite"] = round(raw_composite, 2)
 
@@ -2570,39 +2573,50 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         models_agree = sum([win_top1, top3_top1, top4_top1, ranker_top1])
         models_total = 4
 
-        # ═══ CONFIANCE v8.2 — recalibrée ═══
-        # Problème v8.1 : 58% des courses en HAUTE → trop facile
-        # Solution : gap relatif + ranker accord + poids recalibrés
+        # ═══ CONFIANCE v8.4 — edge ML + zone de valeur ═══
+        # v8.3 : bonus cote basse → favoris sans valeur en HAUTE → ROI -17.9%
+        # v8.4 : edge ML comme signal principal + zone de valeur 2-5
         confiance = 0
 
-        # 1) Gap absolu #1 vs #2 (max 20 pts)
-        confiance += min(gap_12, 25) / 25 * 20
+        # 1) Gap absolu #1 vs #2 (max 25 pts)
+        confiance += min(gap_12, 25) / 25 * 25
 
-        # 2) Gap relatif — domination claire (max 15 pts)
+        # 2) Gap relatif — domination claire (max 10 pts)
         if p2 > 0:
             gap_ratio = p1 / p2
-            confiance += min(max(gap_ratio - 1.0, 0), 1.0) / 1.0 * 15
+            confiance += min(max(gap_ratio - 1.0, 0), 1.5) / 1.5 * 10
 
-        # 3) Accord des 4 modèles WIN/TOP3/TOP4/RANKER (max 25 pts)
-        confiance += models_agree / models_total * 25
+        # 3) Accord des 4 modèles WIN/TOP3/TOP4/RANKER (max 20 pts)
+        confiance += models_agree / models_total * 20
 
-        # 4) Force absolue du #1 (max 15 pts)
-        confiance += min(p1, 60) / 60 * 15
+        # 4) Force absolue du #1 (max 10 pts)
+        confiance += min(p1, 60) / 60 * 10
 
-        # 5) Marché confirme (max 10 pts)
+        # 5) Edge ML — notre prédiction bat-elle le marché ? (max 15 pts)
+        edge_ml = analyses[0].get("edge") or 0
+        if edge_ml > 0:
+            confiance += min(edge_ml, 20) / 20 * 15
+
+        # 6) Marché confirme le #1 (max 5 pts)
         fav_marche = max(analyses, key=lambda a: a.get("probaMarche") or 0)
         if fav_marche.get("nom") == analyses[0].get("nom"):
-            confiance += 10
+            confiance += 5
 
-        # 6) Cote basse bonus — favori marché fiable (max 15 pts)
+        # 7) Zone de valeur de la cote (max 15 pts)
+        # v8.4: Favori écrasant <1.5 → 0 pts (pas de value)
+        #        Zone or 2-5 → 15 pts
+        #        Zone argent 5-8 → 10 pts
         cote_top1 = analyses[0].get("cote") or 0
         if cote_top1 > 0:
-            if cote_top1 <= 2.5:
+            if 2.0 <= cote_top1 <= 5.0:
                 confiance += 15
-            elif cote_top1 <= 3.5:
+            elif 5.0 < cote_top1 <= 8.0:
                 confiance += 10
-            elif cote_top1 <= 5.0:
+            elif 1.5 <= cote_top1 < 2.0:
                 confiance += 5
+            elif 8.0 < cote_top1 <= 12.0:
+                confiance += 5
+            # <1.5 ou >12 : 0 pts
 
         confiance = min(round(confiance), 100)
 
