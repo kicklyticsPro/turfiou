@@ -2656,10 +2656,12 @@ def backtest(days_back=7, use_ml=False):
         "top3_brier_sum": 0.0,
         "super_base_hit": 0, "super_base_total": 0,  # Super Base = meilleur top3 ML dans top 5
         # NEW v8 : Confiance tracking
-        "confiance_high": {"win": 0, "total": 0, "gain": 0.0},
-        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0},
-        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0},
-        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0},
+        "confiance_high": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        # HAUTE VALUE = HAUTE confiance + cote ≥ 2.0
+        "haute_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
     }
 
     tasks = []
@@ -2712,19 +2714,38 @@ def backtest(days_back=7, use_ml=False):
         if top1["ordreArrivee"] and 1 <= top1["ordreArrivee"] <= 3: results["top1_top3"] += 1
         if any(a["ordreArrivee"] == 1 for a in analyses[:3]): results["top3_winner"] += 1
 
-        # NEW v8 — Confiance tracking
+        # NEW v8 — Confiance tracking (GAGNANT + PLACÉ + VALUE)
         confiance_niveau = (top1.get("confianceNiveau") or "").lower()
         confiance_key = None
         if "haute" in confiance_niveau: confiance_key = "confiance_high"
         elif "bonne" in confiance_niveau: confiance_key = "confiance_bonne"
         elif "moyenne" in confiance_niveau: confiance_key = "confiance_moyenne"
         elif "faible" in confiance_niveau: confiance_key = "confiance_faible"
+        top1_place = top1.get("ordreArrivee", 0) or 0
+        top1_cote = top1.get("cote") or 0
         if confiance_key:
             results[confiance_key]["total"] += 1
-            if top1["ordreArrivee"] == 1:
+            # GAGNANT
+            if top1_place == 1:
                 results[confiance_key]["win"] += 1
-                if top1["cote"]:
-                    results[confiance_key]["gain"] += top1["cote"]
+                if top1_cote:
+                    results[confiance_key]["gain"] += top1_cote
+            # PLACÉ (top3)
+            if 1 <= top1_place <= 3:
+                results[confiance_key]["place_win"] += 1
+                # Estimation cote placé ≈ cote / 2.5, min 1.1
+                cote_place = max(top1_cote / 2.5, 1.1) if top1_cote else 0
+                results[confiance_key]["place_gain"] += cote_place
+            # HAUTE VALUE (HAUTE + cote ≥ 2.0)
+            if confiance_key == "confiance_high" and top1_cote >= 2.0:
+                results["haute_value"]["total"] += 1
+                if top1_place == 1:
+                    results["haute_value"]["win"] += 1
+                    results["haute_value"]["gain"] += top1_cote
+                if 1 <= top1_place <= 3:
+                    results["haute_value"]["place_win"] += 1
+                    cote_place = max(top1_cote / 2.5, 1.1)
+                    results["haute_value"]["place_gain"] += cote_place
 
         results["mise_totale"] += 1
         if top1["ordreArrivee"] == 1 and top1["cote"]:
@@ -2803,22 +2824,42 @@ def backtest(days_back=7, use_ml=False):
     results["mise_totale"] = round(results["mise_totale"], 2)
     results["gain_total"] = round(results["gain_total"], 2)
 
-    # NEW v8 — Stats par niveau de confiance
+    # NEW v8 — Stats par niveau de confiance (GAGNANT + PLACÉ)
     confiance_stats = {}
     for key, label in [("confiance_high", "🔥 Haute (≥80)"),
                        ("confiance_bonne", "✅ Bonne (60-79)"),
                        ("confiance_moyenne", "⚠️ Moyenne (40-59)"),
                        ("confiance_faible", "❌ Faible (<40)")]:
-        s = results.get(key, {"win": 0, "total": 0, "gain": 0.0})
+        s = results.get(key, {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0})
         if s["total"] > 0:
-            confiance_stats[key] = {
+            cs = {
                 "label": label,
                 "total": s["total"],
                 "win": s["win"],
                 "taux": round(s["win"] / s["total"] * 100, 1),
                 "roi": round((s["gain"] - s["total"]) / s["total"] * 100, 1),
+                "place_win": s["place_win"],
+                "place_taux": round(s["place_win"] / s["total"] * 100, 1),
+                "place_roi": round((s["place_gain"] - s["total"]) / s["total"] * 100, 1),
             }
+            confiance_stats[key] = cs
     results["confiance_stats"] = confiance_stats
+
+    # HAUTE VALUE stats (HAUTE + cote ≥ 2.0)
+    hv = results["haute_value"]
+    if hv["total"] > 0:
+        results["haute_value_stats"] = {
+            "label": "💎 Haute VALUE (≥80 + cote≥2.0)",
+            "total": hv["total"],
+            "win": hv["win"],
+            "taux": round(hv["win"] / hv["total"] * 100, 1),
+            "roi": round((hv["gain"] - hv["total"]) / hv["total"] * 100, 1),
+            "place_win": hv["place_win"],
+            "place_taux": round(hv["place_win"] / hv["total"] * 100, 1),
+            "place_roi": round((hv["place_gain"] - hv["total"]) / hv["total"] * 100, 1),
+        }
+    else:
+        results["haute_value_stats"] = None
 
     # Kelly stats
     km_tot = results["kelly_mise_totale"]
