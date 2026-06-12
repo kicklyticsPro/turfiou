@@ -2660,8 +2660,14 @@ def backtest(days_back=7, use_ml=False):
         "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
         "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
         "confiance_faible": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        # HAUTE VALUE = HAUTE confiance + cote ≥ 2.0
+        # Strategies combinées
         "haute_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "bonne_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "premium": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        # Par taille de champ
+        "field_small": {"win": 0, "total": 0, "gain": 0.0},   # ≤8 partants
+        "field_medium": {"win": 0, "total": 0, "gain": 0.0},  # 9-12 partants
+        "field_large": {"win": 0, "total": 0, "gain": 0.0},   # 13+ partants
     }
 
     tasks = []
@@ -2723,6 +2729,16 @@ def backtest(days_back=7, use_ml=False):
         elif "faible" in confiance_niveau: confiance_key = "confiance_faible"
         top1_place = top1.get("ordreArrivee", 0) or 0
         top1_cote = top1.get("cote") or 0
+        nb_partants = len(analyses)
+
+        # Estimation cote placé réaliste : dépend du nb partants
+        # Formule empirique : cote_place ≈ 1 + (cote - 1) * min(nb_partants, 14) / 30
+        if top1_cote > 0:
+            cote_place = 1.0 + (top1_cote - 1.0) * min(nb_partants, 14) / 30.0
+            cote_place = max(cote_place, 1.05)
+        else:
+            cote_place = 0
+
         if confiance_key:
             results[confiance_key]["total"] += 1
             # GAGNANT
@@ -2733,9 +2749,18 @@ def backtest(days_back=7, use_ml=False):
             # PLACÉ (top3)
             if 1 <= top1_place <= 3:
                 results[confiance_key]["place_win"] += 1
-                # Estimation cote placé ≈ cote / 2.5, min 1.1
-                cote_place = max(top1_cote / 2.5, 1.1) if top1_cote else 0
                 results[confiance_key]["place_gain"] += cote_place
+
+            # PREMIUM (≥60 confiance = HAUTE+BONNE)
+            if confiance_key in ("confiance_high", "confiance_bonne"):
+                results["premium"]["total"] += 1
+                if top1_place == 1:
+                    results["premium"]["win"] += 1
+                    results["premium"]["gain"] += top1_cote
+                if 1 <= top1_place <= 3:
+                    results["premium"]["place_win"] += 1
+                    results["premium"]["place_gain"] += cote_place
+
             # HAUTE VALUE (HAUTE + cote ≥ 2.0)
             if confiance_key == "confiance_high" and top1_cote >= 2.0:
                 results["haute_value"]["total"] += 1
@@ -2744,15 +2769,35 @@ def backtest(days_back=7, use_ml=False):
                     results["haute_value"]["gain"] += top1_cote
                 if 1 <= top1_place <= 3:
                     results["haute_value"]["place_win"] += 1
-                    cote_place = max(top1_cote / 2.5, 1.1)
                     results["haute_value"]["place_gain"] += cote_place
+
+            # BONNE VALUE (BONNE + cote ≥ 2.5)
+            if confiance_key == "confiance_bonne" and top1_cote >= 2.5:
+                results["bonne_value"]["total"] += 1
+                if top1_place == 1:
+                    results["bonne_value"]["win"] += 1
+                    results["bonne_value"]["gain"] += top1_cote
+                if 1 <= top1_place <= 3:
+                    results["bonne_value"]["place_win"] += 1
+                    results["bonne_value"]["place_gain"] += cote_place
+
+        # Par taille de champ
+        if nb_partants <= 8:
+            fk = "field_small"
+        elif nb_partants <= 12:
+            fk = "field_medium"
+        else:
+            fk = "field_large"
+        results[fk]["total"] += 1
+        if top1_place == 1 and top1_cote:
+            results[fk]["win"] += 1
+            results[fk]["gain"] += top1_cote
 
         results["mise_totale"] += 1
         if top1["ordreArrivee"] == 1 and top1["cote"]:
             results["gain_total"] += top1["cote"]
 
         # NEW v6 — Top 4 tracking
-        top1_place = top1.get("ordreArrivee", 0) or 0
         if 1 <= top1_place <= 4:
             results["top1_top4_hit"] += 1
 
@@ -2860,6 +2905,54 @@ def backtest(days_back=7, use_ml=False):
         }
     else:
         results["haute_value_stats"] = None
+
+    # BONNE VALUE stats (BONNE + cote ≥ 2.5)
+    bv = results["bonne_value"]
+    if bv["total"] > 0:
+        results["bonne_value_stats"] = {
+            "label": "✨ Bonne VALUE (60-79 + cote≥2.5)",
+            "total": bv["total"],
+            "win": bv["win"],
+            "taux": round(bv["win"] / bv["total"] * 100, 1),
+            "roi": round((bv["gain"] - bv["total"]) / bv["total"] * 100, 1),
+            "place_win": bv["place_win"],
+            "place_taux": round(bv["place_win"] / bv["total"] * 100, 1),
+            "place_roi": round((bv["place_gain"] - bv["total"]) / bv["total"] * 100, 1),
+        }
+    else:
+        results["bonne_value_stats"] = None
+
+    # PREMIUM stats (HAUTE+BONNE combiné)
+    pr = results["premium"]
+    if pr["total"] > 0:
+        results["premium_stats"] = {
+            "label": "🏅 PREMIUM (≥60 confiance)",
+            "total": pr["total"],
+            "win": pr["win"],
+            "taux": round(pr["win"] / pr["total"] * 100, 1),
+            "roi": round((pr["gain"] - pr["total"]) / pr["total"] * 100, 1),
+            "place_win": pr["place_win"],
+            "place_taux": round(pr["place_win"] / pr["total"] * 100, 1),
+            "place_roi": round((pr["place_gain"] - pr["total"]) / pr["total"] * 100, 1),
+        }
+    else:
+        results["premium_stats"] = None
+
+    # Field size stats
+    field_stats = {}
+    for fk, fl in [("field_small", "🐎 ≤8 partants"),
+                    ("field_medium", "🐎 9-12 partants"),
+                    ("field_large", "🐎 13+ partants")]:
+        fs = results[fk]
+        if fs["total"] > 0:
+            field_stats[fk] = {
+                "label": fl,
+                "total": fs["total"],
+                "win": fs["win"],
+                "taux": round(fs["win"] / fs["total"] * 100, 1),
+                "roi": round((fs["gain"] - fs["total"]) / fs["total"] * 100, 1),
+            }
+    results["field_stats"] = field_stats
 
     # Kelly stats
     km_tot = results["kelly_mise_totale"]
