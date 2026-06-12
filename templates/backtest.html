@@ -312,6 +312,7 @@ function renderBacktest(d) {
           <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
           <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
           ${s.place_win > 0 ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
+          ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
         </div>
       `).join('')}
     </div>
@@ -341,6 +342,16 @@ function renderBacktest(d) {
           <div style="font-size:20px;font-weight:800;color:${d.bonne_value_stats.taux >= 35 ? '#10b981' : '#f59e0b'};">${d.bonne_value_stats.taux}%</div>
           <div style="font-size:10px;color:#64748b;">${d.bonne_value_stats.win}/${d.bonne_value_stats.total} gagnant · ROI ${d.bonne_value_stats.roi > 0 ? '+' : ''}${d.bonne_value_stats.roi}%</div>
           ${d.bonne_value_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.bonne_value_stats.place_taux}% · ROI ${d.bonne_value_stats.place_roi > 0 ? '+' : ''}${d.bonne_value_stats.place_roi}%</div>` : ''}
+          ${d.bonne_value_stats.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${d.bonne_value_stats.avg_cote}</div>` : ''}
+        </div>
+        ` : ''}
+        ${d.value_combo_stats ? `
+        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(245,158,11,0.15));border-radius:8px;padding:10px;border:2px solid ${d.value_combo_stats.roi > 0 ? '#10b981' : '#ef4444'};">
+          <div style="font-size:10px;color:#10b981;font-weight:700;">${d.value_combo_stats.label}</div>
+          <div style="font-size:22px;font-weight:800;color:${d.value_combo_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.value_combo_stats.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${d.value_combo_stats.win}/${d.value_combo_stats.total} gagnant · ROI ${d.value_combo_stats.roi > 0 ? '+' : ''}${d.value_combo_stats.roi}%</div>
+          ${d.value_combo_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.value_combo_stats.place_taux}% · ROI ${d.value_combo_stats.place_roi > 0 ? '+' : ''}${d.value_combo_stats.place_roi}%</div>` : ''}
+          ${d.value_combo_stats.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${d.value_combo_stats.avg_cote}</div>` : ''}
         </div>
         ` : ''}
       </div>
