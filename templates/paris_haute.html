@@ -144,6 +144,10 @@
   </div>
   <div class="controls">
     <input type="date" id="datePicker">
+    <select id="filterMode" style="padding:6px 10px;border-radius:6px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
+      <option value="haute">🔥 HAUTE (≥80)</option>
+      <option value="haute_value">💎 HAUTE VALUE (≥80 + cote≥2)</option>
+    </select>
     <button onclick="scanDay()">🔥 Scanner le jour</button>
     <button onclick="scanDay(true)" style="background:#3b82f6;">📡 Live</button>
   </div>
@@ -156,7 +160,7 @@
       <div class="emoji">🔥</div>
       <h2>PARIS HAUTE</h2>
       <p>Scannez toutes les courses du jour et ne gardez que les chevaux avec confiance <strong>🔥 HAUTE (≥80)</strong></p>
-      <p style="font-size:12px; margin-top:10px; color:#fcd34d;">Backtest: 84.9% top1 · ROI +436%</p>
+      <p style="font-size:12px; margin-top:10px; color:#fcd34d;">Backtest: HAUTE ≥80 → 51.9% top1 · HAUTE VALUE (cote≥2) en test</p>
       <p style="font-size:12px; margin-top:6px; color:#94a3b8;">Sélectionnez une date et cliquez sur Scanner.</p>
     </div>
   </div>
@@ -226,7 +230,11 @@ async function scanDay(live=false) {
         const conf = top1.confiance || 0;
         const niveau = (top1.confianceNiveau || '').toUpperCase();
 
-        if (conf >= 80 && niveau.includes('HAUTE')) {
+        const filterMode = document.getElementById('filterMode').value;
+        const minConf = 80;
+        const minCote = filterMode === 'haute_value' ? 2.0 : 0;
+
+        if (conf >= minConf && niveau.includes('HAUTE') && (top1.cote || 0) >= minCote) {
           // Trouver le 2ème cheval pour comparaison
           const top2 = analyses[1] || {};
           hauteCourses.push({
@@ -236,6 +244,7 @@ async function scanDay(live=false) {
             conf,
             gap: top1.gap12 || 0,
             courseInfo: br.data.course || {},
+            isValue: (top1.cote || 0) >= 2.0,
           });
         }
       }
@@ -245,10 +254,12 @@ async function scanDay(live=false) {
 
     // 4. Afficher les résultats
     if (hauteCourses.length === 0) {
+      const filterMode = document.getElementById('filterMode').value;
+      const filterLabel = filterMode === 'haute_value' ? 'HAUTE VALUE (≥80 + cote≥2.0)' : 'HAUTE (≥80)';
       results.innerHTML = `<div class="empty-state">
         <div class="emoji">😐</div>
-        <h2>Aucun paris HAUTE aujourd'hui</h2>
-        <p style="color:#94a3b8;">${totalScanned} courses scannées, aucune avec confiance ≥ 80</p>
+        <h2>Aucun paris ${filterLabel} aujourd'hui</h2>
+        <p style="color:#94a3b8;">${totalScanned} courses scannées, aucune avec confiance ${filterLabel}</p>
         <p style="color:#94a3b8; margin-top:8px;">C'est normal — mieux vaut ne pas parier que parier sans confiance.</p>
       </div>`;
       return;

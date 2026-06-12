@@ -113,6 +113,7 @@
     <a href="/bilan">📊 Bilan</a>
     <a href="/force">💪 Force</a>
     <a href="/edge">⚡ EDGE</a>
+    <a href="/paris-haute">🔥 Paris</a>
     <a href="/paris">📋 Mes paris</a>
     <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
   </div>
@@ -304,15 +305,28 @@ function renderBacktest(d) {
 
     ${d.confiance_stats && Object.keys(d.confiance_stats).length > 0 ? `
     <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">🎯 Taux par Confiance du #1 (score composite v8)</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px;">
       ${Object.values(d.confiance_stats).map(s => `
         <div style="background:rgba(30,41,59,0.6);border-radius:8px;padding:10px;border:1px solid ${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">
           <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">${s.label}</div>
           <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
           <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
+          ${s.place_win > 0 ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
         </div>
       `).join('')}
     </div>
+    ${d.haute_value_stats ? `
+    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(59,130,246,0.15));border-radius:10px;padding:12px;border:1px solid #10b981;margin-bottom:12px;">
+      <div style="font-size:12px;color:#10b981;font-weight:700;">💎 Stratégie HAUTE VALUE (≥80 + cote ≥ 2.0)</div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;">
+        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.taux >= 45 ? '#10b981' : '#f59e0b'};">${d.haute_value_stats.taux}%</div><div style="font-size:9px;color:#64748b;">Gagnant</div></div>
+        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.roi > 0 ? '#10b981' : '#ef4444'};">${d.haute_value_stats.roi > 0 ? '+' : ''}${d.haute_value_stats.roi}%</div><div style="font-size:9px;color:#64748b;">ROI Gagnant</div></div>
+        <div><div style="font-size:18px;font-weight:800;color:#f59e0b;">${d.haute_value_stats.place_taux}%</div><div style="font-size:9px;color:#64748b;">PLACÉ</div></div>
+        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.place_roi > 0 ? '#10b981' : '#ef4444'};">${d.haute_value_stats.place_roi > 0 ? '+' : ''}${d.haute_value_stats.place_roi}%</div><div style="font-size:9px;color:#64748b;">ROI PLACÉ</div></div>
+      </div>
+      <div style="font-size:10px;color:#64748b;margin-top:6px;">${d.haute_value_stats.win}/${d.haute_value_stats.total} gagnant · ${d.haute_value_stats.place_win} placé · cote ≥ 2.0</div>
+    </div>
+    ` : ''}
     <div style="font-size:11px;color:#64748b;margin-bottom:12px;">💡 Plus la confiance est haute, plus le taux de réussite augmente. Parier seulement en confiance HAUTE ou BONNE atteint 45%+.</div>
     ` : ''}
 
