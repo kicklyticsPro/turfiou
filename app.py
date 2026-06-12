@@ -2656,14 +2656,15 @@ def backtest(days_back=7, use_ml=False):
         "top3_brier_sum": 0.0,
         "super_base_hit": 0, "super_base_total": 0,  # Super Base = meilleur top3 ML dans top 5
         # NEW v8 : Confiance tracking
-        "confiance_high": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "confiance_high": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
         # Strategies combinées
-        "haute_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        "bonne_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
-        "premium": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0},
+        "haute_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "bonne_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "premium": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
+        "value_combo": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
         # Par taille de champ
         "field_small": {"win": 0, "total": 0, "gain": 0.0},   # ≤8 partants
         "field_medium": {"win": 0, "total": 0, "gain": 0.0},  # 9-12 partants
@@ -2741,6 +2742,7 @@ def backtest(days_back=7, use_ml=False):
 
         if confiance_key:
             results[confiance_key]["total"] += 1
+            results[confiance_key]["cote_sum"] += top1_cote
             # GAGNANT
             if top1_place == 1:
                 results[confiance_key]["win"] += 1
@@ -2754,6 +2756,7 @@ def backtest(days_back=7, use_ml=False):
             # PREMIUM (≥60 confiance = HAUTE+BONNE)
             if confiance_key in ("confiance_high", "confiance_bonne"):
                 results["premium"]["total"] += 1
+                results["premium"]["cote_sum"] += top1_cote
                 if top1_place == 1:
                     results["premium"]["win"] += 1
                     results["premium"]["gain"] += top1_cote
@@ -2764,22 +2767,42 @@ def backtest(days_back=7, use_ml=False):
             # HAUTE VALUE (HAUTE + cote ≥ 2.0)
             if confiance_key == "confiance_high" and top1_cote >= 2.0:
                 results["haute_value"]["total"] += 1
+                results["haute_value"]["cote_sum"] += top1_cote
                 if top1_place == 1:
                     results["haute_value"]["win"] += 1
                     results["haute_value"]["gain"] += top1_cote
                 if 1 <= top1_place <= 3:
                     results["haute_value"]["place_win"] += 1
                     results["haute_value"]["place_gain"] += cote_place
+                # VALUE COMBO
+                results["value_combo"]["total"] += 1
+                results["value_combo"]["cote_sum"] += top1_cote
+                if top1_place == 1:
+                    results["value_combo"]["win"] += 1
+                    results["value_combo"]["gain"] += top1_cote
+                if 1 <= top1_place <= 3:
+                    results["value_combo"]["place_win"] += 1
+                    results["value_combo"]["place_gain"] += cote_place
 
             # BONNE VALUE (BONNE + cote ≥ 2.5)
             if confiance_key == "confiance_bonne" and top1_cote >= 2.5:
                 results["bonne_value"]["total"] += 1
+                results["bonne_value"]["cote_sum"] += top1_cote
                 if top1_place == 1:
                     results["bonne_value"]["win"] += 1
                     results["bonne_value"]["gain"] += top1_cote
                 if 1 <= top1_place <= 3:
                     results["bonne_value"]["place_win"] += 1
                     results["bonne_value"]["place_gain"] += cote_place
+                # VALUE COMBO
+                results["value_combo"]["total"] += 1
+                results["value_combo"]["cote_sum"] += top1_cote
+                if top1_place == 1:
+                    results["value_combo"]["win"] += 1
+                    results["value_combo"]["gain"] += top1_cote
+                if 1 <= top1_place <= 3:
+                    results["value_combo"]["place_win"] += 1
+                    results["value_combo"]["place_gain"] += cote_place
 
         # Par taille de champ
         if nb_partants <= 8:
@@ -2869,13 +2892,13 @@ def backtest(days_back=7, use_ml=False):
     results["mise_totale"] = round(results["mise_totale"], 2)
     results["gain_total"] = round(results["gain_total"], 2)
 
-    # NEW v8 — Stats par niveau de confiance (GAGNANT + PLACÉ)
+    # NEW v8 — Stats par niveau de confiance (GAGNANT + PLACÉ + avg cote)
     confiance_stats = {}
     for key, label in [("confiance_high", "🔥 Haute (≥80)"),
                        ("confiance_bonne", "✅ Bonne (60-79)"),
                        ("confiance_moyenne", "⚠️ Moyenne (40-59)"),
                        ("confiance_faible", "❌ Faible (<40)")]:
-        s = results.get(key, {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0})
+        s = results.get(key, {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0})
         if s["total"] > 0:
             cs = {
                 "label": label,
@@ -2886,57 +2909,30 @@ def backtest(days_back=7, use_ml=False):
                 "place_win": s["place_win"],
                 "place_taux": round(s["place_win"] / s["total"] * 100, 1),
                 "place_roi": round((s["place_gain"] - s["total"]) / s["total"] * 100, 1),
+                "avg_cote": round(s["cote_sum"] / s["total"], 2),
             }
             confiance_stats[key] = cs
     results["confiance_stats"] = confiance_stats
 
-    # HAUTE VALUE stats (HAUTE + cote ≥ 2.0)
-    hv = results["haute_value"]
-    if hv["total"] > 0:
-        results["haute_value_stats"] = {
-            "label": "💎 Haute VALUE (≥80 + cote≥2.0)",
-            "total": hv["total"],
-            "win": hv["win"],
-            "taux": round(hv["win"] / hv["total"] * 100, 1),
-            "roi": round((hv["gain"] - hv["total"]) / hv["total"] * 100, 1),
-            "place_win": hv["place_win"],
-            "place_taux": round(hv["place_win"] / hv["total"] * 100, 1),
-            "place_roi": round((hv["place_gain"] - hv["total"]) / hv["total"] * 100, 1),
+    def _strat_stats(d, label):
+        if d["total"] == 0:
+            return None
+        return {
+            "label": label,
+            "total": d["total"],
+            "win": d["win"],
+            "taux": round(d["win"] / d["total"] * 100, 1),
+            "roi": round((d["gain"] - d["total"]) / d["total"] * 100, 1),
+            "place_win": d["place_win"],
+            "place_taux": round(d["place_win"] / d["total"] * 100, 1),
+            "place_roi": round((d["place_gain"] - d["total"]) / d["total"] * 100, 1),
+            "avg_cote": round(d["cote_sum"] / d["total"], 2),
         }
-    else:
-        results["haute_value_stats"] = None
 
-    # BONNE VALUE stats (BONNE + cote ≥ 2.5)
-    bv = results["bonne_value"]
-    if bv["total"] > 0:
-        results["bonne_value_stats"] = {
-            "label": "✨ Bonne VALUE (60-79 + cote≥2.5)",
-            "total": bv["total"],
-            "win": bv["win"],
-            "taux": round(bv["win"] / bv["total"] * 100, 1),
-            "roi": round((bv["gain"] - bv["total"]) / bv["total"] * 100, 1),
-            "place_win": bv["place_win"],
-            "place_taux": round(bv["place_win"] / bv["total"] * 100, 1),
-            "place_roi": round((bv["place_gain"] - bv["total"]) / bv["total"] * 100, 1),
-        }
-    else:
-        results["bonne_value_stats"] = None
-
-    # PREMIUM stats (HAUTE+BONNE combiné)
-    pr = results["premium"]
-    if pr["total"] > 0:
-        results["premium_stats"] = {
-            "label": "🏅 PREMIUM (≥60 confiance)",
-            "total": pr["total"],
-            "win": pr["win"],
-            "taux": round(pr["win"] / pr["total"] * 100, 1),
-            "roi": round((pr["gain"] - pr["total"]) / pr["total"] * 100, 1),
-            "place_win": pr["place_win"],
-            "place_taux": round(pr["place_win"] / pr["total"] * 100, 1),
-            "place_roi": round((pr["place_gain"] - pr["total"]) / pr["total"] * 100, 1),
-        }
-    else:
-        results["premium_stats"] = None
+    results["haute_value_stats"] = _strat_stats(results["haute_value"], "💎 Haute VALUE (≥80 + cote≥2.0)")
+    results["bonne_value_stats"] = _strat_stats(results["bonne_value"], "✨ Bonne VALUE (60-79 + cote≥2.5)")
+    results["premium_stats"] = _strat_stats(results["premium"], "🏅 PREMIUM (≥60 confiance)")
+    results["value_combo_stats"] = _strat_stats(results["value_combo"], "🎯 VALUE COMBO (HAUTE≥2 + BONNE≥2.5)")
 
     # Field size stats
     field_stats = {}
