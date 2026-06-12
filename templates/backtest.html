@@ -315,16 +315,45 @@ function renderBacktest(d) {
         </div>
       `).join('')}
     </div>
-    ${d.haute_value_stats ? `
-    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(59,130,246,0.15));border-radius:10px;padding:12px;border:1px solid #10b981;margin-bottom:12px;">
-      <div style="font-size:12px;color:#10b981;font-weight:700;">💎 Stratégie HAUTE VALUE (≥80 + cote ≥ 2.0)</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:8px;">
-        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.taux >= 45 ? '#10b981' : '#f59e0b'};">${d.haute_value_stats.taux}%</div><div style="font-size:9px;color:#64748b;">Gagnant</div></div>
-        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.roi > 0 ? '#10b981' : '#ef4444'};">${d.haute_value_stats.roi > 0 ? '+' : ''}${d.haute_value_stats.roi}%</div><div style="font-size:9px;color:#64748b;">ROI Gagnant</div></div>
-        <div><div style="font-size:18px;font-weight:800;color:#f59e0b;">${d.haute_value_stats.place_taux}%</div><div style="font-size:9px;color:#64748b;">PLACÉ</div></div>
-        <div><div style="font-size:18px;font-weight:800;color:${d.haute_value_stats.place_roi > 0 ? '#10b981' : '#ef4444'};">${d.haute_value_stats.place_roi > 0 ? '+' : ''}${d.haute_value_stats.place_roi}%</div><div style="font-size:9px;color:#64748b;">ROI PLACÉ</div></div>
+    ${d.haute_value_stats || d.bonne_value_stats || d.premium_stats ? `
+    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(59,130,246,0.1));border-radius:10px;padding:12px;border:1px solid #334155;margin-bottom:12px;">
+      <div style="font-size:12px;color:#10b981;font-weight:700;margin-bottom:10px;">📊 Stratégies de Paris Comparées</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
+        ${d.premium_stats ? `
+        <div style="background:rgba(16,185,129,0.1);border-radius:8px;padding:10px;border:1px solid ${d.premium_stats.roi > 0 ? '#10b981' : '#ef4444'};">
+          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.premium_stats.label}</div>
+          <div style="font-size:20px;font-weight:800;color:${d.premium_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.premium_stats.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${d.premium_stats.win}/${d.premium_stats.total} gagnant · ROI ${d.premium_stats.roi > 0 ? '+' : ''}${d.premium_stats.roi}%</div>
+          ${d.premium_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.premium_stats.place_taux}% · ROI ${d.premium_stats.place_roi > 0 ? '+' : ''}${d.premium_stats.place_roi}%</div>` : ''}
+        </div>
+        ` : ''}
+        ${d.haute_value_stats ? `
+        <div style="background:rgba(59,130,246,0.1);border-radius:8px;padding:10px;border:1px solid ${d.haute_value_stats.roi > 0 ? '#3b82f6' : '#ef4444'};">
+          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.haute_value_stats.label}</div>
+          <div style="font-size:20px;font-weight:800;color:${d.haute_value_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.haute_value_stats.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${d.haute_value_stats.win}/${d.haute_value_stats.total} gagnant · ROI ${d.haute_value_stats.roi > 0 ? '+' : ''}${d.haute_value_stats.roi}%</div>
+          ${d.haute_value_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.haute_value_stats.place_taux}% · ROI ${d.haute_value_stats.place_roi > 0 ? '+' : ''}${d.haute_value_stats.place_roi}%</div>` : ''}
+        </div>
+        ` : ''}
+        ${d.bonne_value_stats ? `
+        <div style="background:rgba(245,158,11,0.1);border-radius:8px;padding:10px;border:1px solid ${d.bonne_value_stats.roi > 0 ? '#f59e0b' : '#ef4444'};">
+          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.bonne_value_stats.label}</div>
+          <div style="font-size:20px;font-weight:800;color:${d.bonne_value_stats.taux >= 35 ? '#10b981' : '#f59e0b'};">${d.bonne_value_stats.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${d.bonne_value_stats.win}/${d.bonne_value_stats.total} gagnant · ROI ${d.bonne_value_stats.roi > 0 ? '+' : ''}${d.bonne_value_stats.roi}%</div>
+          ${d.bonne_value_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.bonne_value_stats.place_taux}% · ROI ${d.bonne_value_stats.place_roi > 0 ? '+' : ''}${d.bonne_value_stats.place_roi}%</div>` : ''}
+        </div>
+        ` : ''}
       </div>
-      <div style="font-size:10px;color:#64748b;margin-top:6px;">${d.haute_value_stats.win}/${d.haute_value_stats.total} gagnant · ${d.haute_value_stats.place_win} placé · cote ≥ 2.0</div>
+      ${d.field_stats && Object.keys(d.field_stats).length > 0 ? `
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #334155;">
+        <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">🐎 Par taille de champ :</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;">
+          ${Object.values(d.field_stats).map(fs => `
+            <span style="font-size:11px;color:${fs.roi > 0 ? '#10b981' : '#ef4444'};">${fs.label}: ${fs.taux}% (${fs.win}/${fs.total}) ROI ${fs.roi > 0 ? '+' : ''}${fs.roi}%</span>
+          `).join('')}
+        </div>
+      </div>
+      ` : ''}
     </div>
     ` : ''}
     <div style="font-size:11px;color:#64748b;margin-bottom:12px;">💡 Plus la confiance est haute, plus le taux de réussite augmente. Parier seulement en confiance HAUTE ou BONNE atteint 45%+.</div>

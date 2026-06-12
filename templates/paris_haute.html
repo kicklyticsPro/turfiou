@@ -145,8 +145,10 @@
   <div class="controls">
     <input type="date" id="datePicker">
     <select id="filterMode" style="padding:6px 10px;border-radius:6px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
+      <option value="premium">🏅 PREMIUM (≥60)</option>
       <option value="haute">🔥 HAUTE (≥80)</option>
       <option value="haute_value">💎 HAUTE VALUE (≥80 + cote≥2)</option>
+      <option value="bonne_value">✨ BONNE VALUE (60-79 + cote≥2.5)</option>
     </select>
     <button onclick="scanDay()">🔥 Scanner le jour</button>
     <button onclick="scanDay(true)" style="background:#3b82f6;">📡 Live</button>
@@ -231,10 +233,20 @@ async function scanDay(live=false) {
         const niveau = (top1.confianceNiveau || '').toUpperCase();
 
         const filterMode = document.getElementById('filterMode').value;
-        const minConf = 80;
-        const minCote = filterMode === 'haute_value' ? 2.0 : 0;
+        const top1Cote = top1.cote || 0;
 
-        if (conf >= minConf && niveau.includes('HAUTE') && (top1.cote || 0) >= minCote) {
+        let include = false;
+        if (filterMode === 'premium') {
+          include = conf >= 60;
+        } else if (filterMode === 'haute') {
+          include = conf >= 80 && niveau.includes('HAUTE');
+        } else if (filterMode === 'haute_value') {
+          include = conf >= 80 && niveau.includes('HAUTE') && top1Cote >= 2.0;
+        } else if (filterMode === 'bonne_value') {
+          include = conf >= 60 && conf < 80 && !niveau.includes('HAUTE') && top1Cote >= 2.5;
+        }
+
+        if (include) {
           // Trouver le 2ème cheval pour comparaison
           const top2 = analyses[1] || {};
           hauteCourses.push({
