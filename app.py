@@ -83,6 +83,14 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-secret-2026")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
+# ═══ Global error handler ═══
+@app.errorhandler(Exception)
+def handle_exception(e):
+    """Catch all unhandled exceptions and return JSON instead of crashing."""
+    import traceback
+    traceback.print_exc()
+    return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
+
 
 # ── Helper : nettoyer les NaN pour la sérialisation JSON ──
 # Python float('nan') → JSON "NaN" (invalide) → on convertit en None → JSON "null"
@@ -2588,50 +2596,46 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         models_agree = sum([win_top1, top3_top1, top4_top1, ranker_top1])
         models_total = 4
 
-        # ═══ CONFIANCE v8.4 — edge ML + zone de valeur ═══
-        # v8.3 : bonus cote basse → favoris sans valeur en HAUTE → ROI -17.9%
-        # v8.4 : edge ML comme signal principal + zone de valeur 2-5
+        # ═══ CONFIANCE v8.5 — signaux fiables uniquement ═══
+        # v8.4: edge ML favorise les outsiders (faux signal) → cote moy 8.6 → 25% top1
+        # v8.5: recentrer sur gap + accord modèles + marché
+        # Règle: un bon pronostic = tout le monde est d'accord ET il domine
         confiance = 0
 
-        # 1) Gap absolu #1 vs #2 (max 25 pts)
-        confiance += min(gap_12, 25) / 25 * 25
+        # 1) Gap absolu #1 vs #2 (max 30 pts) — signal le plus fiable
+        confiance += min(gap_12, 30) / 30 * 30
 
-        # 2) Gap relatif — domination claire (max 10 pts)
+        # 2) Gap relatif — domination claire (max 15 pts)
         if p2 > 0:
             gap_ratio = p1 / p2
-            confiance += min(max(gap_ratio - 1.0, 0), 1.5) / 1.5 * 10
+            confiance += min(max(gap_ratio - 1.0, 0), 2.0) / 2.0 * 15
 
-        # 3) Accord des 4 modèles WIN/TOP3/TOP4/RANKER (max 20 pts)
-        confiance += models_agree / models_total * 20
+        # 3) Accord des 4 modèles WIN/TOP3/TOP4/RANKER (max 25 pts)
+        # C'est le 2ème signal le plus fiable
+        confiance += models_agree / models_total * 25
 
         # 4) Force absolue du #1 (max 10 pts)
         confiance += min(p1, 60) / 60 * 10
 
-        # 5) Edge ML — notre prédiction bat-elle le marché ? (max 15 pts)
-        edge_ml = _safe(analyses[0].get("edge"))
-        if edge_ml > 0:
-            confiance += min(edge_ml, 20) / 20 * 15
-
-        # 6) Marché confirme le #1 (max 5 pts)
+        # 5) Marché confirme le #1 (max 10 pts)
+        # Si le favori du marché = notre #1, c'est un signal fort
         fav_marche = max(analyses, key=lambda a: _safe(a.get("probaMarche")))
         if fav_marche.get("nom") == analyses[0].get("nom"):
-            confiance += 5
+            confiance += 10
 
-        # 7) Zone de valeur de la cote (max 15 pts)
-        # v8.4: Favori écrasant <1.5 → 0 pts (pas de value)
-        #        Zone or 2-5 → 15 pts
-        #        Zone argent 5-8 → 10 pts
+        # 6) Cote dans la zone réaliste (max 10 pts)
+        # Favori 1.5-3 → le plus prévisible
+        # Zone 3-6 → acceptable
+        # >6 → trop risqué, pénalité
         cote_top1 = _safe(analyses[0].get("cote"))
         if cote_top1 > 0:
-            if 2.0 <= cote_top1 <= 5.0:
-                confiance += 15
-            elif 5.0 < cote_top1 <= 8.0:
-                confiance += 10
-            elif 1.5 <= cote_top1 < 2.0:
-                confiance += 5
-            elif 8.0 < cote_top1 <= 12.0:
-                confiance += 5
-            # <1.5 ou >12 : 0 pts
+            if 1.5 <= cote_top1 <= 3.0:
+                confiance += 10  # Favori fiable
+            elif 3.0 < cote_top1 <= 5.0:
+                confiance += 7   # Bonne zone
+            elif 5.0 < cote_top1 <= 6.0:
+                confiance += 3   # Limite
+            # <1.5 ou >6 : 0 pts (trop risqué ou pas de valeur)
 
         confiance = min(round(confiance), 100)
 
@@ -2801,8 +2805,8 @@ def backtest(days_back=7, use_ml=False):
                     results["premium"]["place_win"] += 1
                     results["premium"]["place_gain"] += cote_place
 
-            # HAUTE VALUE (HAUTE + cote ≥ 2.0)
-            if confiance_key == "confiance_high" and top1_cote >= 2.0:
+            # HAUTE VALUE (HAUTE + cote 2.0-6.0)
+            if confiance_key == "confiance_high" and 2.0 <= top1_cote <= 6.0:
                 results["haute_value"]["total"] += 1
                 results["haute_value"]["cote_sum"] += top1_cote
                 if top1_place == 1:
@@ -2821,8 +2825,8 @@ def backtest(days_back=7, use_ml=False):
                     results["value_combo"]["place_win"] += 1
                     results["value_combo"]["place_gain"] += cote_place
 
-            # BONNE VALUE (BONNE + cote ≥ 2.5)
-            if confiance_key == "confiance_bonne" and top1_cote >= 2.5:
+            # BONNE VALUE (BONNE + cote 2.5-6.0)
+            if confiance_key == "confiance_bonne" and 2.5 <= top1_cote <= 6.0:
                 results["bonne_value"]["total"] += 1
                 results["bonne_value"]["cote_sum"] += top1_cote
                 if top1_place == 1:
@@ -2966,10 +2970,10 @@ def backtest(days_back=7, use_ml=False):
             "avg_cote": round(d["cote_sum"] / d["total"], 2),
         }
 
-    results["haute_value_stats"] = _strat_stats(results["haute_value"], "💎 Haute VALUE (≥80 + cote≥2.0)")
-    results["bonne_value_stats"] = _strat_stats(results["bonne_value"], "✨ Bonne VALUE (60-79 + cote≥2.5)")
+    results["haute_value_stats"] = _strat_stats(results["haute_value"], "💎 Haute VALUE (≥80 + cote 2-6)")
+    results["bonne_value_stats"] = _strat_stats(results["bonne_value"], "✨ Bonne VALUE (60-79 + cote 2.5-6)")
     results["premium_stats"] = _strat_stats(results["premium"], "🏅 PREMIUM (≥60 confiance)")
-    results["value_combo_stats"] = _strat_stats(results["value_combo"], "🎯 VALUE COMBO (HAUTE≥2 + BONNE≥2.5)")
+    results["value_combo_stats"] = _strat_stats(results["value_combo"], "🎯 VALUE COMBO (cote 2-6)")
 
     # Field size stats
     field_stats = {}
@@ -3628,13 +3632,19 @@ def api_course(r_num, c_num):
         parts = get_participants_live(date_str, r_num, c_num) if live else get_participants(date_str, r_num, c_num)
         perfs = get_performances(date_str, r_num, c_num)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur API PMU: {e}", "traceback": traceback.format_exc()}), 500
+
+    if not parts:
+        return jsonify({"error": "Aucun participant trouvé pour cette course"})
 
     course_info = None
     reunion_info = None
     discipline = None
     hippodrome = None
     type_corde = None
+    terrain = None
     for r in prog["programme"]["reunions"]:
         if r["numOfficiel"] == r_num:
             hippodrome = r["hippodrome"]["libelleCourt"]
@@ -3658,8 +3668,25 @@ def api_course(r_num, c_num):
                         "ordreArrivee": c.get("ordreArrivee"),
                     }
 
-    team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
-        max_days=HISTORY_DAYS)
+    # ═══ ANTI-LEAK : exclure les jours analysés des stats ═══
+    # Si on analyse une date passée, les stats ne doivent PAS contenir
+    # les résultats de cette date (sinon le modèle "sait déjà" qui a gagné)
+    today = datetime.now()
+    try:
+        analysed_date = datetime.strptime(date_str, "%d%m%Y")
+    except (ValueError, TypeError):
+        analysed_date = today
+    days_since = (today - analysed_date).days
+    exclude_days = max(days_since, 0)  # 0 si aujourd'hui, N si passé
+
+    try:
+        team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
+            max_days=HISTORY_DAYS, exclude_recent_days=exclude_days)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur stats: {e}", "traceback": traceback.format_exc()}), 500
+
     try:
         analyses = analyser_course(parts, perfs,
                                     course_info.get("distance") if course_info else None,
@@ -3673,14 +3700,25 @@ def api_course(r_num, c_num):
         traceback.print_exc()
         return jsonify({"error": f"Erreur analyse: {e}", "traceback": traceback.format_exc()}), 500
 
-    return jsonify({
+    # Detect past course (data leak warning)
+    is_past = days_since > 0
+    has_results = False
+    if course_info and course_info.get("arriveeDefinitive"):
+        has_results = True
+
+    result = {
         "date": date_str, "reunion": reunion_info, "course": course_info,
         "analyses": analyses,
         "ml_active": use_ml and load_ml_model() is not None,
         "ml_top4_active": use_ml and load_ml_model_top4() is not None,
         "live": live,
         "timestamp": datetime.now().isoformat(),
-    })
+        "is_past": is_past,
+        "has_results": has_results,
+    }
+    if has_results:
+        result["warning"] = "COURSE PASSEE - cotes definitives et stats biaisent les predictions"
+    return jsonify(result)
 
 
 @app.route("/api/course-pdf/<int:r_num>/<int:c_num>")
@@ -3734,8 +3772,16 @@ def api_course_pdf(r_num, c_num):
                         "nbPartants": c.get("nombreDeclaresPartants"),
                     }
 
+    # Anti-leak: exclure les jours de la date analysée
+    today = datetime.now()
+    try:
+        analysed_date = datetime.strptime(date_str, "%d%m%Y")
+    except (ValueError, TypeError):
+        analysed_date = today
+    days_since = max((today - analysed_date).days, 0)
+
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
-        max_days=HISTORY_DAYS)
+        max_days=HISTORY_DAYS, exclude_recent_days=days_since)
     analyses = analyser_course(parts, perfs,
                                 course_info.get("distance") if course_info else None,
                                 discipline, hippodrome, type_corde,
@@ -4249,6 +4295,26 @@ def start_auto_train_scheduler():
     t = threading.Thread(target=_scheduler_loop, daemon=True)
     t.start()
     print(f"[Auto-Train] Planificateur actif — entraînement quotidien à {ML_AUTO_TRAIN_HOUR:02d}:{ML_AUTO_TRAIN_MIN:02d}")
+
+
+@app.route("/api/health")
+def api_health():
+    """Health check — teste si le serveur et l'analyse fonctionnent."""
+    try:
+        ml = load_ml_model()
+        ml_top4 = load_ml_model_top4()
+        ml_top3 = load_ml_model_top3()
+        return jsonify({
+            "status": "ok",
+            "models": {
+                "win": ml is not None,
+                "top4": ml_top4 is not None,
+                "top3": ml_top3 is not None,
+            },
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/ml-status")
