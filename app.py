@@ -42,6 +42,21 @@ from lib.features_v4 import (build_pedigree_stats, get_pedigree_score,
                               compute_nb_courses_recent, compute_corde_avantage)
 from lib import bets_tracker
 
+# ═══ NaN-safe helper ═══
+# Flask jsonify CRASH on NaN values. Python's `nan or 0` returns nan (NaN is truthy).
+# This helper ensures NaN/None → 0 for all numeric fields.
+def _safe(val, default=0):
+    """Convert None/NaN/Inf to a safe default value."""
+    if val is None:
+        return default
+    try:
+        import math
+        if math.isnan(val) or math.isinf(val):
+            return default
+    except (TypeError, ValueError):
+        pass
+    return val
+
 # NEW v5 - modèle avancé
 try:
     from lib.ml_advanced import train_advanced, load_advanced
@@ -2504,16 +2519,16 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     # La clé : TOP3 ML est le modèle le plus fiable (25% positifs)
     # Donc il doit dominer le classement.
     for a in analyses:
-        win_ml = a.get("chanceML") or a.get("chance") or 0
-        top3_ml = a.get("chanceTop3ML") or 0
-        top4_ml = a.get("chanceTop4ML") or 0
-        heur = a.get("chanceHeur") or a.get("chance") or 0
-        cote = a.get("cote") or 0
-        ranker_score = a.get("chanceRanker") or 0
+        win_ml = _safe(a.get("chanceML") or a.get("chance"))
+        top3_ml = _safe(a.get("chanceTop3ML"))
+        top4_ml = _safe(a.get("chanceTop4ML"))
+        heur = _safe(a.get("chanceHeur") or a.get("chance"))
+        cote = _safe(a.get("cote"))
+        ranker_score = _safe(a.get("chanceRanker"))
 
         # Score composite v8.4 : TOP3 + WIN + Ranker + TOP4 + heur + marché
         # v8.4: remplace inv_cote_score par probaMarche (normalisé)
-        marche = a.get("probaMarche") or 0
+        marche = _safe(a.get("probaMarche"))
         if marche == 0 and cote > 0:
             marche = 100 / max(cote, 1)  # fallback
 
@@ -2537,7 +2552,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         a["scoreComposite"] = round(raw_composite, 2)
 
     # Trier par score composite (pas juste chance)
-    analyses.sort(key=lambda x: -(x.get("scoreComposite") or x.get("chance") or 0))
+    analyses.sort(key=lambda x: -_safe(x.get("scoreComposite") or x.get("chance")))
     for rank, a in enumerate(analyses, 1):
         a["rang"] = rank
 
@@ -2545,19 +2560,19 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
     # Mesure à quel point on est sûr du #1.
     # Un score haut = #1 clairement au-dessus = plus de chance de gagner.
     if len(analyses) >= 2:
-        p1 = analyses[0].get("scoreComposite") or analyses[0].get("chance") or 0
-        p2 = analyses[1].get("scoreComposite") or analyses[1].get("chance") or 0
+        p1 = _safe(analyses[0].get("scoreComposite") or analyses[0].get("chance"))
+        p2 = _safe(analyses[1].get("scoreComposite") or analyses[1].get("chance"))
 
         # 1) Gap #1 vs #2
         gap_12 = p1 - p2
 
         # 2) Accord des modèles : est-ce que WIN, TOP3, TOP4 ont le même #1 ?
         win_rank = sorted(range(len(analyses)),
-                          key=lambda i: -(analyses[i].get("chanceML") or analyses[i].get("chance") or 0))
+                          key=lambda i: -_safe(analyses[i].get("chanceML") or analyses[i].get("chance")))
         top3_rank = sorted(range(len(analyses)),
-                           key=lambda i: -(analyses[i].get("chanceTop3ML") or 0))
+                           key=lambda i: -_safe(analyses[i].get("chanceTop3ML")))
         top4_rank = sorted(range(len(analyses)),
-                           key=lambda i: -(analyses[i].get("chanceTop4ML") or 0))
+                           key=lambda i: -_safe(analyses[i].get("chanceTop4ML")))
 
         # Le #1 du classement est-il aussi #1 dans chaque modèle ?
         idx_top_composite = 0  # analyses[0] après tri
@@ -2567,7 +2582,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
 
         # Ajouter le Ranker comme 4ème signal d'accord
         ranker_rank = sorted(range(len(analyses)),
-                             key=lambda i: -(analyses[i].get("chanceRanker") or 0))
+                             key=lambda i: -_safe(analyses[i].get("chanceRanker")))
         ranker_top1 = ranker_rank[0] == idx_top_composite if ranker_rank else True
 
         models_agree = sum([win_top1, top3_top1, top4_top1, ranker_top1])
@@ -2593,12 +2608,12 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         confiance += min(p1, 60) / 60 * 10
 
         # 5) Edge ML — notre prédiction bat-elle le marché ? (max 15 pts)
-        edge_ml = analyses[0].get("edge") or 0
+        edge_ml = _safe(analyses[0].get("edge"))
         if edge_ml > 0:
             confiance += min(edge_ml, 20) / 20 * 15
 
         # 6) Marché confirme le #1 (max 5 pts)
-        fav_marche = max(analyses, key=lambda a: a.get("probaMarche") or 0)
+        fav_marche = max(analyses, key=lambda a: _safe(a.get("probaMarche")))
         if fav_marche.get("nom") == analyses[0].get("nom"):
             confiance += 5
 
@@ -2606,7 +2621,7 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         # v8.4: Favori écrasant <1.5 → 0 pts (pas de value)
         #        Zone or 2-5 → 15 pts
         #        Zone argent 5-8 → 10 pts
-        cote_top1 = analyses[0].get("cote") or 0
+        cote_top1 = _safe(analyses[0].get("cote"))
         if cote_top1 > 0:
             if 2.0 <= cote_top1 <= 5.0:
                 confiance += 15
@@ -2639,9 +2654,17 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
         else:
             analyses[0]["confianceNiveau"] = "❌ FAIBLE"
 
-    # Supprimer les données internes non JSON-sérialisables
+    # Supprimer les données internes non JSON-sérialisables + nettoyer NaN
     for a in analyses:
         a.pop("_perfs_detail", None)
+        # NaN-safe : remplacer tous les NaN/Inf par None ou 0
+        for key, val in list(a.items()):
+            if isinstance(val, float):
+                import math
+                if math.isnan(val) or math.isinf(val):
+                    a[key] = 0 if key in ("confiance", "scoreComposite", "chance", "chanceML",
+                                           "chanceTop3ML", "chanceTop4ML", "chanceRanker",
+                                           "edge", "cote", "gap12") else None
 
     return analyses
 
@@ -3637,13 +3660,18 @@ def api_course(r_num, c_num):
 
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
         max_days=HISTORY_DAYS)
-    analyses = analyser_course(parts, perfs,
-                                course_info.get("distance") if course_info else None,
-                                discipline, hippodrome, type_corde,
-                                team_stats, horse_stats, elo, elo_hist,
-                                horse_races, pedigree, use_ml=use_ml,
-                                capital=capital,
-                                terrain=terrain)
+    try:
+        analyses = analyser_course(parts, perfs,
+                                    course_info.get("distance") if course_info else None,
+                                    discipline, hippodrome, type_corde,
+                                    team_stats, horse_stats, elo, elo_hist,
+                                    horse_races, pedigree, use_ml=use_ml,
+                                    capital=capital,
+                                    terrain=terrain)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Erreur analyse: {e}", "traceback": traceback.format_exc()}), 500
 
     return jsonify({
         "date": date_str, "reunion": reunion_info, "course": course_info,
@@ -3955,9 +3983,12 @@ def api_backtest():
     use_ml = request.args.get("ml") == "1"
     days = min(days, 30)
     try:
-        return jsonify(backtest(days_back=days, use_ml=use_ml))
+        import traceback
+        result = backtest(days_back=days, use_ml=use_ml)
+        return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        traceback.print_exc()
+        return jsonify({"error": str(e), "traceback": traceback.format_exc()}), 500
 
 
 @app.route("/api/train-reset", methods=["POST"])
