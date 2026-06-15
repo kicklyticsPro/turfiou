@@ -108,14 +108,10 @@
 <header>
   <h1>🐎 Turf Analyzer — Backtest & ML <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
   <div class="nav-links">
-    <a href="/admin">Analyse</a>
-    <a href="/backtest" class="active">Backtest & ML</a>
-    <a href="/bilan">📊 Bilan</a>
-    <a href="/force">💪 Force</a>
-    <a href="/edge">⚡ EDGE</a>
+    <a href="/admin">🔍 Analyse</a>
     <a href="/paris-haute">🔥 Paris</a>
-    <a href="/paris">📋 Mes paris</a>
-    <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
+    <a href="/backtest" class="active">📊 Backtest</a>
+    <a href="/logout" style="color:#ef4444;">🔓</a>
   </div>
 </header>
 
@@ -169,21 +165,16 @@
       <label style="display:flex;align-items:center;gap:6px;">
         <input type="checkbox" id="btML" style="width:auto;"> Avec ML
       </label>
+      <select id="btMode" style="padding:4px 8px;border-radius:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
+        <option value="strat">⚡ Stratégies (rapide)</option>
+        <option value="full">📊 Complet</option>
+      </select>
       <button onclick="runBacktest()">▶️ Lancer</button>
     </div>
     <div id="btResult"></div>
   </div>
 
   <!-- Top teams -->
-  <div class="section">
-    <h2>👥 Top drivers & entraîneurs</h2>
-    <div class="tabs">
-      <div class="tab active" onclick="showTab('drivers', this)">Drivers</div>
-      <div class="tab" onclick="showTab('entraineurs', this)">Entraîneurs</div>
-    </div>
-    <button onclick="loadTeamStats()">🔄 Charger</button>
-    <div id="teamResult"></div>
-  </div>
 </div>
 
 <script>
@@ -263,16 +254,111 @@ async function pollTrainStatus() {
 async function runBacktest() {
   const days = document.getElementById('btDays').value;
   const ml = document.getElementById('btML').checked ? '&ml=1' : '';
+  const mode = document.getElementById('btMode').value;
   const res_div = document.getElementById('btResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Backtest en cours…</div>';
+  const modeLabel = mode === 'strat' ? 'stratégies' : 'complet';
+  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Backtest ' + modeLabel + ' en cours…</div>';
   try {
-    const res = await fetch(`/api/backtest?days=${days}${ml}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 300000); // 5 min timeout
+    const res = await fetch(`/api/backtest?days=${days}${ml}&mode=${mode}`, { signal: controller.signal });
+    clearTimeout(timeout);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
-    renderBacktest(data);
+    if (data.mode === 'strat') {
+      renderBacktestStrat(data);
+    } else {
+      renderBacktest(data);
+    }
   } catch(e) {
-    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+    if (e.name === 'AbortError') {
+      res_div.innerHTML = `<div class="error">❌ Timeout — le backtest a pris trop de temps.</div>`;
+    } else {
+      res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
+    }
   }
+}
+
+function renderBacktestStrat(d) {
+  const roiCls = d.roi > 0 ? 'roi-positive' : 'roi-negative';
+  let html = `
+    <div style="background:rgba(16,185,129,0.1);border:1px solid #10b981;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;">
+      ⚡ Mode stratégies — backtest rapide (${d.total_courses} courses)
+    </div>
+
+    <h3 style="margin:14px 0 8px;color:#06b6d4;font-size:14px;">📊 Pronostic #1 (mise fixe 1€)</h3>
+    <div class="results-grid">
+      <div class="stat-card"><div class="value">${d.total_courses}</div><div class="label">Courses</div></div>
+      <div class="stat-card"><div class="value">${d.taux_top1}%</div><div class="label">#1 gagne</div></div>
+      <div class="stat-card"><div class="value">${d.taux_top1_place}%</div><div class="label">#1 dans tiercé</div></div>
+      <div class="stat-card ${roiCls}"><div class="value">${d.roi>0?'+':''}${d.roi}%</div><div class="label">ROI</div></div>
+      <div class="stat-card"><div class="value">${d.gain_total}€</div><div class="label">Gain</div></div>
+    </div>
+  `;
+
+  // Confiance stats
+  if (d.confiance_stats && Object.keys(d.confiance_stats).length > 0) {
+    html += `
+    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">🎯 Taux par Confiance du #1</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px;">
+      ${Object.values(d.confiance_stats).map(s => `
+        <div style="background:rgba(30,41,59,0.6);border-radius:8px;padding:10px;border:1px solid ${s.taux >= 45 ? '#10b981' : s.taux >= 30 ? '#f59e0b' : '#ef4444'};">
+          <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">${s.label}</div>
+          <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 30 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
+          <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
+          ${s.place_win > 0 ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
+          ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
+        </div>
+      `).join('')}
+    </div>`;
+  }
+
+  // Strategies
+  html += renderStrategies(d);
+
+  // Field size
+  if (d.field_stats && Object.keys(d.field_stats).length > 0) {
+    html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #334155;">
+      <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">🐎 Par taille de champ :</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        ${Object.values(d.field_stats).map(fs => `
+          <span style="font-size:11px;color:${fs.roi > 0 ? '#10b981' : '#ef4444'};">${fs.label}: ${fs.taux}% (${fs.win}/${fs.total}) ROI ${fs.roi > 0 ? '+' : ''}${fs.roi}%</span>
+        `).join('')}
+      </div>
+    </div>`;
+  }
+
+  document.getElementById('btResult').innerHTML = html;
+}
+
+function renderStrategies(d) {
+  if (!d.premium_stats && !d.haute_value_stats && !d.bonne_value_stats && !d.value_combo_stats) return '';
+  let html = `
+    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">📊 Stratégies de Paris Comparées</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px;">`;
+
+  const strats = [
+    {s: d.premium_stats, color: '#10b981', border: '#10b981'},
+    {s: d.haute_value_stats, color: '#3b82f6', border: '#3b82f6'},
+    {s: d.bonne_value_stats, color: '#f59e0b', border: '#f59e0b'},
+    {s: d.value_combo_stats, color: '#10b981', border: '#10b981', highlight: true},
+  ];
+
+  for (const {s, color, border, highlight} of strats) {
+    if (!s) continue;
+    const bg = highlight ? 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(245,158,11,0.15))' : `rgba(${color === '#10b981' ? '16,185,129' : color === '#3b82f6' ? '59,130,246' : '245,158,11'},0.1)`;
+    html += `
+      <div style="background:${bg};border-radius:8px;padding:10px;border:1px solid ${s.roi > 0 ? border : '#ef4444'};${highlight ? 'border-width:2px;' : ''}">
+        <div style="font-size:10px;color:#94a3b8;font-weight:${highlight ? '700' : '600'};">${s.label}</div>
+        <div style="font-size:20px;font-weight:800;color:${s.taux >= 40 ? '#10b981' : '#f59e0b'};">${s.taux}%</div>
+        <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} gagnant · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
+        ${s.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
+        ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
+      </div>`;
+  }
+
+  html += '</div>';
+  return html;
 }
 
 function renderBacktest(d) {
@@ -316,57 +402,7 @@ function renderBacktest(d) {
         </div>
       `).join('')}
     </div>
-    ${d.haute_value_stats || d.bonne_value_stats || d.premium_stats ? `
-    <div style="background:linear-gradient(135deg,rgba(16,185,129,0.1),rgba(59,130,246,0.1));border-radius:10px;padding:12px;border:1px solid #334155;margin-bottom:12px;">
-      <div style="font-size:12px;color:#10b981;font-weight:700;margin-bottom:10px;">📊 Stratégies de Paris Comparées</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;">
-        ${d.premium_stats ? `
-        <div style="background:rgba(16,185,129,0.1);border-radius:8px;padding:10px;border:1px solid ${d.premium_stats.roi > 0 ? '#10b981' : '#ef4444'};">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.premium_stats.label}</div>
-          <div style="font-size:20px;font-weight:800;color:${d.premium_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.premium_stats.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${d.premium_stats.win}/${d.premium_stats.total} gagnant · ROI ${d.premium_stats.roi > 0 ? '+' : ''}${d.premium_stats.roi}%</div>
-          ${d.premium_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.premium_stats.place_taux}% · ROI ${d.premium_stats.place_roi > 0 ? '+' : ''}${d.premium_stats.place_roi}%</div>` : ''}
-        </div>
-        ` : ''}
-        ${d.haute_value_stats ? `
-        <div style="background:rgba(59,130,246,0.1);border-radius:8px;padding:10px;border:1px solid ${d.haute_value_stats.roi > 0 ? '#3b82f6' : '#ef4444'};">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.haute_value_stats.label}</div>
-          <div style="font-size:20px;font-weight:800;color:${d.haute_value_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.haute_value_stats.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${d.haute_value_stats.win}/${d.haute_value_stats.total} gagnant · ROI ${d.haute_value_stats.roi > 0 ? '+' : ''}${d.haute_value_stats.roi}%</div>
-          ${d.haute_value_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.haute_value_stats.place_taux}% · ROI ${d.haute_value_stats.place_roi > 0 ? '+' : ''}${d.haute_value_stats.place_roi}%</div>` : ''}
-        </div>
-        ` : ''}
-        ${d.bonne_value_stats ? `
-        <div style="background:rgba(245,158,11,0.1);border-radius:8px;padding:10px;border:1px solid ${d.bonne_value_stats.roi > 0 ? '#f59e0b' : '#ef4444'};">
-          <div style="font-size:10px;color:#94a3b8;font-weight:600;">${d.bonne_value_stats.label}</div>
-          <div style="font-size:20px;font-weight:800;color:${d.bonne_value_stats.taux >= 35 ? '#10b981' : '#f59e0b'};">${d.bonne_value_stats.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${d.bonne_value_stats.win}/${d.bonne_value_stats.total} gagnant · ROI ${d.bonne_value_stats.roi > 0 ? '+' : ''}${d.bonne_value_stats.roi}%</div>
-          ${d.bonne_value_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.bonne_value_stats.place_taux}% · ROI ${d.bonne_value_stats.place_roi > 0 ? '+' : ''}${d.bonne_value_stats.place_roi}%</div>` : ''}
-          ${d.bonne_value_stats.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${d.bonne_value_stats.avg_cote}</div>` : ''}
-        </div>
-        ` : ''}
-        ${d.value_combo_stats ? `
-        <div style="background:linear-gradient(135deg,rgba(16,185,129,0.15),rgba(245,158,11,0.15));border-radius:8px;padding:10px;border:2px solid ${d.value_combo_stats.roi > 0 ? '#10b981' : '#ef4444'};">
-          <div style="font-size:10px;color:#10b981;font-weight:700;">${d.value_combo_stats.label}</div>
-          <div style="font-size:22px;font-weight:800;color:${d.value_combo_stats.taux >= 40 ? '#10b981' : '#f59e0b'};">${d.value_combo_stats.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${d.value_combo_stats.win}/${d.value_combo_stats.total} gagnant · ROI ${d.value_combo_stats.roi > 0 ? '+' : ''}${d.value_combo_stats.roi}%</div>
-          ${d.value_combo_stats.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${d.value_combo_stats.place_taux}% · ROI ${d.value_combo_stats.place_roi > 0 ? '+' : ''}${d.value_combo_stats.place_roi}%</div>` : ''}
-          ${d.value_combo_stats.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${d.value_combo_stats.avg_cote}</div>` : ''}
-        </div>
-        ` : ''}
-      </div>
-      ${d.field_stats && Object.keys(d.field_stats).length > 0 ? `
-      <div style="margin-top:10px;padding-top:8px;border-top:1px solid #334155;">
-        <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">🐎 Par taille de champ :</div>
-        <div style="display:flex;gap:12px;flex-wrap:wrap;">
-          ${Object.values(d.field_stats).map(fs => `
-            <span style="font-size:11px;color:${fs.roi > 0 ? '#10b981' : '#ef4444'};">${fs.label}: ${fs.taux}% (${fs.win}/${fs.total}) ROI ${fs.roi > 0 ? '+' : ''}${fs.roi}%</span>
-          `).join('')}
-        </div>
-      </div>
-      ` : ''}
-    </div>
-    ` : ''}
+    ${renderStrategies(d)}
     <div style="font-size:11px;color:#64748b;margin-bottom:12px;">💡 Plus la confiance est haute, plus le taux de réussite augmente. Parier seulement en confiance HAUTE ou BONNE atteint 45%+.</div>
     ` : ''}
 
