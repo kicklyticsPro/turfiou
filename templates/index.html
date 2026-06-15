@@ -303,6 +303,7 @@
     <a href="/bilan">📊 Bilan</a>
     <a href="/force">💪 Force</a>
     <a href="/edge">⚡ EDGE</a>
+    <a href="/paris-haute">🔥 Paris</a>
     <a href="/paris">📋 Mes paris</a>
     <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
   </div>
@@ -466,12 +467,22 @@ function renderCourse(data) {
   const main = document.getElementById('mainContent');
   const valueBets = analyses.filter(a => a.valueBet);
 
-  let html = `
+  let html = '';
+  // Warning si course passee (data leak)
+  if (data.has_results || data.is_past) {
+    html += `<div style="background:rgba(239,68,68,0.15);border:2px solid #ef4444;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
+      <div style="color:#ef4444;font-weight:700;font-size:13px;">⚠️ COURSE PASSÉE — Résultats déjà connus</div>
+      <div style="color:#f59e0b;font-size:11px;margin-top:4px;">Les cotes sont définitives et les stats incluent ces résultats. Les prédictions sont biaisées et ne reflètent PAS ce qui était prévisible avant la course.</div>
+    </div>`;
+  }
+
+  html += `
     <div class="course-header">
       <h2>${course.libelle}
         ${ml_active ? '<span class="badge-ml">🧠 ML</span>' : ''}
         ${data.ml_top4_active ? '<span class="badge-ml-top4">🎯 Top4</span>' : ''}
         ${live ? '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>' : ''}
+        ${data.has_results ? '<span style="background:#ef4444;color:white;padding:2px 8px;border-radius:3px;font-size:10px;">ARRIVÉE</span>' : ''}
       </h2>
       <div class="meta">
         <span>📍 <strong>${reunion.hippodrome}</strong></span>
