@@ -132,7 +132,7 @@ def admin_required(f):
 PMU_BASE = "https://offline.turfinfo.api.pmu.fr/rest/client/61/programme"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TurfAnalyzer/4.0)"}
 
-CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
+CACHE_DIR = os.environ.get("CACHE_DIR", "/root/turfiou/cache")
 try:
     os.makedirs(CACHE_DIR, exist_ok=True)
 except Exception:
@@ -2679,31 +2679,67 @@ def analyser_course(participants_data, perfs_data=None, distance=None,
 def backtest_strat(days_back=7, use_ml=False):
     """Backtest ultra-rapide : ne track que les stratégies de paris.
     Skip les per-horse loops (value bets, top4/top3 ML, super base, Kelly).
-    ~3x plus rapide que le backtest complet."""
+    ~3x plus rapide que le backtest complet.
+    Inclut le breakdown par discipline."""
     team_stats, horse_stats, elo, elo_hist, horse_races, pedigree = compute_all_stats(
         max_days=HISTORY_DAYS, exclude_recent_days=days_back)
     today = datetime.now()
+
+    # Mapping discipline API → label court
+    DISC_LABELS = {
+        "TROT_ATTELE": "🏇 Attelé",
+        "TROT_MONTE": "🐎 Monté",
+        "GALOP": "🏁 Plat",
+        "GALOP_PLAT": "🏁 Plat",
+        "GALOP_HAIE": "🌿 Haie",
+        "GALOP_STEEPLE": "🏔️ Steeple",
+    }
+    DISC_GROUPS = {
+        "TROT_ATTELE": "attelle",
+        "TROT_MONTE": "monte",
+        "GALOP": "plat",
+        "GALOP_PLAT": "plat",
+        "GALOP_HAIE": "haie",
+        "GALOP_STEEPLE": "steeple",
+    }
+
+    # Helper: empty counter
+    def _empty():
+        return {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0}
+
     results = {
         "total_courses": 0, "top1_winner": 0, "top1_top3": 0,
         "mise_totale": 0.0, "gain_total": 0.0,
-        # Confiance
-        "confiance_high": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "confiance_bonne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "confiance_moyenne": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "confiance_faible": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        # Strategies
-        "haute_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "bonne_value": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "premium": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        "value_combo": {"win": 0, "total": 0, "gain": 0.0, "place_win": 0, "place_gain": 0.0, "cote_sum": 0.0},
-        # Field
+        "confiance_high": _empty(), "confiance_bonne": _empty(),
+        "confiance_moyenne": _empty(), "confiance_faible": _empty(),
+        "haute_value": _empty(), "bonne_value": _empty(),
+        "premium": _empty(), "value_combo": _empty(),
         "field_small": {"win": 0, "total": 0, "gain": 0.0},
         "field_medium": {"win": 0, "total": 0, "gain": 0.0},
         "field_large": {"win": 0, "total": 0, "gain": 0.0},
     }
 
+    # Discipline-specific tracking: disc_results[group][confiance_key] = counter
+    disc_results = defaultdict(lambda: {
+        "top1_winner": 0, "top1_top3": 0, "total": 0, "gain": 0.0, "mise": 0.0,
+        "confiance_high": _empty(), "confiance_bonne": _empty(),
+        "confiance_moyenne": _empty(), "confiance_faible": _empty(),
+        "haute_value": _empty(), "bonne_value": _empty(),
+        "premium": _empty(), "value_combo": _empty(),
+    })
+
+    # Helper: increment a counter dict
+    def _inc(d, win, cote, cote_place):
+        d["total"] += 1
+        d["cote_sum"] += cote
+        if win:
+            d["win"] += 1
+            d["gain"] += cote
+        if cote_place > 0 and cote_place >= 1:
+            d["place_win"] += 1
+            d["place_gain"] += cote_place
+
     tasks = []
-    metas = []
     for delta in range(1, days_back + 1):
         d = today - timedelta(days=delta)
         date_str = fmt_date(d)
@@ -2749,11 +2785,23 @@ def backtest_strat(days_back=7, use_ml=False):
             results["top1_top3"] += 1
 
         # Cote placé
+        cote_place = 0
         if top1_cote > 0:
-            cote_place = 1.0 + (top1_cote - 1.0) * min(nb_partants, 14) / 30.0
-            cote_place = max(cote_place, 1.05)
-        else:
-            cote_place = 0
+            cote_place = max(1.0 + (top1_cote - 1.0) * min(nb_partants, 14) / 30.0, 1.05)
+        is_win = top1_place == 1
+
+        # Discipline group
+        disc_group = DISC_GROUPS.get(discipline, "autre")
+
+        # Disc-level tracking
+        dr = disc_results[disc_group]
+        dr["total"] += 1
+        dr["mise"] += 1
+        if is_win:
+            dr["top1_winner"] += 1
+            dr["gain"] += top1_cote
+        if 1 <= top1_place <= 3:
+            dr["top1_top3"] += 1
 
         # Confiance
         confiance_niveau = (top1.get("confianceNiveau") or "").lower()
@@ -2763,80 +2811,42 @@ def backtest_strat(days_back=7, use_ml=False):
         elif "moyenne" in confiance_niveau: confiance_key = "confiance_moyenne"
         elif "faible" in confiance_niveau: confiance_key = "confiance_faible"
 
-        if confiance_key:
-            results[confiance_key]["total"] += 1
-            results[confiance_key]["cote_sum"] += top1_cote
-            if top1_place == 1:
-                results[confiance_key]["win"] += 1
-                if top1_cote:
-                    results[confiance_key]["gain"] += top1_cote
-            if 1 <= top1_place <= 3:
-                results[confiance_key]["place_win"] += 1
-                results[confiance_key]["place_gain"] += cote_place
+        # Dossiers à mettre à jour: global + discipline
+        trackers = [results]  # always track global
+        trackers.append(dr)
 
-            # PREMIUM
-            if confiance_key in ("confiance_high", "confiance_bonne"):
-                results["premium"]["total"] += 1
-                results["premium"]["cote_sum"] += top1_cote
-                if top1_place == 1:
-                    results["premium"]["win"] += 1
-                    results["premium"]["gain"] += top1_cote
-                if 1 <= top1_place <= 3:
-                    results["premium"]["place_win"] += 1
-                    results["premium"]["place_gain"] += cote_place
+        for t in trackers:
+            if confiance_key:
+                _inc(t[confiance_key], is_win, top1_cote, cote_place)
 
-            # HAUTE VALUE
-            if confiance_key == "confiance_high" and 2.0 <= top1_cote <= 6.0:
-                results["haute_value"]["total"] += 1
-                results["haute_value"]["cote_sum"] += top1_cote
-                if top1_place == 1:
-                    results["haute_value"]["win"] += 1
-                    results["haute_value"]["gain"] += top1_cote
-                if 1 <= top1_place <= 3:
-                    results["haute_value"]["place_win"] += 1
-                    results["haute_value"]["place_gain"] += cote_place
-                results["value_combo"]["total"] += 1
-                results["value_combo"]["cote_sum"] += top1_cote
-                if top1_place == 1:
-                    results["value_combo"]["win"] += 1
-                    results["value_combo"]["gain"] += top1_cote
-                if 1 <= top1_place <= 3:
-                    results["value_combo"]["place_win"] += 1
-                    results["value_combo"]["place_gain"] += cote_place
+                # PREMIUM
+                if confiance_key in ("confiance_high", "confiance_bonne"):
+                    _inc(t["premium"], is_win, top1_cote, cote_place)
 
-            # BONNE VALUE
-            if confiance_key == "confiance_bonne" and 2.5 <= top1_cote <= 6.0:
-                results["bonne_value"]["total"] += 1
-                results["bonne_value"]["cote_sum"] += top1_cote
-                if top1_place == 1:
-                    results["bonne_value"]["win"] += 1
-                    results["bonne_value"]["gain"] += top1_cote
-                if 1 <= top1_place <= 3:
-                    results["bonne_value"]["place_win"] += 1
-                    results["bonne_value"]["place_gain"] += cote_place
-                results["value_combo"]["total"] += 1
-                results["value_combo"]["cote_sum"] += top1_cote
-                if top1_place == 1:
-                    results["value_combo"]["win"] += 1
-                    results["value_combo"]["gain"] += top1_cote
-                if 1 <= top1_place <= 3:
-                    results["value_combo"]["place_win"] += 1
-                    results["value_combo"]["place_gain"] += cote_place
+                # HAUTE VALUE
+                if confiance_key == "confiance_high" and 2.0 <= top1_cote <= 6.0:
+                    _inc(t["haute_value"], is_win, top1_cote, cote_place)
+                    _inc(t["value_combo"], is_win, top1_cote, cote_place)
 
-        # Field size
+                # BONNE VALUE
+                if confiance_key == "confiance_bonne" and 2.5 <= top1_cote <= 6.0:
+                    _inc(t["bonne_value"], is_win, top1_cote, cote_place)
+                    _inc(t["value_combo"], is_win, top1_cote, cote_place)
+
+        # Field size (global only)
         if nb_partants <= 8: fk = "field_small"
         elif nb_partants <= 12: fk = "field_medium"
         else: fk = "field_large"
         results[fk]["total"] += 1
-        if top1_place == 1 and top1_cote:
+        if is_win and top1_cote:
             results[fk]["win"] += 1
             results[fk]["gain"] += top1_cote
 
         results["mise_totale"] += 1
-        if top1_place == 1 and top1_cote:
+        if is_win and top1_cote:
             results["gain_total"] += top1_cote
 
-    # Build output — same format as backtest for the strategy section
+    # ═══ Build output ═══
     n = results["total_courses"] or 1
     out = {
         "total_courses": results["total_courses"],
@@ -2850,26 +2860,6 @@ def backtest_strat(days_back=7, use_ml=False):
         "mode": "strat",
     }
 
-    # Confiance stats
-    confiance_stats = {}
-    for key, label in [("confiance_high", "🔥 Haute (≥80)"),
-                       ("confiance_bonne", "✅ Bonne (60-79)"),
-                       ("confiance_moyenne", "⚠️ Moyenne (40-59)"),
-                       ("confiance_faible", "❌ Faible (<40)")]:
-        s = results.get(key, {})
-        if s.get("total", 0) > 0:
-            confiance_stats[key] = {
-                "label": label, "total": s["total"], "win": s["win"],
-                "taux": round(s["win"] / s["total"] * 100, 1),
-                "roi": round((s["gain"] - s["total"]) / s["total"] * 100, 1),
-                "place_win": s["place_win"],
-                "place_taux": round(s["place_win"] / s["total"] * 100, 1),
-                "place_roi": round((s["place_gain"] - s["total"]) / s["total"] * 100, 1),
-                "avg_cote": round(s["cote_sum"] / s["total"], 2),
-            }
-    out["confiance_stats"] = confiance_stats
-
-    # Strategies
     def _strat(d, label):
         if d["total"] == 0: return None
         return {
@@ -2881,6 +2871,19 @@ def backtest_strat(days_back=7, use_ml=False):
             "place_roi": round((d["place_gain"] - d["total"]) / d["total"] * 100, 1),
             "avg_cote": round(d["cote_sum"] / d["total"], 2),
         }
+
+    # Confiance stats
+    confiance_stats = {}
+    for key, label in [("confiance_high", "🔥 Haute (≥80)"),
+                       ("confiance_bonne", "✅ Bonne (60-79)"),
+                       ("confiance_moyenne", "⚠️ Moyenne (40-59)"),
+                       ("confiance_faible", "❌ Faible (<40)")]:
+        s = results.get(key, {})
+        if s.get("total", 0) > 0:
+            confiance_stats[key] = _strat(s, label)
+    out["confiance_stats"] = confiance_stats
+
+    # Strategies
     out["premium_stats"] = _strat(results["premium"], "🏅 PREMIUM (≥60)")
     out["haute_value_stats"] = _strat(results["haute_value"], "💎 Haute VALUE (≥80 + cote 2-6)")
     out["bonne_value_stats"] = _strat(results["bonne_value"], "✨ Bonne VALUE (60-79 + cote 2.5-6)")
@@ -2895,6 +2898,44 @@ def backtest_strat(days_back=7, use_ml=False):
                                "taux": round(fs["win"] / fs["total"] * 100, 1),
                                "roi": round((fs["gain"] - fs["total"]) / fs["total"] * 100, 1)}
     out["field_stats"] = field_stats
+
+    # ═══ Discipline stats ═══
+    disc_stats = {}
+    disc_order = ["attelle", "monte", "plat", "haie", "steeple", "autre"]
+    disc_icons = {
+        "attelle": "🏇 Attelé", "monte": "🐎 Monté", "plat": "🏁 Plat",
+        "haie": "🌿 Haie", "steeple": "🏔️ Steeple", "autre": "❓ Autre",
+    }
+    for dg in disc_order:
+        if dg not in disc_results:
+            continue
+        dr = disc_results[dg]
+        nt = dr["total"] or 1
+        ds = {
+            "label": disc_icons.get(dg, dg),
+            "total": dr["total"],
+            "win": dr["top1_winner"],
+            "taux": round(dr["top1_winner"] / nt * 100, 1),
+            "roi": round((dr["gain"] - dr["mise"]) / max(dr["mise"], 1) * 100, 1),
+            "place_taux": round(dr["top1_top3"] / nt * 100, 1),
+            "confiance": {
+                "haute": _strat(dr["confiance_high"], "🔥 Haute"),
+                "bonne": _strat(dr["confiance_bonne"], "✅ Bonne"),
+                "moyenne": _strat(dr["confiance_moyenne"], "⚠️ Moyenne"),
+                "faible": _strat(dr["confiance_faible"], "❌ Faible"),
+            },
+            "strategies": {
+                "premium": _strat(dr["premium"], "🏅 PREMIUM"),
+                "haute_value": _strat(dr["haute_value"], "💎 HAUTE VALUE"),
+                "bonne_value": _strat(dr["bonne_value"], "✨ BONNE VALUE"),
+                "value_combo": _strat(dr["value_combo"], "🎯 VALUE COMBO"),
+            },
+        }
+        # Clean None values
+        ds["confiance"] = {k: v for k, v in ds["confiance"].items() if v is not None}
+        ds["strategies"] = {k: v for k, v in ds["strategies"].items() if v is not None}
+        disc_stats[dg] = ds
+    out["discipline_stats"] = disc_stats
 
     return out
 
@@ -4435,11 +4476,11 @@ def api_bets_delete(bet_id):
 import threading
 import json as _json
 
-ML_AUTO_TRAIN_HOUR = 5
+ML_AUTO_TRAIN_HOUR = 6
 ML_AUTO_TRAIN_MIN = 0
 ML_AUTO_PARAMS = {
-    "model_type": "advanced",
-    "days_back": 30,
+    "model_type": "advanced_v8_no_optuna",
+    "days_back": 21,
     "n_trees_gbm": 100,
     "n_trees_rf": 50,
 }
@@ -4480,6 +4521,7 @@ def _run_auto_train():
             model_type=ML_AUTO_PARAMS["model_type"],
         )
         if info:
+            clear_model_cache()  # Vider le cache pour charger les nouveaux modèles
             _save_ml_status({
                 "status": "ok",
                 "finished_at": datetime.now().isoformat(),
