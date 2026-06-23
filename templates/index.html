@@ -9,14 +9,29 @@
   body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f172a; color: #e2e8f0; }
   .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
   h1 { text-align: center; padding: 20px 0; color: #10b981; font-size: 1.8em; }
-  .subtitle { text-align: center; color: #64748b; margin-bottom: 20px; font-size: 0.9em; }
+  .subtitle { text-align: center; color: #64748b; margin-bottom: 10px; font-size: 0.9em; }
+
+  /* Stats status bar */
+  .stats-bar { background: #1e293b; border-radius: 8px; padding: 10px 20px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+  .stats-bar .status { font-size: 0.85em; display: flex; align-items: center; gap: 8px; }
+  .stats-bar .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot.loading { background: #f59e0b; animation: pulse 1s infinite; }
+  .dot.ready { background: #10b981; }
+  .dot.error { background: #ef4444; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  .stats-bar .info { color: #94a3b8; font-size: 0.8em; }
+  .stats-bar button { background: #334155; color: #94a3b8; border: none; padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; }
+  .stats-bar button:hover { background: #475569; color: #e2e8f0; }
+
   .nav { display: flex; justify-content: center; gap: 10px; margin-bottom: 25px; }
   .nav a { color: #94a3b8; text-decoration: none; padding: 8px 16px; border: 1px solid #334155; border-radius: 6px; font-size: 0.9em; }
   .nav a:hover, .nav a.active { color: #10b981; border-color: #10b981; background: #1e293b; }
+
   .date-selector { display: flex; justify-content: center; gap: 10px; align-items: center; margin-bottom: 20px; }
   .date-selector input { background: #1e293b; color: #e2e8f0; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 0.9em; }
   .date-selector button { background: #10b981; color: #0f172a; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: bold; }
   .date-selector button:hover { background: #059669; }
+
   .loading { text-align: center; padding: 40px; color: #64748b; }
   .error { color: #ef4444; text-align: center; padding: 20px; }
 
@@ -26,7 +41,7 @@
   .reunion-header:hover { background: #3d4f66; }
   .reunion-title { font-weight: bold; color: #10b981; }
   .reunion-hippo { color: #94a3b8; font-size: 0.9em; }
-  .course-item { padding: 10px 20px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; cursor: pointer; transition: background 0.15s; }
+  .course-item { padding: 10px 20px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; }
   .course-item:hover { background: #1a2744; }
   .course-item:last-child { border-bottom: none; }
   .course-left { display: flex; gap: 15px; align-items: center; }
@@ -37,6 +52,7 @@
   .discipline-tag { font-size: 0.75em; padding: 3px 8px; border-radius: 4px; background: #334155; color: #94a3b8; }
   .analyze-btn { background: #10b981; color: #0f172a; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 0.85em; font-weight: bold; }
   .analyze-btn:hover { background: #059669; }
+  .analyze-btn:disabled { background: #475569; cursor: not-allowed; }
 
   /* Course detail / classement */
   .course-detail { background: #1e293b; border-radius: 10px; margin-top: 20px; overflow: hidden; }
@@ -73,8 +89,11 @@
   .arrivee-3 { background: #f59e0b; color: #0f172a; }
   .arrivee-other { background: #334155; color: #94a3b8; }
   .no-result { text-align: center; padding: 15px; color: #64748b; font-style: italic; }
-
   .table-wrap { overflow-x: auto; }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.6s linear infinite; margin-right: 6px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -82,8 +101,17 @@
   <h1>🐎 Turf Analyzer</h1>
   <p class="subtitle">Classement = moyenne des scores Cheval • Driver • Entraîneur</p>
 
+  <div class="stats-bar">
+    <div class="status" id="stats-status">
+      <span class="dot loading" id="stats-dot"></span>
+      <span id="stats-text">Chargement des stats en cours...</span>
+    </div>
+    <div class="info" id="stats-info"></div>
+    <button onclick="refreshStats()" title="Forcer le recalcul">🔄 Refresh</button>
+  </div>
+
   <div class="nav">
-    <a href="/admin" class="active" onclick="showSection('courses')">📋 Courses</a>
+    <a href="/admin" class="active">📋 Courses</a>
     <a href="/backtest">📈 Backtest</a>
     <a href="/bilan">📊 Bilan</a>
     <a href="/logout" style="margin-left:auto;">🔓 Déconnexion</a>
@@ -100,6 +128,8 @@
 </div>
 
 <script>
+  let statsReady = false;
+
   const today = new Date();
   document.getElementById('dateInput').value = today.toISOString().split('T')[0];
 
@@ -110,12 +140,54 @@
            d.getFullYear();
   }
 
+  // ── Vérifier le statut des stats ──
+  async function checkStatsStatus() {
+    try {
+      const res = await fetch('/api/stats-status');
+      const data = await res.json();
+
+      const dot = document.getElementById('stats-dot');
+      const text = document.getElementById('stats-text');
+      const info = document.getElementById('stats-info');
+
+      if (data.status === 'ready') {
+        dot.className = 'dot ready';
+        text.textContent = '✅ Stats prêtes';
+        info.textContent = `${data.horses} chevaux, ${data.drivers} drivers, ${data.trainers} entraîneurs`;
+        statsReady = true;
+      } else if (data.status === 'loading') {
+        dot.className = 'dot loading';
+        text.textContent = '⏳ Calcul des stats en cours...';
+        info.textContent = 'Cela peut prendre 1-3 minutes au premier lancement';
+        statsReady = false;
+      } else if (data.status === 'error') {
+        dot.className = 'dot error';
+        text.textContent = '❌ Erreur chargement stats';
+        info.textContent = data.error || '';
+        statsReady = false;
+      }
+    } catch(e) {
+      document.getElementById('stats-text').textContent = '⚠️ Impossible de vérifier les stats';
+    }
+  }
+
+  async function refreshStats() {
+    document.getElementById('stats-text').textContent = '⏳ Recalcul en cours...';
+    document.getElementById('stats-dot').className = 'dot loading';
+    try {
+      await fetch('/api/force-refresh-stats', { method: 'POST' });
+    } catch(e) {}
+    // Re-check après 2 sec
+    setTimeout(checkStatsStatus, 2000);
+  }
+
+  // ── Charger les courses ──
   async function loadCourses() {
     const dateVal = document.getElementById('dateInput').value;
     if (!dateVal) return;
     const dateStr = formatDate(dateVal);
     const el = document.getElementById('courses-list');
-    el.innerHTML = '<div class="loading">⏳ Chargement...</div>';
+    el.innerHTML = '<div class="loading">⏳ Chargement des courses...</div>';
     document.getElementById('course-detail').innerHTML = '';
 
     try {
@@ -134,6 +206,7 @@
           <div class="reunion-courses" style="display:block;">`;
         r.courses.forEach(c => {
           const discLabel = c.discipline ? c.discipline.replace('TROT_','').replace('GALOP_','') : '?';
+          const statusBadge = c.arriveeDefinitive ? '<span style="color:#10b981;font-size:0.8em;">✅ Résultats</span>' : '<span style="color:#64748b;font-size:0.8em;">⏳ En cours</span>';
           html += `<div class="course-item">
             <div class="course-left">
               <span class="course-num">C${c.numCourse}</span>
@@ -144,7 +217,7 @@
             </div>
             <div class="course-right">
               <span class="discipline-tag">${discLabel}</span>
-              ${c.arriveeDefinitive ? '<span style="color:#10b981;font-size:0.8em;">✅ Résultats</span>' : ''}
+              ${statusBadge}
               <button class="analyze-btn" onclick="analyzeCourse(${r.numReunion}, ${c.numCourse}, '${dateStr}')">Analyser</button>
             </div>
           </div>`;
@@ -162,13 +235,32 @@
     courses.style.display = courses.style.display === 'none' ? 'block' : 'none';
   }
 
+  // ── Analyser une course ──
   async function analyzeCourse(rNum, cNum, dateStr) {
+    if (!statsReady) {
+      alert('⚠️ Les stats ne sont pas encore prêtes. Patientez quelques secondes puis réessayez.\n\nVérifiez la barre de statut en haut.');
+      return;
+    }
+
     const el = document.getElementById('course-detail');
-    el.innerHTML = '<div class="loading">⏳ Analyse en cours...</div>';
+    el.innerHTML = '<div class="loading"><span class="spinner"></span>Analyse de la course en cours...</div>';
     el.scrollIntoView({ behavior: 'smooth' });
 
     try {
-      const res = await fetch(`/api/course-detail/${rNum}/${cNum}?date=${dateStr}`);
+      const res = await fetch(`/api/course/${rNum}/${cNum}?date=${dateStr}`);
+
+      if (res.status === 503) {
+        const data = await res.json();
+        el.innerHTML = `<div class="error">⚠️ ${data.error || 'Stats pas prêtes'}</div>`;
+        return;
+      }
+
+      if (!res.ok) {
+        const data = await res.json();
+        el.innerHTML = `<div class="error">Erreur: ${data.error || 'Erreur inconnue'}</div>`;
+        return;
+      }
+
       const data = await res.json();
       if (data.error) { el.innerHTML = `<div class="error">Erreur: ${data.error}</div>`; return; }
 
@@ -200,7 +292,7 @@
         function scoreBar(val) {
           if (val === null || val === undefined) return '<span style="color:#475569;">—</span>';
           const color = val >= 65 ? 'score-green' : val >= 45 ? 'score-yellow' : 'score-red';
-          return `${Math.round(val)}<span class="score-bar-bg"><span class="score-bar-fill ${color}" style="width:${val}%"></span></span>`;
+          return `${Math.round(val)}<span class="score-bar-bg"><span class="score-bar-fill ${color}" style="width:${Math.max(2, val)}%"></span></span>`;
         }
 
         function arriveeBadge(place) {
@@ -235,8 +327,17 @@
     }
   }
 
-  // Auto-load
-  loadCourses();
+  // ── Init ──
+  checkStatsStatus();
+  // Re-check toutes les 3 sec jusqu'à ce que ce soit prêt
+  const checkInterval = setInterval(() => {
+    if (!statsReady) {
+      checkStatsStatus();
+    } else {
+      clearInterval(checkInterval);
+      loadCourses();
+    }
+  }, 3000);
 </script>
-</body>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1034d9fd9d09f09',t:'MTc4MjIxNTcyMA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
 </html>
