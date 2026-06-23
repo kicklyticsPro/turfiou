@@ -36,7 +36,7 @@ CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v6.pkl")
-HISTORY_DAYS = 15
+HISTORY_DAYS = 180
 WINDOW_SHORT = 30
 
 # ── Global state ──
