@@ -1,15 +1,13 @@
 """
 Turf Analyzer — Version épurée
 
-Analyse des chevaux basée sur 3 piliers uniquement :
+3 piliers basés UNIQUEMENT sur les données PMU brutes (c, v, p) :
   1. Stats carrière du cheval
   2. Stats driver/jockey
   3. Stats entraîneur
 
-Classement = moyenne simple des 3 scores.
-Backtest = performance historique basé sur ce classement.
-
-Les formules de scoring sont IDENTIQUES à l'ancien projet v6.
+Classement = moyenne des 3 scores.
+Pas de ML, pas de features avancées, pas d'ELO.
 """
 
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
@@ -26,16 +24,15 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "turf-analyzer-simple")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+app.secret_key = "turf-analyzer-simple"
+ADMIN_PASSWORD = "admin123"
 
-# ── Config ──
 PMU_BASE = "https://offline.turfinfo.api.pmu.fr/rest/client/61/programme"
 HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TurfAnalyzer/1.0)"}
 CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v6.pkl")
+STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v7.pkl")
 HISTORY_DAYS = 180
 WINDOW_SHORT = 30
 
@@ -47,7 +44,6 @@ _progress_lock = threading.Lock()
 
 
 def _norm(name):
-    """Normalise un nom : uppercase, strip, collapse spaces."""
     if not name:
         return ""
     return " ".join(str(name).upper().split())
@@ -66,7 +62,6 @@ def _safe(val, default=0):
     return val
 
 def _update_progress(done, total, msg=None):
-    """Thread-safe update de la progression."""
     with _progress_lock:
         pct = round(done / max(total, 1) * 100)
         _stats_progress["status"] = "loading"
@@ -76,7 +71,6 @@ def _update_progress(done, total, msg=None):
         _stats_progress["message"] = msg or f"{done}/{total} courses ({pct}%)"
 
 def _freeze(d):
-    """Convertit defaultdict en dict normal pour sérialisation."""
     if isinstance(d, defaultdict):
         return {k: _freeze(v) for k, v in d.items()}
     return d
@@ -147,11 +141,10 @@ def save_pickle(path, payload):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Build tasks list
+#  Build tasks
 # ═══════════════════════════════════════════════════════════
 
 def _build_tasks(max_days, exclude_recent_days):
-    """Construit la liste des tâches (date, r_num, c_num, discipline, hippo, delta)."""
     today = datetime.now()
     start_delta = exclude_recent_days + 1 if exclude_recent_days > 0 else 1
     tasks = []
@@ -172,13 +165,13 @@ def _build_tasks(max_days, exclude_recent_days):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Background stats loading — PARALLÈLE avec progression
+#  Process one task (stats brutes PMU uniquement)
 # ═══════════════════════════════════════════════════════════
 
 def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
                   ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
                   hs_global, hs_with_driver, hs_hippo, hs_disc):
-    """Traite une seule course et met à jour les stats."""
+    """Traite une course et met à jour les compteurs."""
     date_str, r_num, c_num, discipline, hippo, delta = task
     is_short = delta <= WINDOW_SHORT
 
@@ -247,11 +240,14 @@ def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_driver
                 ts_entraineurs_disc[entraineur][discipline]["v"] += won
                 ts_entraineurs_disc[entraineur][discipline]["p"] += placed
 
+
+# ═══════════════════════════════════════════════════════════
+#  Background stats loading
+# ═══════════════════════════════════════════════════════════
+
 def _background_load_stats():
-    """Charge les stats en arrière-plan avec progression visible."""
     global _current_stats, _stats_ready, _stats_progress
 
-    # Vérifier le cache d'abord
     cached = load_pickle(STATS_CACHE_FILE)
     if cached:
         _current_stats = cached
@@ -263,22 +259,19 @@ def _background_load_stats():
         print(f"[Stats] ✅ Cache chargé")
         return
 
-    # Pas de cache → calculer en parallèle
-    _stats_progress = {"status": "loading", "message": "Dénombrement des courses...", "progress": 0}
+    _stats_progress = {"status": "loading", "message": "Dénombrement...", "progress": 0}
 
     try:
-        # Étape 1 : compter les tâches
         all_tasks = _build_tasks(HISTORY_DAYS, 0)
         total = len(all_tasks)
         _stats_progress = {"status": "loading", "message": f"{total} courses à analyser",
                            "progress": 0, "total": total, "done": 0}
 
         if total == 0:
-            _stats_progress = {"status": "error", "message": "Aucune course trouvée", "progress": 0}
+            _stats_progress = {"status": "error", "message": "Aucune course", "progress": 0}
             _stats_ready.set()
             return
 
-        # Étape 2 : init les compteurs de stats
         ts_drivers = defaultdict(_empty_bucket)
         ts_drivers_short = defaultdict(_empty_bucket)
         ts_drivers_disc = defaultdict(lambda: defaultdict(_empty_bucket))
@@ -286,47 +279,44 @@ def _background_load_stats():
         ts_entraineurs = defaultdict(_empty_bucket)
         ts_entraineurs_short = defaultdict(_empty_bucket)
         ts_entraineurs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
-
         hs_global = defaultdict(_empty_bucket)
         hs_with_driver = defaultdict(lambda: defaultdict(_empty_bucket))
         hs_hippo = defaultdict(lambda: defaultdict(_empty_bucket))
         hs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
 
-        # Étape 3 : fetch + traitement en parallèle avec compteur
         done = [0]
         done_lock = threading.Lock()
 
-        def track_and_process(task):
+        def track_process(task):
             _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
                          ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
                          hs_global, hs_with_driver, hs_hippo, hs_disc)
             with done_lock:
                 done[0] += 1
-                if done[0] % 10 == 0:
+                if done[0] % 20 == 0:
                     _update_progress(done[0], total)
 
-        print(f"[Stats] 🚀 Calcul en parallèle ({total} courses, 15 workers)...")
+        print(f"[Stats] 🚀 {total} courses, 15 workers...")
         with ThreadPoolExecutor(max_workers=15) as ex:
-            list(ex.map(track_and_process, all_tasks))
+            list(ex.map(track_process, all_tasks))
 
-        # Étape 4 : finaliser
-        team_stats = {
-            "drivers": _freeze(ts_drivers),
-            "drivers_short": _freeze(ts_drivers_short),
-            "drivers_disc": _freeze(ts_drivers_disc),
-            "drivers_hippo": _freeze(ts_drivers_hippo),
-            "entraineurs": _freeze(ts_entraineurs),
-            "entraineurs_short": _freeze(ts_entraineurs_short),
-            "entraineurs_disc": _freeze(ts_entraineurs_disc),
+        _current_stats = {
+            "team_stats": {
+                "drivers": _freeze(ts_drivers),
+                "drivers_short": _freeze(ts_drivers_short),
+                "drivers_disc": _freeze(ts_drivers_disc),
+                "drivers_hippo": _freeze(ts_drivers_hippo),
+                "entraineurs": _freeze(ts_entraineurs),
+                "entraineurs_short": _freeze(ts_entraineurs_short),
+                "entraineurs_disc": _freeze(ts_entraineurs_disc),
+            },
+            "horse_stats": {
+                "global": _freeze(hs_global),
+                "with_driver": _freeze(hs_with_driver),
+                "hippo": _freeze(hs_hippo),
+                "disc": _freeze(hs_disc),
+            },
         }
-        horse_stats = {
-            "global": _freeze(hs_global),
-            "with_driver": _freeze(hs_with_driver),
-            "hippo": _freeze(hs_hippo),
-            "disc": _freeze(hs_disc),
-        }
-
-        _current_stats = {"team_stats": team_stats, "horse_stats": horse_stats}
         save_pickle(STATS_CACHE_FILE, _current_stats)
         _stats_ready.set()
         _stats_progress = {"status": "ready", "message": "Prêt", "progress": 100,
@@ -341,24 +331,18 @@ def _background_load_stats():
         _stats_ready.set()
         _stats_progress = {"status": "error", "message": str(e), "progress": 0}
 
-
-# ═══════════════════════════════════════════════════════════
-#  Stats accessors
-# ═══════════════════════════════════════════════════════════
-
 def get_stats():
     if _stats_ready.is_set():
         return _current_stats
     return None
 
 def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
-    """Version synchrone pour backtest/bilan (utilise le cache si dispo)."""
+    """Version synchrone pour backtest/bilan avec exclusion."""
     if exclude_recent_days == 0:
         cached = load_pickle(STATS_CACHE_FILE)
         if cached:
             return cached
 
-    # Calculer de manière synchrone (pour backtest avec exclude)
     all_tasks = _build_tasks(max_days, exclude_recent_days)
 
     ts_drivers = defaultdict(_empty_bucket)
@@ -408,11 +392,11 @@ def start_stats_loader():
 
 
 # ═══════════════════════════════════════════════════════════
-#  Scoring — IDENTIQUE à l'ancien projet v6
+#  Scoring — uniquement données brutes PMU (c, v, p)
 # ═══════════════════════════════════════════════════════════
 
 def get_bucket_score(bucket, max_score=100, min_courses=5):
-    """Score 0-100. IDENTIQUE à l'ancien get_bucket_score."""
+    """Score 0-100 depuis un bucket {c, v, p}."""
     if not bucket or bucket["c"] < min_courses:
         return None
     c, v, p = bucket["c"], bucket["v"], bucket["p"]
@@ -421,20 +405,9 @@ def get_bucket_score(bucket, max_score=100, min_courses=5):
     raw = tv * 200 + tp * 60
     return min(max_score, raw * confiance + 30 * (1 - confiance))
 
-def _score_from_career(nb_courses, nb_victoires, nb_places):
-    """Score basé sur les stats carrière brutes du PMU.
-    Même formule que get_bucket_score mais sans min_courses."""
-    if not nb_courses or nb_courses < 2:
-        return None
-    win_rate = nb_victoires / nb_courses
-    place_rate = nb_places / nb_courses
-    confiance = min(1.0, nb_courses / 30)
-    raw = win_rate * 200 + place_rate * 60
-    return min(100, raw * confiance + 30 * (1 - confiance))
-
 def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=None):
-    """Score driver ou entraîneur avec pondération multi-contexte.
-    IDENTIQUE à l'ancien get_team_score_multi."""
+    """Score driver ou entraîneur. Pondération: global 35%, court terme 30%,
+    discipline 20%, hippodrome 15% (driver uniquement)."""
     if not team_stats or not name:
         return 50
     name = _norm(name)
@@ -467,19 +440,25 @@ def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=Non
     return sum(s * w for s, w in parts) / tw
 
 def get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
-                    nb_courses=None, nb_victoires=None, nb_places=None):
+                    nb_courses=0, nb_victoires=0, nb_places=0):
     """Score cheval avec pondération multi-contexte.
-    Utilise les stats carrière PMU comme fallback si l'historique est insuffisant."""
+    
+    Priorité 1: stats carrière PMU directes (nombreCourses/Victoires/Places) → instantané
+    Priorité 2: stats historiques calculées → quand le cache est chargé
+    """
     if not horse_stats or not cheval:
         return 50
     cheval = _norm(cheval)
 
-    s_g = get_bucket_score(horse_stats.get("global", {}).get(cheval))
-    if s_g is None and nb_courses and nb_courses >= 2:
-        # Fallback sur stats carrière PMU
-        s_g = _score_from_career(nb_courses, nb_victoires, nb_places)
+    # ── Priorité 1: stats carrière PMU directes ──
+    if nb_courses and nb_courses >= 2:
+        s_g = get_bucket_score({"c": nb_courses, "v": nb_victoires, "p": nb_places})
+    else:
+        s_g = None
+
+    # ── Priorité 2: fallback sur stats historiques si dispo ──
     if s_g is None:
-        s_g = 50
+        s_g = get_bucket_score(horse_stats.get("global", {}).get(cheval)) or 50
 
     s_d = get_bucket_score(
         horse_stats.get("with_driver", {}).get(cheval, {}).get(_norm(driver)),
@@ -503,17 +482,7 @@ def get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
     return sum(s * w for s, w in parts) / tw
 
 def _composite_score(horse_s, driver_s, trainer_s):
-    """Moyenne simple des 3 scores."""
-    parts = []
-    if horse_s is not None:
-        parts.append(horse_s)
-    if driver_s is not None:
-        parts.append(driver_s)
-    if trainer_s is not None:
-        parts.append(trainer_s)
-    if not parts:
-        return 50.0
-    return sum(parts) / len(parts)
+    return round((horse_s + driver_s + trainer_s) / 3, 1)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -521,19 +490,16 @@ def _composite_score(horse_s, driver_s, trainer_s):
 # ═══════════════════════════════════════════════════════════
 
 def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline, hippodrome):
-    """Analyse une course et retourne la liste triée par score composite."""
     partants = [p for p in parts_data.get("participants", [])
                 if p.get("statut") == "PARTANT"]
     if not partants:
         return []
 
-    # Cotes
     cotes = []
     for p in partants:
         rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
         cotes.append(float(rap["rapport"]) if rap and rap.get("rapport") else None)
 
-    # Probabilités marché
     inv_cotes = [1.0 / c if c and c > 0 else 0 for c in cotes]
     total_inv = sum(inv_cotes) or 1.0
     proba_marche = [x / total_inv * 100 for x in inv_cotes]
@@ -543,6 +509,7 @@ def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline,
         cheval = p.get("nom") or ""
         driver = p.get("driver") or ""
         entraineur = p.get("entraineur") or ""
+
         nb_courses = p.get("nombreCourses", 0) or 0
         nb_victoires = p.get("nombreVictoires", 0) or 0
         nb_places = p.get("nombrePlaces", 0) or 0
@@ -550,17 +517,13 @@ def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline,
         gains = p.get("gainsParticipant", {}) or {}
         gains_carriere = gains.get("gainsCarriere", 0) or 0
 
-        # Scores des 3 piliers (formules identiques à l'ancien projet)
-        # Le cheval utilise ses stats carrière PMU comme fallback
+        # Scores basés uniquement sur les données brutes PMU (c, v, p)
         s_horse = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
                                    nb_courses, nb_victoires, nb_places)
         s_driver = get_team_score_multi(driver, "drivers", team_stats, discipline, hippodrome)
         s_trainer = get_team_score_multi(entraineur, "entraineurs", team_stats, discipline)
-
-        # Score composite = moyenne des 3
         s_composite = _composite_score(s_horse, s_driver, s_trainer)
 
-        # Edge vs marché
         cote = cotes[i]
         proba_m = proba_marche[i]
         edge = round(s_composite - proba_m, 2) if cote else 0
@@ -573,9 +536,9 @@ def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline,
             "driver": driver or "—",
             "entraineur": entraineur or "—",
             "musique": p.get("musique", ""),
-            "nbCourses": nb_courses,
-            "nbVictoires": nb_victoires,
-            "nbPlaces": nb_places,
+            "nbCourses": p.get("nombreCourses", 0) or 0,
+            "nbVictoires": p.get("nombreVictoires", 0) or 0,
+            "nbPlaces": p.get("nombrePlaces", 0) or 0,
             "cote": cote,
             "probaMarche": round(proba_m, 2),
             "gainsCarriere": gains_carriere // 100,
@@ -591,10 +554,9 @@ def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline,
                 "marche": round(proba_m, 1),
             },
             "edge": edge,
-            "chance": round(s_composite, 2),
+            "chance": s_composite,
         })
 
-    # Trier par score composite décroissant
     analyses.sort(key=lambda x: -x["scores"]["composite"])
     for rank, a in enumerate(analyses, 1):
         a["rang"] = rank
@@ -612,10 +574,8 @@ def backtest(days_back=7):
     horse_stats = stats["horse_stats"]
     today = datetime.now()
 
-    results = {
-        "total_courses": 0, "top1_winner": 0, "top1_top3": 0,
-        "mise_totale": 0.0, "gain_total": 0.0, "value_bets": [],
-    }
+    results = {"total_courses": 0, "top1_winner": 0, "top1_top3": 0,
+               "mise_totale": 0.0, "gain_total": 0.0, "value_bets": []}
 
     tasks = []
     metas = []
@@ -631,26 +591,21 @@ def backtest(days_back=7):
             for c in r["courses"]:
                 if c.get("arriveeDefinitive"):
                     tasks.append((date_str, r["numOfficiel"], c["numOrdre"]))
-                    metas.append({
-                        "date": d.strftime("%d/%m"),
-                        "course": f"R{r['numOfficiel']}C{c['numOrdre']}",
-                        "hippodrome": hippo,
-                        "discipline": c.get("discipline", ""),
-                    })
+                    metas.append({"date": d.strftime("%d/%m"),
+                                  "course": f"R{r['numOfficiel']}C{c['numOrdre']}",
+                                  "hippodrome": hippo,
+                                  "discipline": c.get("discipline", "")})
 
     with ThreadPoolExecutor(max_workers=20) as ex:
         fetched = list(ex.map(
-            lambda args: (get_participants_cached(*args), get_performances(*args)),
-            tasks
-        ))
+            lambda args: (get_participants_cached(*args), get_performances(*args)), tasks))
 
     for (parts, perfs), meta in zip(fetched, metas):
         if not parts:
             continue
         try:
             analyses = analyser_course(parts, perfs, team_stats, horse_stats,
-                                        meta.get("discipline", ""),
-                                        meta.get("hippodrome", ""))
+                                        meta["discipline"], meta["hippodrome"])
         except Exception:
             continue
         if not analyses:
@@ -665,7 +620,6 @@ def backtest(days_back=7):
             results["top1_winner"] += 1
         if 1 <= top1_place <= 3:
             results["top1_top3"] += 1
-
         results["mise_totale"] += 1
         if top1_place == 1 and top1_cote:
             results["gain_total"] += top1_cote
@@ -681,8 +635,7 @@ def backtest(days_back=7):
     n = results["total_courses"] or 1
     results["taux_top1"] = round(results["top1_winner"] / n * 100, 2)
     results["taux_top1_place"] = round(results["top1_top3"] / n * 100, 2)
-    results["roi"] = round(
-        (results["gain_total"] - results["mise_totale"]) / max(results["mise_totale"], 1) * 100, 2)
+    results["roi"] = round((results["gain_total"] - results["mise_totale"]) / max(results["mise_totale"], 1) * 100, 2)
     results["mise_totale"] = round(results["mise_totale"], 2)
     results["gain_total"] = round(results["gain_total"], 2)
 
@@ -693,9 +646,7 @@ def backtest(days_back=7):
         results["vb_winrate"] = round(sum(1 for b in vb if b["gagne"]) / len(vb) * 100, 2)
         results["vb_roi"] = round((gains_vb - len(vb)) / len(vb) * 100, 2)
     else:
-        results["vb_nb"] = 0
-        results["vb_winrate"] = 0
-        results["vb_roi"] = 0
+        results["vb_nb"] = 0; results["vb_winrate"] = 0; results["vb_roi"] = 0
 
     return results
 
@@ -714,12 +665,10 @@ def bilan(days_back=7):
     for delta in range(1, days_back + 1):
         d = today - timedelta(days=delta)
         date_str = fmt_date(d)
-        day = {
-            "date": d.strftime("%d/%m/%Y"), "date_short": d.strftime("%d/%m"),
-            "jour": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][d.weekday()],
-            "total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0, "top3_total": 0,
-            "courses": [],
-        }
+        day = {"date": d.strftime("%d/%m/%Y"), "date_short": d.strftime("%d/%m"),
+               "jour": ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"][d.weekday()],
+               "total": 0, "top1": 0, "top2": 0, "top3": 0, "hors": 0,
+               "top3_total": 0, "courses": []}
 
         try:
             prog = get_programme(date_str)
@@ -733,24 +682,18 @@ def bilan(days_back=7):
             for c in r["courses"]:
                 if c.get("arriveeDefinitive"):
                     tasks.append((date_str, r["numOfficiel"], c["numOrdre"]))
-                    course_metas.append({
-                        "hippodrome": hippo,
-                        "discipline": c.get("discipline", ""),
-                    })
+                    course_metas.append({"hippodrome": hippo, "discipline": c.get("discipline", "")})
 
         with ThreadPoolExecutor(max_workers=20) as ex:
             fetched = list(ex.map(
-                lambda args: (get_participants_cached(*args), get_performances(*args)),
-                tasks
-            ))
+                lambda args: (get_participants_cached(*args), get_performances(*args)), tasks))
 
         for (parts, perfs), meta in zip(fetched, course_metas):
             if not parts:
                 continue
             try:
                 analyses = analyser_course(parts, perfs, team_stats, horse_stats,
-                                            meta.get("discipline", ""),
-                                            meta.get("hippodrome", ""))
+                                            meta["discipline"], meta["hippodrome"])
             except Exception:
                 continue
             if not analyses:
@@ -759,20 +702,14 @@ def bilan(days_back=7):
             day["total"] += 1
             top1 = analyses[0]
             place = top1.get("ordreArrivee", 0) or 0
-
             course_detail = {"nom": top1["nom"], "place": place, "cote": top1.get("cote")}
-            if place == 1:
-                day["top1"] += 1; course_detail["resultat"] = "🥇"
-            elif place == 2:
-                day["top2"] += 1; course_detail["resultat"] = "🥈"
-            elif place == 3:
-                day["top3"] += 1; course_detail["resultat"] = "🥉"
-            else:
-                day["hors"] += 1
-                course_detail["resultat"] = f"#{place}" if place > 0 else "—"
 
-            if 1 <= place <= 3:
-                day["top3_total"] += 1
+            if place == 1: day["top1"] += 1; course_detail["resultat"] = "🥇"
+            elif place == 2: day["top2"] += 1; course_detail["resultat"] = "🥈"
+            elif place == 3: day["top3"] += 1; course_detail["resultat"] = "🥉"
+            else: day["hors"] += 1; course_detail["resultat"] = f"#{place}" if place > 0 else "—"
+
+            if 1 <= place <= 3: day["top3_total"] += 1
             day["courses"].append(course_detail)
 
         if day["total"] > 0:
@@ -882,10 +819,6 @@ def api_course(r_num, c_num):
     date_str = request.args.get("date") or fmt_date(datetime.now())
     live = request.args.get("live") == "1"
 
-    stats = get_stats()
-    if not stats:
-        return jsonify({"error": "Stats pas encore prêtes", "status": "loading"}), 503
-
     try:
         prog = get_programme(date_str)
         parts = get_participants_live(date_str, r_num, c_num) if live else get_participants(date_str, r_num, c_num)
@@ -909,7 +842,6 @@ def api_course(r_num, c_num):
                         "libelle": c.get("libelle"),
                         "discipline": discipline,
                         "distance": c.get("distance"),
-                        "corde": c.get("corde", ""),
                         "heure": datetime.fromtimestamp(
                             c["heureDepart"] / 1000
                         ).strftime("%H:%M") if c.get("heureDepart") else "",
@@ -917,8 +849,17 @@ def api_course(r_num, c_num):
                         "arriveeDefinitive": c.get("arriveeDefinitive", False),
                     }
 
-    team_stats = stats["team_stats"]
-    horse_stats = stats["horse_stats"]
+    stats = get_stats()
+    if stats:
+        team_stats = stats["team_stats"]
+        horse_stats = stats["horse_stats"]
+    else:
+        # Stats pas encore chargées → utiliser des structures vides
+        # Le score cheval fonctionnera quand même (stats PMU directes)
+        team_stats = {}
+        horse_stats = {}
+        stats = {"team_stats": team_stats, "horse_stats": horse_stats}
+
     analyses = analyser_course(parts, perfs, team_stats, horse_stats, discipline, hippodrome)
 
     return jsonify({
