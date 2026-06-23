@@ -2,9 +2,9 @@
 Turf Analyzer — Version épurée
 
 Analyse des chevaux basée sur 3 piliers uniquement :
-  1. Stats carrière du cheval (nb courses, victoires, places → win_rate, place_rate)
-  2. Stats driver/jockey (courses, victoires, places → win_rate, place_rate)
-  3. Stats entraîneur (courses, victoires, places → win_rate, place_rate)
+  1. Stats carrière du cheval (nb courses, victoires, places)
+  2. Stats driver/jockey (nb courses, victoires, places)
+  3. Stats entraîneur (nb courses, victoires, places)
 
 Classement = moyenne simple des 3 scores.
 Backtest = performance historique basé sur ce classement.
@@ -17,6 +17,9 @@ import requests
 import math
 import os
 import pickle
+import json
+import threading
+import time
 from functools import lru_cache
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -32,9 +35,15 @@ CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats.pkl")
-HISTORY_DAYS = 180
+STATS_STATUS_FILE = os.path.join(CACHE_DIR, "stats_status.json")
+HISTORY_DAYS = 30  # Réduit pour un chargement plus rapide
 
-# ── Helpers ──
+# ── Global state ──
+_stats_ready = threading.Event()
+_current_stats = None
+_stats_error = None
+
+
 def fmt_date(d):
     return d.strftime("%d%m%Y")
 
@@ -50,7 +59,7 @@ def _safe(val, default=0):
 
 
 # ═══════════════════════════════════════════════════════════
-#  PMU API
+#  PMU API (avec cache lru)
 # ═══════════════════════════════════════════════════════════
 
 @lru_cache(maxsize=256)
@@ -59,14 +68,14 @@ def get_programme(date_str):
     r.raise_for_status()
     return r.json()
 
-@lru_cache(maxsize=1024)
+@lru_cache(maxsize=2048)
 def get_participants(date_str, r_num, c_num):
     url = f"{PMU_BASE}/{date_str}/R{r_num}/C{c_num}/participants"
     r = requests.get(url, headers=HEADERS, timeout=15)
     r.raise_for_status()
     return r.json()
 
-@lru_cache(maxsize=1024)
+@lru_cache(maxsize=2048)
 def get_performances(date_str, r_num, c_num):
     url = f"{PMU_BASE}/{date_str}/R{r_num}/C{c_num}/performances-detaillees/pretty"
     try:
@@ -78,10 +87,10 @@ def get_performances(date_str, r_num, c_num):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Cache
+#  Cache persistence
 # ═══════════════════════════════════════════════════════════
 
-def load_pickle(path, max_age_hours=24):
+def load_pickle(path, max_age_hours=48):
     if os.path.exists(path):
         try:
             with open(path, "rb") as f:
@@ -100,9 +109,25 @@ def save_pickle(path, payload):
     except Exception as e:
         print(f"Save error {path}: {e}")
 
+def _save_stats_status(status):
+    try:
+        with open(STATS_STATUS_FILE, "w") as f:
+            json.dump(status, f)
+    except Exception:
+        pass
+
+def _load_stats_status():
+    try:
+        if os.path.exists(STATS_STATUS_FILE):
+            with open(STATS_STATUS_FILE, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"status": "none"}
+
 
 # ═══════════════════════════════════════════════════════════
-#  Construction des stats (uniquement cheval/driver/entraineur)
+#  Construction des stats (cheval/driver/entraineur)
 # ═══════════════════════════════════════════════════════════
 
 def _empty_bucket():
@@ -117,16 +142,12 @@ def _fetch_course_simple(args):
         return None
 
 def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
-    """Construit les stats carrière cheval + driver + entraineur.
-    
-    exclude_recent_days : exclut les N derniers jours (anti data leak pour backtest).
-    """
+    """Construit les stats carrière cheval + driver + entraineur."""
     if exclude_recent_days == 0:
         cached = load_pickle(STATS_CACHE_FILE)
         if cached:
             return cached
 
-    # Statistiques brutes : {nom: {"c": courses, "v": victoires, "p": places (top3)}}
     horse_stats = defaultdict(_empty_bucket)
     driver_stats = defaultdict(_empty_bucket)
     trainer_stats = defaultdict(_empty_bucket)
@@ -147,6 +168,8 @@ def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
                 if c.get("arriveeDefinitive"):
                     tasks.append((date_str, r["numOfficiel"], c["numOrdre"]))
 
+    print(f"[Stats] {len(tasks)} courses à analyser sur {max_days - start_delta + 1} jours...")
+
     with ThreadPoolExecutor(max_workers=30) as ex:
         results = list(ex.map(_fetch_course_simple, tasks))
 
@@ -165,25 +188,19 @@ def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
             won = 1 if place == 1 else 0
             placed = 1 if 1 <= place <= 3 else 0
 
-            # Stats cheval
             if cheval:
                 horse_stats[cheval]["c"] += 1
                 horse_stats[cheval]["v"] += won
                 horse_stats[cheval]["p"] += placed
-
-            # Stats driver
             if driver:
                 driver_stats[driver]["c"] += 1
                 driver_stats[driver]["v"] += won
                 driver_stats[driver]["p"] += placed
-
-            # Stats entraineur
             if entraineur:
                 trainer_stats[entraineur]["c"] += 1
                 trainer_stats[entraineur]["v"] += won
                 trainer_stats[entraineur]["p"] += placed
 
-    # Convertir en dicts simples pour sérialisation
     out = {
         "horse_stats": dict(horse_stats),
         "driver_stats": dict(driver_stats),
@@ -192,8 +209,56 @@ def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
 
     if exclude_recent_days == 0:
         save_pickle(STATS_CACHE_FILE, out)
+        print(f"[Stats] ✅ Calculé et sauvegardé : {len(out['horse_stats'])} chevaux, "
+              f"{len(out['driver_stats'])} drivers, {len(out['trainer_stats'])} entraîneurs")
 
     return out
+
+
+# ═══════════════════════════════════════════════════════════
+#  Background stats loading
+# ═══════════════════════════════════════════════════════════
+
+def _background_load_stats():
+    """Charge les stats en arrière-plan au démarrage."""
+    global _current_stats, _stats_ready, _stats_error
+
+    # Vérifier le cache d'abord
+    cached = load_pickle(STATS_CACHE_FILE)
+    if cached:
+        _current_stats = cached
+        _stats_ready.set()
+        print("[Stats] ✅ Chargé depuis le cache")
+        _save_stats_status({"status": "ready", "source": "cache",
+                            "at": datetime.now().isoformat(),
+                            "horses": len(cached["horse_stats"])})
+        return
+
+    # Pas de cache → calculer
+    _save_stats_status({"status": "loading", "started_at": datetime.now().isoformat()})
+    try:
+        _current_stats = compute_all_stats(max_days=HISTORY_DAYS)
+        _stats_ready.set()
+        _save_stats_status({"status": "ready", "source": "computed",
+                            "at": datetime.now().isoformat(),
+                            "horses": len(_current_stats["horse_stats"])})
+    except Exception as e:
+        _stats_error = str(e)
+        _stats_ready.set()
+        _save_stats_status({"status": "error", "error": str(e),
+                            "at": datetime.now().isoformat()})
+
+def get_stats():
+    """Retourne les stats si prêtes, sinon None."""
+    if _stats_ready.is_set():
+        return _current_stats
+    return None
+
+def start_stats_loader():
+    """Démarre le chargement des stats dans un thread séparé."""
+    t = threading.Thread(target=_background_load_stats, daemon=True)
+    t.start()
+    print("[Stats] 🔄 Chargement en arrière-plan...")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -212,17 +277,14 @@ def _bucket_score(bucket, min_courses=5):
     return min(100, raw * confiance + 30 * (1 - confiance))
 
 def _horse_score(nom, horse_stats, min_courses=5):
-    """Score carrière du cheval."""
     bucket = horse_stats.get(nom)
     return _bucket_score(bucket, min_courses)
 
 def _driver_score(nom, driver_stats, min_courses=5):
-    """Score du driver/jockey."""
     bucket = driver_stats.get(nom)
     return _bucket_score(bucket, min_courses)
 
 def _trainer_score(nom, trainer_stats, min_courses=5):
-    """Score de l'entraîneur."""
     bucket = trainer_stats.get(nom)
     return _bucket_score(bucket, min_courses)
 
@@ -245,10 +307,7 @@ def _composite_score(horse_s, driver_s, trainer_s):
 # ═══════════════════════════════════════════════════════════
 
 def analyser_course(parts_data, perfs_data, team_stats):
-    """Analyse une course et retourne la liste triée par score composite.
-    
-    team_stats = {"horse_stats": ..., "driver_stats": ..., "trainer_stats": ...}
-    """
+    """Analyse une course et retourne la liste triée par score composite."""
     horse_stats = team_stats["horse_stats"]
     driver_stats = team_stats["driver_stats"]
     trainer_stats = team_stats["trainer_stats"]
@@ -257,11 +316,6 @@ def analyser_course(parts_data, perfs_data, team_stats):
                 if p.get("statut") == "PARTANT"]
     if not partants:
         return []
-
-    # Perfs par numéro
-    perfs_by_num = {}
-    for pp in (perfs_data or {}).get("participants", []):
-        perfs_by_num[pp.get("numPmu")] = pp.get("coursesCourues", [])
 
     # Cotes
     cotes = []
@@ -317,7 +371,6 @@ def analyser_course(parts_data, perfs_data, team_stats):
             "oeilleres": p.get("oeilleres", ""),
             "urlCasaque": p.get("urlCasaque"),
             "ordreArrivee": p.get("ordreArrivee"),
-            # Scores des 3 piliers
             "scores": {
                 "cheval": round(s_horse, 1) if s_horse is not None else None,
                 "driver": round(s_driver, 1) if s_driver is not None else None,
@@ -326,26 +379,13 @@ def analyser_course(parts_data, perfs_data, team_stats):
                 "marche": round(proba_m, 1),
             },
             "edge": edge,
-            "chance": round(s_composite, 2),  # Pour compatibilité templates
+            "chance": round(s_composite, 2),
         })
 
     # Trier par score composite décroissant
     analyses.sort(key=lambda x: -x["scores"]["composite"])
     for rank, a in enumerate(analyses, 1):
         a["rang"] = rank
-
-    # Nettoyage NaN
-    for a in analyses:
-        for key, val in list(a.items()):
-            if isinstance(val, float):
-                import math
-                if math.isnan(val) or math.isinf(val):
-                    a[key] = 0
-        for key, val in list(a.get("scores", {}).items()):
-            if isinstance(val, float):
-                import math
-                if math.isnan(val) or math.isinf(val):
-                    a["scores"][key] = 0
 
     return analyses
 
@@ -378,7 +418,6 @@ def backtest(days_back=7):
         except Exception:
             continue
         for r in prog["programme"]["reunions"]:
-            hippo = r["hippodrome"]["libelleCourt"]
             for c in r["courses"]:
                 if c.get("arriveeDefinitive"):
                     tasks.append((date_str, r["numOfficiel"], c["numOrdre"]))
@@ -419,7 +458,7 @@ def backtest(days_back=7):
         if top1_place == 1 and top1_cote:
             results["gain_total"] += top1_cote
 
-        # Value bets : chevaux où composite > proba marché de 3+ points
+        # Value bets
         for a in analyses:
             if a.get("edge", 0) >= 3 and a.get("cote"):
                 won = a.get("ordreArrivee", 0) == 1
@@ -441,7 +480,6 @@ def backtest(days_back=7):
     results["mise_totale"] = round(results["mise_totale"], 2)
     results["gain_total"] = round(results["gain_total"], 2)
 
-    # Stats value bets
     vb = results["value_bets"]
     if vb:
         gains_vb = sum(b["cote"] for b in vb if b["gagne"])
@@ -546,95 +584,7 @@ def bilan(days_back=7):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Routes publiques
-# ═══════════════════════════════════════════════════════════
-
-@app.route("/")
-def public_home():
-    return render_template("public.html")
-
-@app.route("/api/programme")
-def api_programme():
-    """Liste des courses du jour."""
-    date_str = request.args.get("date") or fmt_date(datetime.now())
-    try:
-        prog = get_programme(date_str)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    out = []
-    for r in prog["programme"]["reunions"]:
-        out.append({
-            "numReunion": r["numOfficiel"],
-            "hippodrome": r["hippodrome"]["libelleCourt"],
-            "courses": [{
-                "numCourse": c["numOrdre"],
-                "libelle": c.get("libelle") or c.get("libelleCourt") or "",
-                "discipline": c.get("discipline"),
-                "distance": c.get("distance"),
-                "heure": datetime.fromtimestamp(
-                    c["heureDepart"] / 1000
-                ).strftime("%H:%M") if c.get("heureDepart") else "",
-                "nbPartants": c.get("nombreDeclaresPartants"),
-            } for c in r["courses"]],
-        })
-    return jsonify({"date": date_str, "reunions": out})
-
-@app.route("/api/course/<int:r_num>/<int:c_num>")
-def api_course(r_num, c_num):
-    """Analyse d'une course."""
-    date_str = request.args.get("date") or fmt_date(datetime.now())
-    try:
-        prog = get_programme(date_str)
-        parts = get_participants(date_str, r_num, c_num)
-        perfs = get_performances(date_str, r_num, c_num)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-    if not parts:
-        return jsonify({"error": "Aucun participant"}), 404
-
-    course_info = None
-    hippodrome = None
-    for r in prog["programme"]["reunions"]:
-        if r["numOfficiel"] == r_num:
-            hippodrome = r["hippodrome"]["libelleCourt"]
-            for c in r["courses"]:
-                if c["numOrdre"] == c_num:
-                    course_info = {
-                        "libelle": c.get("libelle"),
-                        "discipline": c.get("discipline"),
-                        "distance": c.get("distance"),
-                        "corde": c.get("corde", ""),
-                        "heure": datetime.fromtimestamp(
-                            c["heureDepart"] / 1000
-                        ).strftime("%H:%M") if c.get("heureDepart") else "",
-                        "nbPartants": c.get("nombreDeclaresPartants"),
-                        "arriveeDefinitive": c.get("arriveeDefinitive", False),
-                    }
-
-    # Anti-leak : stats ne contiennent pas les jours analysés
-    today = datetime.now()
-    try:
-        analysed_date = datetime.strptime(date_str, "%d%m%Y")
-    except (ValueError, TypeError):
-        analysed_date = today
-    exclude_days = max((today - analysed_date).days, 0)
-
-    team_stats = compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=exclude_days)
-    analyses = analyser_course(parts, perfs, team_stats)
-
-    result = {
-        "date": date_str,
-        "hippodrome": hippodrome,
-        "course": course_info,
-        "analyses": analyses,
-        "timestamp": datetime.now().isoformat(),
-    }
-    return jsonify(result)
-
-
-# ═══════════════════════════════════════════════════════════
-#  Auth admin
+#  Auth
 # ═══════════════════════════════════════════════════════════
 
 def admin_required(f):
@@ -644,6 +594,15 @@ def admin_required(f):
             return redirect(url_for("login_page"))
         return f(*args, **kwargs)
     return decorated
+
+
+# ═══════════════════════════════════════════════════════════
+#  Routes publiques
+# ═══════════════════════════════════════════════════════════
+
+@app.route("/")
+def public_home():
+    return render_template("public.html")
 
 @app.route("/login", methods=["GET", "POST"])
 def login_page():
@@ -684,7 +643,7 @@ def bilan_page():
 @app.route("/api/reunions")
 @admin_required
 def api_reunions():
-    """Liste des courses du jour (admin)."""
+    """Liste des courses du jour."""
     date_str = request.args.get("date") or fmt_date(datetime.now())
     try:
         prog = get_programme(date_str)
@@ -709,11 +668,87 @@ def api_reunions():
         })
     return jsonify({"date": date_str, "reunions": out})
 
-@app.route("/api/course-detail/<int:r_num>/<int:c_num>")
+@app.route("/api/stats-status")
 @admin_required
-def api_course_detail(r_num, c_num):
-    """Analyse complète d'une course (admin, réutilise api_course)."""
-    return api_course(r_num, c_num)
+def api_stats_status():
+    """Statut du chargement des stats."""
+    status = _load_stats_status()
+    stats = get_stats()
+    if stats:
+        status["ready"] = True
+        status["horses"] = len(stats.get("horse_stats", {}))
+        status["drivers"] = len(stats.get("driver_stats", {}))
+        status["trainers"] = len(stats.get("trainer_stats", {}))
+    else:
+        status["ready"] = False
+    return jsonify(status)
+
+@app.route("/api/course/<int:r_num>/<int:c_num>")
+@admin_required
+def api_course(r_num, c_num):
+    """Analyse d'une course avec classement."""
+    date_str = request.args.get("date") or fmt_date(datetime.now())
+
+    # Vérifier que les stats sont prêtes
+    stats = get_stats()
+    if not stats:
+        return jsonify({"error": "Stats pas encore prêtes. Patientez quelques secondes ou rechargez.",
+                        "status": "loading"}), 503
+
+    try:
+        prog = get_programme(date_str)
+        parts = get_participants(date_str, r_num, c_num)
+        perfs = get_performances(date_str, r_num, c_num)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    if not parts:
+        return jsonify({"error": "Aucun participant"}), 404
+
+    course_info = None
+    hippodrome = None
+    for r in prog["programme"]["reunions"]:
+        if r["numOfficiel"] == r_num:
+            hippodrome = r["hippodrome"]["libelleCourt"]
+            for c in r["courses"]:
+                if c["numOrdre"] == c_num:
+                    course_info = {
+                        "libelle": c.get("libelle"),
+                        "discipline": c.get("discipline"),
+                        "distance": c.get("distance"),
+                        "corde": c.get("corde", ""),
+                        "heure": datetime.fromtimestamp(
+                            c["heureDepart"] / 1000
+                        ).strftime("%H:%M") if c.get("heureDepart") else "",
+                        "nbPartants": c.get("nombreDeclaresPartants"),
+                        "arriveeDefinitive": c.get("arriveeDefinitive", False),
+                    }
+
+    # Anti-leak : stats ne contiennent pas les jours analysés
+    today = datetime.now()
+    try:
+        analysed_date = datetime.strptime(date_str, "%d%m%Y")
+    except (ValueError, TypeError):
+        analysed_date = today
+    exclude_days = max((today - analysed_date).days, 0)
+
+    # Si on analyse aujourd'hui, utiliser les stats en cache (pré-calculées)
+    if exclude_days == 0:
+        team_stats = stats
+    else:
+        # Pour les jours passés, recalculer avec exclusion (rapide car ne touche qu'aux jours concernés)
+        max_lookback = min(HISTORY_DAYS, exclude_days + 15)
+        team_stats = compute_all_stats(max_days=max_lookback, exclude_recent_days=exclude_days)
+
+    analyses = analyser_course(parts, perfs, team_stats)
+
+    return jsonify({
+        "date": date_str,
+        "hippodrome": hippodrome,
+        "course": course_info,
+        "analyses": analyses,
+        "timestamp": datetime.now().isoformat(),
+    })
 
 @app.route("/api/backtest")
 @admin_required
@@ -748,10 +783,13 @@ def api_bilan():
 @admin_required
 def api_team_stats():
     """Retourne les stats driver et entraineur."""
-    team_stats = compute_all_stats(max_days=HISTORY_DAYS)
-    drivers = sorted(team_stats["driver_stats"].items(),
+    stats = get_stats()
+    if not stats:
+        return jsonify({"error": "Stats pas encore prêtes"}), 503
+
+    drivers = sorted(stats["driver_stats"].items(),
                     key=lambda x: -(x[1]["v"] if x[1]["c"] >= 10 else 0))[:30]
-    trainers = sorted(team_stats["trainer_stats"].items(),
+    trainers = sorted(stats["trainer_stats"].items(),
                      key=lambda x: -(x[1]["v"] if x[1]["c"] >= 10 else 0))[:30]
     return jsonify({
         "drivers": [{
@@ -770,10 +808,30 @@ def api_team_stats():
         } for k, v in trainers],
     })
 
+@app.route("/api/force-refresh-stats", methods=["POST"])
+@admin_required
+def api_force_refresh():
+    """Force le recalcul des stats."""
+    global _current_stats, _stats_ready, _stats_error
+    _current_stats = None
+    _stats_ready.clear()
+    _stats_error = None
+    _save_stats_status({"status": "loading", "started_at": datetime.now().isoformat()})
+    t = threading.Thread(target=_background_load_stats, daemon=True)
+    t.start()
+    return jsonify({"status": "refreshing"})
+
 @app.route("/api/health")
 def api_health():
-    return jsonify({"status": "ok", "version": "simple"})
+    stats = get_stats()
+    return jsonify({
+        "status": "ok",
+        "version": "simple",
+        "stats_ready": stats is not None,
+        "stats_horses": len(stats["horse_stats"]) if stats else 0,
+    })
 
 
 if __name__ == "__main__":
+    start_stats_loader()  # Charge les stats en arrière-plan au démarrage
     app.run(host="0.0.0.0", port=5000, debug=False)
