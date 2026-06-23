@@ -3,681 +3,107 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Turf Analyzer v6 — Pronostics IA Pro</title>
+<title>Turf Analyzer — Simple</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    color: #e2e8f0; min-height: 100vh;
-  }
-  header {
-    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
-    padding: 14px 20px; display: flex; justify-content: space-between;
-    align-items: center; backdrop-filter: blur(10px);
-    position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
-  }
-  header h1 {
-    font-size: 20px;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .version-tag { background: #8b5cf6; color: white; padding: 2px 6px;
-    border-radius: 4px; font-size: 10px; font-weight: 700; margin-left: 6px; }
-  .badge-ml-top4 { background: #06b6d4; color: white; padding: 2px 6px;
-    border-radius: 3px; font-size: 9px; font-weight: 700; margin-left: 4px; }
-  .nav-links { display: flex; gap: 8px; }
-  .nav-links a {
-    color: #94a3b8; text-decoration: none; font-size: 13px;
-    padding: 6px 12px; border-radius: 6px; transition: all .2s;
-  }
-  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
-  .controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  input[type=date], select, button, input[type=number] {
-    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
-    padding: 6px 10px; border-radius: 7px; font-size: 12px;
-  }
-  button {
-    background: #10b981; border: none; cursor: pointer;
-    font-weight: 600; transition: all .2s;
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f172a; color: #e2e8f0; }
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; padding: 30px 0; color: #10b981; font-size: 2em; }
+  .subtitle { text-align: center; color: #94a3b8; margin-bottom: 30px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+  .card { background: #1e293b; border-radius: 12px; padding: 20px; }
+  .card h2 { color: #10b981; margin-bottom: 15px; font-size: 1.2em; }
+  .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155; }
+  .stat:last-child { border-bottom: none; }
+  .stat-label { color: #94a3b8; }
+  .stat-value { font-weight: bold; color: #10b981; }
+  .stat-value.bad { color: #ef4444; }
+  .loading { text-align: center; padding: 40px; color: #64748b; }
+  .error { color: #ef4444; text-align: center; padding: 20px; }
+  .nav { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
+  .nav a { color: #10b981; text-decoration: none; padding: 8px 16px; border: 1px solid #10b981; border-radius: 6px; }
+  .nav a:hover { background: #10b981; color: #0f172a; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 10px; background: #334155; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; }
+  td { padding: 10px; border-bottom: 1px solid #334155; font-size: 0.9em; }
+  tr:hover { background: #1e293b; }
+  .score-bar { display: inline-block; height: 6px; border-radius: 3px; background: #10b981; min-width: 2px; }
+  .select-row { display: flex; gap: 10px; align-items: center; margin-bottom: 15px; flex-wrap: wrap; }
+  select, button { background: #334155; color: #e2e8f0; border: none; padding: 8px 16px; border-radius: 6px; font-size: 0.9em; }
+  button { background: #10b981; cursor: pointer; }
   button:hover { background: #059669; }
-
-  .toggle-switch { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #94a3b8; }
-  .toggle-switch input { width: 32px; height: 16px; appearance: none; background: #334155;
-    border-radius: 9px; position: relative; cursor: pointer; transition: all .2s; }
-  .toggle-switch input:checked { background: #8b5cf6; }
-  .toggle-switch input:before {
-    content: ''; position: absolute; width: 12px; height: 12px;
-    background: white; border-radius: 50%; top: 2px; left: 2px; transition: all .2s;
-  }
-  .toggle-switch input:checked:before { left: 18px; }
-
-  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 16px; padding: 16px; }
-  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
-
-  .sidebar {
-    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 14px;
-    max-height: calc(100vh - 110px); overflow-y: auto; border: 1px solid #334155;
-  }
-  .reunion-block { margin-bottom: 14px; }
-  .reunion-title {
-    font-size: 12px; font-weight: 700; color: #06b6d4; margin-bottom: 6px;
-    text-transform: uppercase; letter-spacing: 0.5px;
-  }
-  .course-btn {
-    width: 100%; text-align: left; background: #1e293b; color: #cbd5e1;
-    padding: 7px 9px; margin-bottom: 3px; border-radius: 6px;
-    font-size: 11px; border: 1px solid transparent; cursor: pointer;
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .course-btn:hover { border-color: #10b981; background: #263548; }
-  .course-btn.active { background: #064e3b; border-color: #10b981; }
-  .course-btn .time { color: #94a3b8; font-size: 10px; }
-  .course-btn .finished { color: #f59e0b; font-size: 9px; }
-
-  .main { min-height: 400px; }
-  .placeholder {
-    text-align: center; padding: 60px 20px; color: #64748b;
-  }
-  .placeholder .emoji { font-size: 56px; margin-bottom: 16px; }
-  .placeholder h2 { color: #e2e8f0; font-size: 22px; margin-bottom: 10px; }
-
-  .live-indicator {
-    background: #ef4444; color: white; padding: 3px 8px; border-radius: 4px;
-    font-size: 10px; font-weight: 700; display: inline-flex; align-items: center;
-    gap: 4px; margin-left: 8px;
-  }
-  .live-dot { width: 6px; height: 6px; background: white; border-radius: 50%;
-    animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
-
-  .course-header {
-    background: rgba(30, 41, 59, 0.8); padding: 16px 20px; border-radius: 12px;
-    margin-bottom: 14px; border-left: 4px solid #10b981;
-  }
-  .course-header h2 { font-size: 18px; margin-bottom: 4px; }
-  .course-header .meta { display: flex; gap: 14px; flex-wrap: wrap; color: #94a3b8; font-size: 12px; }
-  .course-header .meta span strong { color: #e2e8f0; }
-  .badge-ml { background: #8b5cf6; color: white; padding: 2px 6px; border-radius: 3px;
-    font-size: 9px; font-weight: 700; margin-left: 6px; }
-
-  .horses { display: grid; gap: 10px; }
-  .horse {
-    background: rgba(30, 41, 59, 0.6); border-radius: 12px; padding: 14px;
-    border: 1px solid #334155;
-    display: grid; grid-template-columns: 55px 1fr 220px; gap: 14px;
-    align-items: center; transition: all .2s; position: relative;
-  }
-  .horse:hover { border-color: #10b981; }
-  .horse.top1 { background: linear-gradient(90deg, rgba(16,185,129,0.15), rgba(30,41,59,0.6)); border-color: #10b981; }
-  .horse.top2 { border-color: #06b6d4; }
-  .horse.top3 { border-color: #8b5cf6; }
-  .horse.value-bet { box-shadow: 0 0 0 2px #f59e0b, 0 0 16px rgba(245,158,11,0.3); }
-  .horse.winner { background: linear-gradient(90deg, rgba(245,158,11,0.2), rgba(30,41,59,0.6)); }
-  .horse.winner::before {
-    content: '🏆 GAGNANT'; position: absolute; top: -9px; right: 10px;
-    background: #f59e0b; color: #0f172a; padding: 2px 8px; border-radius: 10px;
-    font-size: 9px; font-weight: 800;
-  }
-  .horse.value-bet::after {
-    content: '⭐ VALUE'; position: absolute; top: -9px; left: 10px;
-    background: #f59e0b; color: #0f172a; padding: 2px 8px; border-radius: 10px;
-    font-size: 9px; font-weight: 800;
-  }
-
-  .rank-block { text-align: center; }
-  .rank-num { font-size: 26px; font-weight: 800; color: #10b981; line-height: 1; }
-  .rank-pmu {
-    background: #0f172a; color: #f59e0b; border-radius: 50%;
-    width: 32px; height: 32px; display: inline-flex; align-items: center;
-    justify-content: center; font-weight: 700; margin-top: 5px;
-    border: 2px solid #f59e0b; font-size: 13px;
-  }
-  .arrived-pos {
-    background: #f59e0b; color: #0f172a; border-radius: 4px;
-    padding: 1px 5px; font-size: 9px; font-weight: 700;
-    display: block; margin-top: 5px;
-  }
-
-  .horse-info h3 { font-size: 16px; margin-bottom: 3px; }
-  .horse-info .sub { color: #94a3b8; font-size: 11px; margin-bottom: 3px; }
-  .musique {
-    font-family: 'Courier New', monospace; background: #0f172a;
-    padding: 2px 6px; border-radius: 3px; display: inline-block;
-    color: #f59e0b; font-size: 11px; margin-top: 3px;
-  }
-  .pedigree {
-    font-size: 10px; color: #94a3b8; margin-top: 3px;
-  }
-  .pedigree strong { color: #ec4899; }
-  .badges { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-  .badge {
-    font-size: 9px; padding: 2px 5px; border-radius: 3px;
-    background: #334155; color: #cbd5e1; font-weight: 600;
-    text-transform: uppercase;
-  }
-  .badge.warn { background: #7c2d12; color: #fed7aa; }
-  .badge.good { background: #064e3b; color: #6ee7b7; }
-  .badge.team-stats { background: #1e3a8a; color: #93c5fd; }
-
-  .chance-block { text-align: right; }
-  .chance-pct {
-    font-size: 32px; font-weight: 800; line-height: 1;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .chance-label { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
-  .chance-bar {
-    height: 5px; background: #0f172a; border-radius: 3px;
-    margin-top: 6px; overflow: hidden;
-  }
-  .chance-bar div {
-    height: 100%; background: linear-gradient(90deg, #10b981, #06b6d4);
-    border-radius: 3px; transition: width .5s ease;
-  }
-  .cote-tag {
-    display: inline-block; background: #1e40af; color: white;
-    padding: 2px 7px; border-radius: 3px; font-size: 11px;
-    font-weight: 700; margin-top: 5px;
-  }
-  .edge-tag {
-    display: inline-block; background: #064e3b; color: #6ee7b7;
-    padding: 2px 7px; border-radius: 3px; font-size: 10px;
-    font-weight: 700; margin-top: 3px; margin-left: 3px;
-  }
-  .edge-tag.negative { background: #7f1d1d; color: #fca5a5; }
-
-  .kelly-info {
-    margin-top: 8px; padding: 6px 8px;
-    background: rgba(139, 92, 246, 0.15);
-    border: 1px solid #8b5cf6; border-radius: 6px;
-    font-size: 10px; text-align: left;
-  }
-  .kelly-info .ki-row { display: flex; justify-content: space-between; gap: 8px; }
-  .kelly-info strong { color: #a78bfa; }
-  .kelly-info .mise { font-size: 14px; font-weight: 800; color: #c4b5fd; }
-  .btn-bet {
-    background: #8b5cf6; color: white; border: none; cursor: pointer;
-    padding: 4px 8px; border-radius: 4px; font-size: 10px;
-    font-weight: 700; margin-top: 5px; width: 100%;
-  }
-  .btn-bet:hover { background: #7c3aed; }
-
-  .top4-block {
-    margin-top: 8px; padding: 6px 10px;
-    background: rgba(6, 182, 212, 0.08);
-    border: 1px solid rgba(6, 182, 212, 0.25);
-    border-radius: 6px; text-align: center;
-  }
-  .top4-pct {
-    font-size: 22px; font-weight: 800;
-    background: linear-gradient(90deg, #06b6d4, #8b5cf6);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .top4-label {
-    font-size: 9px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px;
-    margin-top: 2px;
-  }
-  .top4-bar {
-    height: 4px; background: #0f172a; border-radius: 3px;
-    margin-top: 5px; overflow: hidden;
-  }
-  .top4-bar div {
-    height: 100%; background: linear-gradient(90deg, #06b6d4, #8b5cf6);
-    border-radius: 3px; transition: width .5s ease;
-  }
-  .scores-detail {
-    display: grid; grid-template-columns: repeat(17, 1fr); gap: 2px;
-    margin-top: 10px; padding-top: 10px; border-top: 1px solid #334155;
-    grid-column: 1 / -1;
-  }
-  .score-item {
-    text-align: center; background: #0f172a; padding: 4px 2px; border-radius: 4px;
-  }
-  .score-item .lbl { font-size: 8px; color: #94a3b8; text-transform: uppercase; }
-  .score-item .val { font-size: 11px; font-weight: 700; color: #06b6d4; }
-  .score-item.team .val { color: #8b5cf6; }
-  .score-item.dist .val { color: #f59e0b; }
-  .score-item.horse .val { color: #ec4899; }
-  .score-item.elo .val { color: #facc15; font-weight: 800; }
-  .score-item.new .val { color: #34d399; }
-  .score-item.v4 .val { color: #fb923c; }
-  .score-item.v6 .val { color: #38bdf8; }
-
-  .loading { text-align: center; padding: 50px; color: #94a3b8; }
-  .spinner {
-    border: 3px solid #334155; border-top: 3px solid #10b981;
-    border-radius: 50%; width: 32px; height: 32px;
-    animation: spin 1s linear infinite; margin: 0 auto 14px;
-  }
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-
-  .disclaimer {
-    background: rgba(245, 158, 11, 0.1); border: 1px solid #f59e0b;
-    border-radius: 8px; padding: 8px 12px; margin-top: 12px;
-    font-size: 11px; color: #fbbf24;
-  }
-  .value-bets-banner {
-    background: linear-gradient(90deg, rgba(245,158,11,0.2), rgba(245,158,11,0.05));
-    border-left: 4px solid #f59e0b; padding: 10px 14px;
-    border-radius: 8px; margin-bottom: 12px; font-size: 12px;
-  }
-  .value-bets-banner strong { color: #f59e0b; }
-
-  /* Modal */
-  .modal-overlay {
-    display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0,0,0,0.7); z-index: 200; align-items: center; justify-content: center;
-  }
-  .modal-overlay.active { display: flex; }
-  .modal {
-    background: #1e293b; padding: 24px; border-radius: 12px;
-    max-width: 400px; width: 90%; border: 1px solid #334155;
-  }
-  .modal h3 { margin-bottom: 16px; color: #10b981; }
-  .modal label { display: block; margin: 10px 0 4px; font-size: 12px; color: #94a3b8; }
-  .modal input { width: 100%; padding: 8px; }
-  .modal-actions { display: flex; gap: 8px; margin-top: 16px; }
-  .modal-actions button { flex: 1; }
-  .modal-actions .secondary { background: #475569; }
-
-  @media (max-width: 1200px) { .scores-detail { grid-template-columns: repeat(9, 1fr); } }
-  @media (max-width: 800px) { .scores-detail { grid-template-columns: repeat(5, 1fr); } }
-  @media (max-width: 700px) {
-    .horse { grid-template-columns: 50px 1fr; }
-    .chance-block { grid-column: 1 / -1; text-align: left; }
-    .scores-detail { grid-template-columns: repeat(4, 1fr); }
-  }
 </style>
 </head>
 <body>
-<header>
-  <h1>🐎 Turf Analyzer<span class="version-tag">v6</span></h1>
-  <div class="nav-links">
-    <a href="/admin" class="active">🔍 Analyse</a>
-    <a href="/paris-haute">🔥 Paris</a>
-    <a href="/backtest">📊 Backtest</a>
-    <a href="/logout" style="color:#ef4444;">🔓</a>
-  </div>
-  <div class="controls">
-    <label class="toggle-switch" title="Refresh auto des cotes toutes les 30s">
-      <input type="checkbox" id="liveToggle">
-      <span>🔴 Live</span>
-    </label>
-    <label class="toggle-switch">
-      <input type="checkbox" id="mlToggle">
-      <span>🧠 ML</span>
-    </label>
-    <label style="font-size:11px;color:#94a3b8;">💰
-      <input type="number" id="capital" value="100" min="10" max="10000" step="10" style="width:70px;">€
-    </label>
-    <input type="date" id="datePicker">
-    <button onclick="loadReunions()">Charger</button>
-    <button onclick="downloadPDF()" style="background:#dc2626;font-size:11px;" title="Télécharger le PDF (Gagnant Top 2 + Super Base Top4)">📄 PDF</button>
-  </div>
-</header>
+<div class="container">
+  <h1>🐎 Turf Analyzer</h1>
+  <p class="subtitle">Analyse basée sur 3 piliers : Cheval • Driver • Entraîneur</p>
 
-<div class="layout">
-  <aside class="sidebar">
-    <div id="reunionsList" class="loading"><div class="spinner"></div>Chargement…</div>
-  </aside>
+  <div class="nav">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest</a>
+    <a href="/bilan">Bilan</a>
+  </div>
 
-  <main class="main" id="mainContent">
-    <div class="placeholder">
-      <div class="emoji">🏇</div>
-      <h2>Turf Analyzer v6</h2>
-      <p>Algorithme à <strong>41 features</strong> + Dual Model Win/Top4 + Stacking (LGBM+CatBoost+HGB+RF+LR) + Kelly</p>
-      <p style="font-size:13px; margin-top:10px;">Sélectionnez une course pour analyser.</p>
-      <p style="font-size:11px; margin-top:8px; color:#10b981;">📊 Backtest 280 courses — top1: <strong>63%</strong> | top3: <strong>90%</strong> | Kelly ROI: <strong>+365%</strong></p>
-      <p style="font-size:10px; margin-top:6px; color:#94a3b8;">⚠️ Résultats mesurés en backtest — performance réelle moindre</p>
+  <div class="grid">
+    <div class="card">
+      <h2>📊 Résumé du jour</h2>
+      <div id="summary" class="loading">Chargement...</div>
     </div>
-  </main>
-</div>
-
-<!-- Modal pari -->
-<div class="modal-overlay" id="betModal">
-  <div class="modal">
-    <h3>📋 Enregistrer un pari</h3>
-    <label>Cheval</label>
-    <input type="text" id="bet_cheval" readonly>
-    <label>Cote</label>
-    <input type="number" id="bet_cote" step="0.1">
-    <label>Mise (€) — Kelly recommandé : <span id="bet_kelly_reco">0</span>€</label>
-    <input type="number" id="bet_mise" step="0.5" min="0.5">
-    <label>Course</label>
-    <input type="text" id="bet_course" readonly>
-    <div class="modal-actions">
-      <button class="secondary" onclick="closeBetModal()">Annuler</button>
-      <button onclick="confirmBet()">Enregistrer</button>
+    <div class="card">
+      <h2>🏆 Top Drivers</h2>
+      <div id="top-drivers" class="loading">Chargement...</div>
     </div>
   </div>
 </div>
 
 <script>
-let currentDate = '';
-let currentR = null, currentC = null;
-let liveInterval = null;
-let lastAnalyses = [];
-
-function todayStr() { return new Date().toISOString().slice(0,10); }
-function toApiDate(s) { const [y,m,d] = s.split('-'); return d+m+y; }
-
-async function loadReunions() {
-  currentDate = toApiDate(document.getElementById('datePicker').value);
-  const list = document.getElementById('reunionsList');
-  list.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement…</div>';
-  try {
-    const res = await fetch(`/api/reunions?date=${currentDate}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    if (!data.reunions || !data.reunions.length) {
-      list.innerHTML = '<p style="color:#94a3b8;padding:20px;">Aucune réunion</p>';
-      return;
-    }
-    // Afficher les courses immédiatement
-    list.innerHTML = data.reunions.map(r => `
-      <div class="reunion-block">
-        <div class="reunion-title">R${r.numReunion} · ${r.hippodrome}</div>
-        ${r.courses.map(c => `
-          <button class="course-btn" onclick="loadCourse(${r.numReunion}, ${c.numCourse}, this)" id="cbtn-${r.numReunion}-${c.numCourse}">
-            <span>C${c.numCourse} · ${(c.libelle||'').substring(0,26)}</span>
-            <span>${c.arriveeDefinitive ? '<span class="finished">✓</span> ' : ''}<span class="diff-badge" id="diff-${r.numReunion}-${c.numCourse}"></span> <span class="time">${c.heure}</span></span>
-          </button>
-        `).join('')}
-      </div>
-    `).join('');
-
-    // Charger les indices de difficulté en arrière-plan
-    fetch(`/api/course-difficulty?date=${currentDate}`).then(r => r.json()).then(diffData => {
-      if (diffData.difficulties) {
-        for (const [key, val] of Object.entries(diffData.difficulties)) {
-          const [rn, cn] = key.split('_');
-          const el = document.getElementById(`diff-${rn}-${cn}`);
-          if (el) {
-            const d = val;
-            let color, label;
-            if (d <= 2) { color = '#10b981'; label = 'Facile'; }
-            else if (d <= 4) { color = '#06b6d4'; label = 'Jouable'; }
-            else if (d <= 6) { color = '#f59e0b'; label = 'Moyen'; }
-            else if (d <= 8) { color = '#f97316'; label = 'Dur'; }
-            else { color = '#ef4444'; label = 'Expert'; }
-            el.innerHTML = `<span style="display:inline-block;background:${color};color:#0f172a;padding:1px 5px;border-radius:3px;font-size:9px;font-weight:800;">${d}/10</span>`;
-            el.title = `Difficulté: ${d}/10 — ${label}`;
-          }
-        }
+  async function loadSummary() {
+    try {
+      const res = await fetch('/api/programme');
+      const data = await res.json();
+      if (data.reunions && data.reunions.length > 0) {
+        let totalCourses = 0;
+        data.reunions.forEach(r => totalCourses += r.courses.length);
+        document.getElementById('summary').innerHTML = `
+          <div class="stat"><span class="stat-label">Réunions</span><span class="stat-value">${data.reunions.length}</span></div>
+          <div class="stat"><span class="stat-label">Courses</span><span class="stat-value">${totalCourses}</span></div>
+          <div class="stat"><span class="stat-label">Date</span><span class="stat-value">${data.date}</span></div>
+        `;
+      } else {
+        document.getElementById('summary').innerHTML = '<p class="error">Aucune course aujourd\'hui</p>';
       }
-    }).catch(() => {}); // Silencieux si échec
-  } catch(e) {
-    list.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
-  }
-}
-
-async function loadCourse(r, c, btn, silent=false) {
-  currentR = r; currentC = c;
-  if (btn) {
-    document.querySelectorAll('.course-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-  }
-  const main = document.getElementById('mainContent');
-  if (!silent) {
-    main.innerHTML = '<div class="loading"><div class="spinner"></div>Analyse en cours… (features v6 + ML dual Win/Top4)</div>';
-  }
-  try {
-    const ml = document.getElementById('mlToggle').checked ? '&ml=1' : '';
-    const live = document.getElementById('liveToggle').checked ? '&live=1' : '';
-    const capital = document.getElementById('capital').value || 100;
-    const res = await fetch(`/api/course/${r}/${c}?date=${currentDate}&capital=${capital}${ml}${live}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    lastAnalyses = data.analyses;
-    renderCourse(data);
-  } catch(e) {
-    main.innerHTML = `<p style="color:#ef4444;padding:20px;">Erreur: ${e.message}</p>`;
-  }
-}
-
-document.getElementById('mlToggle').addEventListener('change', () => {
-  if (currentR) loadCourse(currentR, currentC, null);
-});
-document.getElementById('capital').addEventListener('change', () => {
-  if (currentR) loadCourse(currentR, currentC, null);
-});
-document.getElementById('liveToggle').addEventListener('change', (e) => {
-  if (liveInterval) { clearInterval(liveInterval); liveInterval = null; }
-  if (e.target.checked && currentR) {
-    loadCourse(currentR, currentC, null);
-    liveInterval = setInterval(() => {
-      if (currentR) loadCourse(currentR, currentC, null, true);
-    }, 30000);  // 30s
-  } else if (currentR) {
-    loadCourse(currentR, currentC, null);
-  }
-});
-
-function renderCourse(data) {
-  const { reunion, course, analyses, ml_active, live, timestamp } = data;
-  const main = document.getElementById('mainContent');
-  const valueBets = analyses.filter(a => a.valueBet);
-
-  let html = '';
-  // Warning si course passee (data leak)
-  if (data.has_results || data.is_past) {
-    html += `<div style="background:rgba(239,68,68,0.15);border:2px solid #ef4444;border-radius:8px;padding:10px 14px;margin-bottom:12px;">
-      <div style="color:#ef4444;font-weight:700;font-size:13px;">⚠️ COURSE PASSÉE — Résultats déjà connus</div>
-      <div style="color:#f59e0b;font-size:11px;margin-top:4px;">Les cotes sont définitives et les stats incluent ces résultats. Les prédictions sont biaisées et ne reflètent PAS ce qui était prévisible avant la course.</div>
-    </div>`;
-  }
-
-  html += `
-    <div class="course-header">
-      <h2>${course.libelle}
-        ${ml_active ? '<span class="badge-ml">🧠 ML</span>' : ''}
-        ${data.ml_top4_active ? '<span class="badge-ml-top4">🎯 Top4</span>' : ''}
-        ${live ? '<span class="live-indicator"><span class="live-dot"></span>LIVE</span>' : ''}
-        ${data.has_results ? '<span style="background:#ef4444;color:white;padding:2px 8px;border-radius:3px;font-size:10px;">ARRIVÉE</span>' : ''}
-      </h2>
-      <div class="meta">
-        <span>📍 <strong>${reunion.hippodrome}</strong></span>
-        <span>🕐 <strong>${course.heure}</strong></span>
-        <span>🏁 <strong>${course.discipline}</strong></span>
-        <span>📏 <strong>${course.distance}m</strong></span>
-        ${course.montantPrix ? `<span>💰 <strong>${course.montantPrix.toLocaleString()}€</strong></span>` : ''}
-        <span>🐎 <strong>${analyses.length} partants</strong></span>
-        ${course.arriveeDefinitive ? '<span style="color:#f59e0b;">✓ Arrivée</span>' : ''}
-        ${live ? `<span style="color:#94a3b8;font-size:10px;">MAJ: ${new Date(timestamp).toLocaleTimeString('fr-FR')}</span>` : ''}
-      </div>
-    </div>
-  `;
-
-  if (valueBets.length > 0) {
-    html += `
-      <div class="value-bets-banner">
-        ⭐ <strong>${valueBets.length} value bet${valueBets.length>1?'s':''} :</strong>
-        ${valueBets.map(b => `${b.nom} (cote ${b.cote}, edge +${b.edge}%, Kelly ${b.kellyMise}€)`).join(' · ')}
-      </div>
-    `;
-  }
-
-  html += '<div class="horses">';
-
-  analyses.forEach(a => {
-    const topClass = a.rang <= 3 ? `top${a.rang}` : '';
-    const isWinner = a.ordreArrivee === 1;
-    const isValueBet = a.valueBet;
-    const badges = [];
-    if (a.driverChange) badges.push('<span class="badge warn">Drv changé</span>');
-    if (a.driver === a.entraineur) badges.push('<span class="badge good">Drv=Entr</span>');
-    if (a.deferre && a.deferre.includes('DEFERRE')) badges.push(`<span class="badge good">${a.deferre.replace('DEFERRE_','D-')}</span>`);
-    if (a.oeilleres && a.oeilleres !== 'SANS_OEILLERES') badges.push(`<span class="badge good">👁️</span>`);
-    if (a.scores.driver >= 70) badges.push('<span class="badge team-stats">🔥 Driver</span>');
-    if (a.scores.entraineur >= 70) badges.push('<span class="badge team-stats">🔥 Entr</span>');
-    if (a.scores.distance >= 75) badges.push('<span class="badge good">Dist ✓</span>');
-    if (a.scores.elo >= 85) badges.push(`<span class="badge" style="background:#facc15;color:#0f172a;">⚡ Crack</span>`);
-    if (a.scores.cheval_stats >= 70) badges.push('<span class="badge" style="background:#ec4899;color:white;">💎</span>');
-    if (a.scores.elo_trend >= 80) badges.push('<span class="badge" style="background:#34d399;color:#0f172a;">📈</span>');
-    if (a.scores.elo_trend <= 20) badges.push('<span class="badge warn">📉</span>');
-    if (a.scores.repos >= 80) badges.push('<span class="badge good">😌 Repos</span>');
-    if (a.scores.pedigree >= 70) badges.push(`<span class="badge" style="background:#a855f7;color:white;">🧬 Lignée</span>`);
-    if (a.scores.corde >= 65) badges.push('<span class="badge good">📍 Bonne corde</span>');
-    // NEW v6 badges
-    if (a.scores.driver_hippo >= 70) badges.push('<span class="badge" style="background:#0ea5e9;color:white;">🏠 Expert local</span>');
-    if (a.scores.regularite >= 75) badges.push('<span class="badge good">📊 Régulier</span>');
-    if (a.scores.regularite <= 30) badges.push('<span class="badge warn">📊 Irrégulier</span>');
-    if (a.scores.equip_change >= 60) badges.push('<span class="badge" style="background:#f97316;color:white;">🔧 Équip.</span>');
-    if (a.scores.chimie_driver >= 70) badges.push('<span class="badge" style="background:#ec4899;color:white;">🤝 Chimie</span>');
-    if (a.scores.gains_trend >= 70) badges.push('<span class="badge good">📈 Prog. gains</span>');
-    if (a.scores.gains_trend <= 30) badges.push('<span class="badge warn">📉 Régr. gains</span>');
-    if (a.scores.perf_terrain >= 70) badges.push('<span class="badge good">🌍 Terrain ✓</span>');
-
-    const classes = ['horse', topClass, isWinner?'winner':'', isValueBet?'value-bet':''].filter(x=>x).join(' ');
-
-    let kellyBlock = '';
-    if (a.kellyMise > 0) {
-      kellyBlock = `
-        <div class="kelly-info">
-          <div class="ki-row"><strong>💰 Kelly</strong> <span class="mise">${a.kellyMise}€</span></div>
-          <div class="ki-row"><span>EV par 1€</span> <span style="color:#34d399;">+${(a.expectedROI/100).toFixed(2)}€</span></div>
-          <div class="ki-row"><span>Fraction</span> <span>${a.kellyFraction}%</span></div>
-          <button class="btn-bet" onclick="openBetModal(${a.numPmu})">📋 Enregistrer ce pari</button>
-        </div>
-      `;
+    } catch(e) {
+      document.getElementById('summary').innerHTML = `<p class="error">Erreur: ${e.message}</p>`;
     }
+  }
 
-    html += `
-      <div class="${classes}">
-        <div class="rank-block">
-          <div class="rank-num">#${a.rang}</div>
-          <div class="rank-pmu">${a.numPmu}</div>
-          ${a.ordreArrivee ? `<span class="arrived-pos">A: ${a.ordreArrivee}</span>` : ''}
-          ${a.rang === 1 && a.confianceNiveau ? `<div style="font-size:9px;margin-top:3px;font-weight:700;color:${a.confiance >= 50 ? '#10b981' : '#f59e0b'};">${a.confianceNiveau}</div>` : ''}
-          ${a.rang === 1 && a.confiance != null ? `<div style="font-size:8px;color:#64748b;">${a.confiance}/100</div>` : ''}
-        </div>
-        <div class="horse-info">
-          <h3>${a.nom}</h3>
-          <div class="sub">${a.age} ans · ${a.sexe||''} · 🏇 <strong>${a.driver}</strong> · 👤 ${a.entraineur}</div>
-          <div class="sub">${a.nbCourses} courses · ${a.nbVictoires}V · ${a.nbPlaces}P · 💰 ${a.gainsCarriere.toLocaleString()}€</div>
-          ${a.pere ? `<div class="pedigree">🧬 Par <strong>${a.pere}</strong>${a.mere ? ` × ${a.mere}` : ''}</div>` : ''}
-          ${a.musique ? `<span class="musique">${a.musique}</span>` : ''}
-          <div class="badges">${badges.join('')}</div>
-        </div>
-        <div class="chance-block">
-          <div class="chance-pct">${a.chance}%</div>
-          <div class="chance-label">Chance de gagner</div>
-          <div class="chance-bar"><div style="width:${Math.min(a.chance*3, 100)}%"></div></div>
-          ${a.cote ? `<div class="cote-tag">Cote ${a.cote}</div>` : ''}
-          ${a.edge !== 0 ? `<div class="edge-tag ${a.edge<0?'negative':''}">Edge ${a.edge>0?'+':''}${a.edge}%</div>` : ''}
-          ${kellyBlock}
-          ${a.chanceTop4 ? `
-          <div class="top4-block">
-            <div class="top4-pct">${a.chanceTop4}%</div>
-            <div class="top4-label">Chance Top 4${a.chanceTop4ML ? ' <small style="color:#a78bfa;">(ML ' + Math.round(a.chanceTop4ML) + '%)</small>' : ''}</div>
-            <div class="top4-bar"><div style="width:${Math.min(a.chanceTop4*1.25, 100)}%"></div></div>
-            ${a.chanceTop3ML ? `<div style="margin-top:4px;font-size:10px;color:#fbbf24;">🏅 Top3 ML: <strong>${Math.round(a.chanceTop3ML)}%</strong></div>` : ''}
-          </div>` : ''}
-        </div>
-        <div class="scores-detail">
-          <div class="score-item"><div class="lbl">Marché</div><div class="val">${a.scores.marche}</div></div>
-          <div class="score-item"><div class="lbl">Forme</div><div class="val">${a.scores.forme}</div></div>
-          <div class="score-item"><div class="lbl">Carr.</div><div class="val">${a.scores.carriere}</div></div>
-          <div class="score-item"><div class="lbl">Gains</div><div class="val">${a.scores.gains}</div></div>
-          <div class="score-item team"><div class="lbl">Driver</div><div class="val">${a.scores.driver}</div></div>
-          <div class="score-item team"><div class="lbl">Entr.</div><div class="val">${a.scores.entraineur}</div></div>
-          <div class="score-item dist"><div class="lbl">Dist.</div><div class="val">${a.scores.distance}</div></div>
-          <div class="score-item horse"><div class="lbl">Cheval</div><div class="val">${a.scores.cheval_stats}</div></div>
-          <div class="score-item elo"><div class="lbl">Elo</div><div class="val">${a.scores.elo}</div></div>
-          <div class="score-item new"><div class="lbl">Âge</div><div class="val">${a.scores.age_sexe}</div></div>
-          <div class="score-item new"><div class="lbl">Repos</div><div class="val">${a.scores.repos}</div></div>
-          <div class="score-item new"><div class="lbl">Trend</div><div class="val">${a.scores.elo_trend}</div></div>
-          <div class="score-item new"><div class="lbl">Confr</div><div class="val">${a.scores.confrontation}</div></div>
-          <div class="score-item v4"><div class="lbl">🧬Père</div><div class="val">${a.scores.pedigree}</div></div>
-          <div class="score-item v4"><div class="lbl">Corde</div><div class="val">${a.scores.corde}</div></div>
-          <div class="score-item v4"><div class="lbl">Équip</div><div class="val">${a.scores.equipment}</div></div>
-          <div class="score-item v4"><div class="lbl">Profil</div><div class="val">${a.scores.profile_match}</div></div>
-          <div class="score-item v6"><div class="lbl">🏠Dr/Hippo</div><div class="val">${a.scores.driver_hippo||50}</div></div>
-          <div class="score-item v6"><div class="lbl">📊Régul.</div><div class="val">${a.scores.regularite||50}</div></div>
-          <div class="score-item v6"><div class="lbl">🔧Chgt</div><div class="val">${a.scores.equip_change||50}</div></div>
-          <div class="score-item v6"><div class="lbl">⚔️Attaq</div><div class="val">${a.scores.style_attaquant||50}</div></div>
-          <div class="score-item v6"><div class="lbl">🏃Finish</div><div class="val">${a.scores.style_finisseur||50}</div></div>
-          <div class="score-item v6"><div class="lbl">📈TrGains</div><div class="val">${a.scores.gains_trend||50}</div></div>
-          <div class="score-item v6"><div class="lbl">📅J Repos</div><div class="val">${a.scores.jours_derniere||50}</div></div>
-          <div class="score-item v6"><div class="lbl">🔄Nb/Mois</div><div class="val">${a.scores.nb_courses_mois||50}</div></div>
-          <div class="score-item v6"><div class="lbl">🌍Terrain</div><div class="val">${a.scores.perf_terrain||50}</div></div>
-          <div class="score-item v6"><div class="lbl">📍Corde+</div><div class="val">${a.scores.corde_avantage||50}</div></div>
-          <div class="score-item v6"><div class="lbl">🤝Chimie</div><div class="val">${a.scores.chimie_driver||50}</div></div>
-        </div>
-      </div>
-    `;
-  });
-
-  html += `</div>
-    <div class="disclaimer">
-      ⚠️ Algorithme v6 : 41 features, Dual Model Win/Top4, Stacking (LGBM+CatBoost+HGB+RF+LR), Kelly Criterion.
-      ${ml_active ? 'Mode ML actif (20% heuristique + 80% ML).' : ''}
-      Le jeu peut être addictif : <a href="https://www.joueurs-info-service.fr/" style="color:#fbbf24;">joueurs-info-service.fr</a>
-    </div>
-  `;
-  main.innerHTML = html;
-}
-
-// Modal pari
-let currentBetHorse = null;
-function openBetModal(numPmu) {
-  const a = lastAnalyses.find(x => x.numPmu === numPmu);
-  if (!a) return;
-  currentBetHorse = a;
-  document.getElementById('bet_cheval').value = a.nom;
-  document.getElementById('bet_cote').value = a.cote;
-  document.getElementById('bet_mise').value = a.kellyMise || 1;
-  document.getElementById('bet_kelly_reco').textContent = a.kellyMise || 0;
-  document.getElementById('bet_course').value = `${currentDate.slice(0,2)}/${currentDate.slice(2,4)} R${currentR}C${currentC}`;
-  document.getElementById('betModal').classList.add('active');
-}
-
-function closeBetModal() {
-  document.getElementById('betModal').classList.remove('active');
-}
-
-async function confirmBet() {
-  if (!currentBetHorse) return;
-  const data = {
-    cheval: document.getElementById('bet_cheval').value,
-    cote: parseFloat(document.getElementById('bet_cote').value),
-    mise: parseFloat(document.getElementById('bet_mise').value),
-    course: document.getElementById('bet_course').value,
-    edge: currentBetHorse.edge,
-  };
-  try {
-    const res = await fetch('/api/bets', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(data),
-    });
-    if (res.ok) {
-      closeBetModal();
-      alert('Pari enregistré ! Voir "Mes paris" pour le suivre.');
+  async function loadTopDrivers() {
+    try {
+      const res = await fetch('/api/team-stats');
+      const data = await res.json();
+      if (data.drivers && data.drivers.length > 0) {
+        let html = '<table><tr><th>Driver</th><th>Courses</th><th>Victoires</th><th>% Vict.</th></tr>';
+        data.drivers.slice(0, 8).forEach(d => {
+          html += `<tr>
+            <td>${d.nom}</td>
+            <td>${d.courses}</td>
+            <td>${d.victoires}</td>
+            <td>${d.taux_victoire}%</td>
+          </tr>`;
+        });
+        html += '</table>';
+        document.getElementById('top-drivers').innerHTML = html;
+      } else {
+        document.getElementById('top-drivers').innerHTML = '<p class="error">Pas de données</p>';
+      }
+    } catch(e) {
+      document.getElementById('top-drivers').innerHTML = `<p class="error">Erreur: ${e.message}</p>`;
     }
-  } catch(e) {
-    alert('Erreur: ' + e.message);
   }
-}
 
-document.getElementById('datePicker').value = todayStr();
-loadReunions();
-
-function downloadPDF() {
-  if (!currentR || !currentC) {
-    alert('Sélectionne une course d\'abord');
-    return;
-  }
-  const ml = document.getElementById('mlToggle').checked ? '&ml=1' : '';
-  const capital = document.getElementById('capital').value || 100;
-  const url = `/api/course-pdf/${currentR}/${currentC}?date=${currentDate}&capital=${capital}${ml}`;
-  window.open(url, '_blank');
-}
+  loadSummary();
+  loadTopDrivers();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a080ef7a6976cddf',t:'MTc4MDg0ODcxNQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>

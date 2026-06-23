@@ -3,587 +3,130 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Backtest & ML — Turf Analyzer v6</title>
+<title>Backtest — Turf Analyzer</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    color: #e2e8f0; min-height: 100vh;
-  }
-  header {
-    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
-    padding: 14px 20px; display: flex; justify-content: space-between;
-    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
-  }
-  header h1 {
-    font-size: 20px;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .nav-links { display: flex; gap: 8px; }
-  .nav-links a {
-    color: #94a3b8; text-decoration: none; font-size: 13px;
-    padding: 6px 12px; border-radius: 6px;
-  }
-  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
-
-  .container { max-width: 1200px; margin: 0 auto; padding: 24px 16px; }
-  .section {
-    background: rgba(30, 41, 59, 0.6); border-radius: 12px;
-    padding: 20px; margin-bottom: 20px; border: 1px solid #334155;
-  }
-  .section h2 {
-    font-size: 17px; margin-bottom: 14px; color: #10b981;
-    border-bottom: 1px solid #334155; padding-bottom: 8px;
-  }
-  .section p { color: #94a3b8; font-size: 13px; margin-bottom: 14px; line-height: 1.6; }
-
-  .controls { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
-  select, button, input {
-    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
-    padding: 7px 12px; border-radius: 7px; font-size: 12px;
-  }
-  button {
-    background: #10b981; border: none; cursor: pointer; font-weight: 600;
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f172a; color: #e2e8f0; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; padding: 30px 0; color: #10b981; }
+  .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; }
+  .nav { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
+  .nav a { color: #10b981; text-decoration: none; padding: 8px 16px; border: 1px solid #10b981; border-radius: 6px; }
+  .card { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { color: #10b981; margin-bottom: 15px; }
+  .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+  .stat-box { background: #334155; padding: 15px; border-radius: 8px; text-align: center; }
+  .stat-box .value { font-size: 2em; font-weight: bold; color: #10b981; }
+  .stat-box .label { color: #94a3b8; font-size: 0.85em; margin-top: 5px; }
+  .stat-box .value.bad { color: #ef4444; }
+  .stat-box .value.warn { color: #f59e0b; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  th { text-align: left; padding: 10px; background: #334155; color: #94a3b8; font-size: 0.85em; text-transform: uppercase; }
+  td { padding: 10px; border-bottom: 1px solid #334155; }
+  tr:hover { background: #1e293b; }
+  .select-row { display: flex; gap: 10px; align-items: center; justify-content: center; margin-bottom: 20px; }
+  select, button { background: #334155; color: #e2e8f0; border: none; padding: 8px 16px; border-radius: 6px; }
+  button { background: #10b981; cursor: pointer; }
   button:hover { background: #059669; }
-  button.purple { background: #8b5cf6; }
-  button.purple:hover { background: #7c3aed; }
-
-  .results-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 12px; margin-top: 16px;
-  }
-  .stat-card {
-    background: #0f172a; padding: 14px; border-radius: 10px;
-    text-align: center; border: 1px solid #334155;
-  }
-  .stat-card .value {
-    font-size: 26px; font-weight: 800; line-height: 1;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .stat-card .label {
-    font-size: 11px; color: #94a3b8; text-transform: uppercase;
-    margin-top: 5px; letter-spacing: 0.5px;
-  }
-  .stat-card.roi-positive .value { background: linear-gradient(90deg, #10b981, #34d399); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .stat-card.roi-negative .value { background: linear-gradient(90deg, #ef4444, #f87171); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-
-  .vb-list { margin-top: 14px; }
-  .vb-row {
-    display: grid; grid-template-columns: 50px 1fr 70px 70px 70px 100px;
-    gap: 8px; padding: 7px 10px; background: #0f172a;
-    border-radius: 5px; margin-bottom: 4px; font-size: 12px; align-items: center;
-  }
-  .vb-row.win { border-left: 3px solid #10b981; }
-  .vb-row.lose { border-left: 3px solid #ef4444; opacity: 0.7; }
-
-  .loading { text-align: center; padding: 30px; color: #94a3b8; }
-  .spinner {
-    border: 3px solid #334155; border-top: 3px solid #10b981;
-    border-radius: 50%; width: 30px; height: 30px;
-    animation: spin 1s linear infinite; margin: 0 auto 12px;
-  }
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-  .success { color: #10b981; font-weight: 600; }
-  .error { color: #ef4444; font-weight: 600; }
-
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-  th, td { padding: 7px 9px; text-align: left; border-bottom: 1px solid #334155; }
-  th { color: #06b6d4; font-weight: 700; text-transform: uppercase; font-size: 10px; }
-  tr:hover td { background: #0f172a; }
-  .tabs { display: flex; gap: 6px; margin-bottom: 12px; }
-  .tab {
-    background: #1e293b; border: 1px solid #334155; color: #94a3b8;
-    padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 12px;
-  }
-  .tab.active { background: #064e3b; border-color: #10b981; color: #6ee7b7; }
+  .loading { text-align: center; padding: 40px; color: #64748b; }
+  .error { color: #ef4444; text-align: center; }
+  .value-bet { color: #f59e0b; }
+  .win { color: #10b981; }
+  .loss { color: #ef4444; }
 </style>
 </head>
 <body>
-<header>
-  <h1>🐎 Turf Analyzer — Backtest & ML <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
-  <div class="nav-links">
-    <a href="/admin">🔍 Analyse</a>
-    <a href="/paris-haute">🔥 Paris</a>
-    <a href="/backtest" class="active">📊 Backtest</a>
-    <a href="/logout" style="color:#ef4444;">🔓</a>
-  </div>
-</header>
-
 <div class="container">
-  <!-- ML Training -->
-  <div class="section">
-    <h2>🧠 Modèle ML v6 — Dual Win + Top 4</h2>
-    <p>
-      Entraîne <strong>3 modèles</strong> (WIN, TOP3, TOP4) avec les 48 features brutes v7.<br>
-      🔵 <strong>WIN</strong> — y=1 si gagnant (~8%) &nbsp;|&nbsp;
-      🟡 <strong>TOP3</strong> — y=1 si ≤3e (~25%) &nbsp;|&nbsp;
-      🟢 <strong>TOP4</strong> — y=1 si ≤4e (~40%)
-    </p>
-    <div class="controls">
-      <label>Type :
-        <select id="trainType">
-          <option value="advanced_v8" selected>🧠 V8 — Optuna + TS-CV + 62 feat (recommandé)</option>
-          <option value="advanced_v8_no_optuna">V8 — sans Optuna (plus rapide)</option>
-          <option value="advanced_v7">V7 — XGBoost + LightGBM + TabNet</option>
-          <option value="advanced">V5 — Stacking sklearn (LGBM+CatBoost+HGB+RF)</option>
-          <option value="ensemble">Ensemble NumPy (fallback)</option>
-        </select>
-      </label>
-      <label>Jours :
-        <select id="trainDays">
-          <option value="10">10</option>
-          <option value="15">15</option>
-          <option value="21" selected>21</option>
-          <option value="30">30</option>
-        </select>
-      </label>
-      <button class="purple" onclick="trainModel()">🚀 Entraîner les 3 modèles</button>
-      <button class="red" onclick="resetTraining()" style="margin-left:8px;padding:6px 12px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer;">🔓 Débloquer</button>
-    </div>
-    <div id="trainResult"></div>
+  <h1>📈 Backtest</h1>
+  <p class="subtitle">Performance du modèle sur les courses passées</p>
+
+  <div class="nav">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest</a>
+    <a href="/bilan">Bilan</a>
   </div>
 
-  <!-- Backtest -->
-  <div class="section">
-    <h2>📊 Backtest</h2>
-    <p>Teste l'algo sur les courses passées : taux de réussite, ROI Kelly, value bets, etc.</p>
-    <div class="controls">
-      <label>Période :
-        <select id="btDays">
-          <option value="3">3 jours</option>
-          <option value="7" selected>7 jours</option>
-          <option value="14">14 jours</option>
-          <option value="30">30 jours</option>
-        </select>
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;">
-        <input type="checkbox" id="btML" style="width:auto;"> Avec ML
-      </label>
-      <select id="btMode" style="padding:4px 8px;border-radius:4px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;">
-        <option value="strat">⚡ Stratégies (rapide)</option>
-        <option value="full">📊 Complet</option>
-      </select>
-      <button onclick="runBacktest()">▶️ Lancer</button>
-    </div>
-    <div id="btResult"></div>
+  <div class="select-row">
+    <label>Jours :</label>
+    <select id="days">
+      <option value="7">7 jours</option>
+      <option value="14">14 jours</option>
+      <option value="21">21 jours</option>
+      <option value="30">30 jours</option>
+    </select>
+    <button onclick="runBacktest()">Lancer</button>
   </div>
 
-  <!-- Top teams -->
+  <div id="results" class="loading">Sélectionnez une période et lancez le backtest</div>
 </div>
 
 <script>
-let trainPollInterval = null;
+  async function runBacktest() {
+    const days = document.getElementById('days').value;
+    const el = document.getElementById('results');
+    el.innerHTML = '<div class="loading">⏳ Chargement du backtest...</div>';
 
-async function resetTraining() {
-  const res_div = document.getElementById('trainResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Déblocage en cours…</div>';
-  try {
-    const r = await fetch('/api/train-reset', {method: 'POST'});
-    const d = await r.json();
-    if (d.ok) {
-      res_div.innerHTML = '<div style="color:#22c55e;padding:8px;">✅ ' + d.message + '</div>';
-    } else {
-      res_div.innerHTML = '<div style="color:#ef4444;padding:8px;">❌ ' + (d.error || 'Erreur') + '</div>';
-    }
-  } catch(e) {
-    res_div.innerHTML = '<div style="color:#ef4444;padding:8px;">❌ ' + e.message + '</div>';
-  }
-}
+    try {
+      const res = await fetch(`/api/backtest?days=${days}`);
+      const data = await res.json();
 
-async function trainModel() {
-  const days = document.getElementById('trainDays').value;
-  const type = document.getElementById('trainType').value;
-  const res_div = document.getElementById('trainResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Démarrage du training…</div>';
-  try {
-    const res = await fetch(`/api/train?days=${days}&type=${type}`, {method:'POST'});
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    // Training lancé en arrière-plan → poll le statut
-    res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Entraînement en cours… (3-10 min pour les 3 modèles)<br><small style="color:#94a3b8;">La page peut être fermée, le training continue en arrière-plan.</small></div>';
-    if (trainPollInterval) clearInterval(trainPollInterval);
-    trainPollInterval = setInterval(pollTrainStatus, 5000);
-  } catch(e) {
-    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
-  }
-}
+      if (data.error) {
+        el.innerHTML = `<div class="error">Erreur: ${data.error}</div>`;
+        return;
+      }
 
-async function pollTrainStatus() {
-  const res_div = document.getElementById('trainResult');
-  try {
-    const res = await fetch('/api/ml-status');
-    const data = await res.json();
-    if (data.status === 'training') {
-      const started = data.started_at ? new Date(data.started_at).toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'}) : '?';
-      res_div.innerHTML = `<div class="loading"><div class="spinner"></div>Entraînement en cours… (démarré à ${started})<br><small style="color:#94a3b8;">Les 3 modèles (WIN + TOP3 + TOP4) sont entraînés séquentiellement.</small></div>`;
-    } else if (data.status === 'ok') {
-      if (trainPollInterval) { clearInterval(trainPollInterval); trainPollInterval = null; }
-      const r = data.result || {};
-      const n = parseInt(r.n_samples) || 0;
-      const winP = parseInt(r.win_positives) || 0;
-      const top3P = parseInt(r.top3_positives) || 0;
-      const top4P = parseInt(r.top4_positives) || 0;
-      const models = r.models_trained || 'win+top3+top4';
-      const ts = data.finished_at ? new Date(data.finished_at).toLocaleString('fr-FR') : '';
-      res_div.innerHTML = `
-        <div class="success">
-          ✅ <strong>${models}</strong> entraînés !<br>
-          📊 ${n} échantillons |
-          🔵 WIN: ${winP} (${n?(winP/n*100).toFixed(1):'—'}%) |
-          🟡 TOP3: ${top3P} (${n?(top3P/n*100).toFixed(1):'—'}%) |
-          🟢 TOP4: ${top4P} (${n?(top4P/n*100).toFixed(1):'—'}%)<br>
-          🕐 ${ts}<br>
-          <small style="color:#94a3b8;">Triple modèle Win/Top3/Top4. Coche 🧠 ML pour activer.</small>
+      const roiColor = data.roi >= 0 ? '' : 'bad';
+      const tauxColor = data.taux_top1 >= 35 ? '' : 'warn';
+
+      let html = `
+        <div class="grid-3">
+          <div class="stat-box"><div class="value">${data.total_courses}</div><div class="label">Courses</div></div>
+          <div class="stat-box"><div class="value ${tauxColor}">${data.taux_top1}%</div><div class="label">Taux Top1</div></div>
+          <div class="stat-box"><div class="value ${roiColor}">${data.roi}%</div><div class="label">ROI</div></div>
         </div>
-      `;
-    } else if (data.status === 'error') {
-      if (trainPollInterval) { clearInterval(trainPollInterval); trainPollInterval = null; }
-      res_div.innerHTML = `<div class="error">❌ Training échoué: ${data.error || 'erreur inconnue'}</div>`;
-    }
-  } catch(e) {
-    // Silencieux — on réessaie au prochain poll
-  }
-}
 
-async function runBacktest() {
-  const days = document.getElementById('btDays').value;
-  const ml = document.getElementById('btML').checked ? '&ml=1' : '';
-  const mode = document.getElementById('btMode').value;
-  const res_div = document.getElementById('btResult');
-  const modeLabel = mode === 'strat' ? 'stratégies' : 'complet';
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Backtest ' + modeLabel + ' en cours…</div>';
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300000); // 5 min timeout
-    const res = await fetch(`/api/backtest?days=${days}${ml}&mode=${mode}`, { signal: controller.signal });
-    clearTimeout(timeout);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    if (data.mode === 'strat') {
-      renderBacktestStrat(data);
-    } else {
-      renderBacktest(data);
-    }
-  } catch(e) {
-    if (e.name === 'AbortError') {
-      res_div.innerHTML = `<div class="error">❌ Timeout — le backtest a pris trop de temps.</div>`;
-    } else {
-      res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
-    }
-  }
-}
-
-function renderBacktestStrat(d) {
-  const roiCls = d.roi > 0 ? 'roi-positive' : 'roi-negative';
-  let html = `
-    <div style="background:rgba(16,185,129,0.1);border:1px solid #10b981;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:12px;">
-      ⚡ Mode stratégies — backtest rapide (${d.total_courses} courses)
-    </div>
-
-    <h3 style="margin:14px 0 8px;color:#06b6d4;font-size:14px;">📊 Pronostic #1 (mise fixe 1€)</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.total_courses}</div><div class="label">Courses</div></div>
-      <div class="stat-card"><div class="value">${d.taux_top1}%</div><div class="label">#1 gagne</div></div>
-      <div class="stat-card"><div class="value">${d.taux_top1_place}%</div><div class="label">#1 dans tiercé</div></div>
-      <div class="stat-card ${roiCls}"><div class="value">${d.roi>0?'+':''}${d.roi}%</div><div class="label">ROI</div></div>
-      <div class="stat-card"><div class="value">${d.gain_total}€</div><div class="label">Gain</div></div>
-    </div>
-  `;
-
-  // Confiance stats
-  if (d.confiance_stats && Object.keys(d.confiance_stats).length > 0) {
-    html += `
-    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">🎯 Taux par Confiance du #1</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px;">
-      ${Object.values(d.confiance_stats).map(s => `
-        <div style="background:rgba(30,41,59,0.6);border-radius:8px;padding:10px;border:1px solid ${s.taux >= 45 ? '#10b981' : s.taux >= 30 ? '#f59e0b' : '#ef4444'};">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">${s.label}</div>
-          <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 30 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
-          ${s.place_win > 0 ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
-          ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
-        </div>
-      `).join('')}
-    </div>`;
-  }
-
-  // Strategies
-  html += renderStrategies(d);
-
-  // Field size
-  if (d.field_stats && Object.keys(d.field_stats).length > 0) {
-    html += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #334155;">
-      <div style="font-size:10px;color:#94a3b8;margin-bottom:4px;">🐎 Par taille de champ :</div>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        ${Object.values(d.field_stats).map(fs => `
-          <span style="font-size:11px;color:${fs.roi > 0 ? '#10b981' : '#ef4444'};">${fs.label}: ${fs.taux}% (${fs.win}/${fs.total}) ROI ${fs.roi > 0 ? '+' : ''}${fs.roi}%</span>
-        `).join('')}
-      </div>
-    </div>`;
-  }
-
-  // Discipline breakdown
-  if (d.discipline_stats && Object.keys(d.discipline_stats).length > 0) {
-    html += `
-    <h3 style="margin:18px 0 8px;color:#a78bfa;font-size:14px;">🏇 Par Discipline</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px;margin-bottom:12px;">`;
-
-    for (const [dg, ds] of Object.entries(d.discipline_stats)) {
-      const tauxColor = ds.taux >= 40 ? '#10b981' : ds.taux >= 25 ? '#f59e0b' : '#ef4444';
-      const roiColor = ds.roi > 0 ? '#10b981' : '#ef4444';
-      html += `
-      <div style="background:rgba(30,41,59,0.6);border-radius:10px;padding:12px;border:1px solid #334155;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-          <span style="font-weight:700;color:#e2e8f0;font-size:13px;">${ds.label}</span>
-          <span style="font-size:11px;color:#94a3b8;">${ds.total} courses</span>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px;">
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:${tauxColor};">${ds.taux}%</div>
-            <div style="font-size:9px;color:#64748b;">Top1</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:#f59e0b;">${ds.place_taux}%</div>
-            <div style="font-size:9px;color:#64748b;">Placé</div>
-          </div>
-          <div style="text-align:center;">
-            <div style="font-size:20px;font-weight:800;color:${roiColor};">${ds.roi > 0 ? '+' : ''}${ds.roi}%</div>
-            <div style="font-size:9px;color:#64748b;">ROI</div>
-          </div>
+        <div class="card" style="margin-top: 20px;">
+          <h2>📊 Détails</h2>
+          <table>
+            <tr><th>Métrique</th><th>Valeur</th></tr>
+            <tr><td>Top1 gagnant</td><td>${data.top1_winner} / ${data.total_courses}</td></tr>
+            <tr><td>Top1 dans le Top3</td><td>${data.top1_top3} / ${data.total_courses} (${data.taux_top1_place}%)</td></tr>
+            <tr><td>Mise totale</td><td>${data.mise_totale}€</td></tr>
+            <tr><td>Gain total</td><td>${data.gain_total}€</td></tr>
+            <tr><td>ROI</td><td>${data.roi}%</td></tr>
+          </table>
         </div>`;
 
-      // Confiance par discipline
-      const confKeys = ['haute', 'bonne', 'moyenne', 'faible'];
-      const confLabels = {'haute': '🔥', 'bonne': '✅', 'moyenne': '⚠️', 'faible': '❌'};
-      const hasAnyConf = confKeys.some(k => ds.confiance && ds.confiance[k]);
-      if (hasAnyConf) {
-        html += `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:6px;">`;
-        for (const ck of confKeys) {
-          const cs = ds.confiance && ds.confiance[ck];
-          if (cs) {
-            const c = cs.roi >= 0 ? '#10b981' : '#ef4444';
-            html += `<span style="font-size:10px;padding:2px 5px;border-radius:3px;background:rgba(30,41,59,0.8);border:1px solid ${c};color:${c};">${confLabels[ck]}${cs.taux}% (${cs.win}/${cs.total})</span>`;
-          }
-        }
-        html += `</div>`;
+      // Value bets
+      if (data.value_bets && data.value_bets.length > 0) {
+        html += `<div class="card"><h2>💎 Value Bets (${data.vb_nb})</h2>`;
+        html += `<table><tr><th>Date</th><th>Cheval</th><th>Cote</th><th>Edge</th><th>Résultat</th></tr>`;
+        data.value_bets.slice(0, 20).forEach(vb => {
+          const resClass = vb.gagne ? 'win' : 'loss';
+          const resText = vb.gagne ? '✅ GAGNÉ' : '❌ PERDU';
+          html += `<tr>
+            <td>${vb.date} ${vb.course}</td>
+            <td>${vb.cheval}</td>
+            <td>${vb.cote}</td>
+            <td class="value-bet">+${vb.edge}%</td>
+            <td class="${resClass}">${resText}</td>
+          </tr>`;
+        });
+        html += '</table></div>';
+        html += `<div class="card"><h2>📈 Stats Value Bets</h2>
+          <table>
+            <tr><td>Nombre</td><td>${data.vb_nb}</td></tr>
+            <tr><td>Taux de réussite</td><td>${data.vb_winrate}%</td></tr>
+            <tr><td>ROI</td><td class="${data.vb_roi >= 0 ? 'win' : 'loss'}">${data.vb_roi}%</td></tr>
+          </table>
+        </div>`;
       }
 
-      // Stratégies par discipline
-      const stratKeys = ['value_combo', 'haute_value', 'premium', 'bonne_value'];
-      const stratLabels = {'value_combo': '🎯', 'haute_value': '💎', 'premium': '🏅', 'bonne_value': '✨'};
-      const hasAnyStrat = stratKeys.some(k => ds.strategies && ds.strategies[k]);
-      if (hasAnyStrat) {
-        html += `<div style="display:flex;gap:4px;flex-wrap:wrap;">`;
-        for (const sk of stratKeys) {
-          const ss = ds.strategies && ds.strategies[sk];
-          if (ss) {
-            const c = ss.roi >= 0 ? '#10b981' : '#ef4444';
-            html += `<span style="font-size:10px;padding:2px 5px;border-radius:3px;background:rgba(30,41,59,0.8);border:1px solid ${c};color:${c};">${stratLabels[sk]}${ss.taux}% R${ss.roi > 0 ? '+' : ''}${ss.roi}%</span>`;
-          }
-        }
-        html += `</div>`;
-      }
-
-      html += `</div>`;
+      el.innerHTML = html;
+    } catch(e) {
+      el.innerHTML = `<div class="error">Erreur: ${e.message}</div>`;
     }
-    html += `</div>`;
   }
-
-  document.getElementById('btResult').innerHTML = html;
-}
-
-function renderStrategies(d) {
-  if (!d.premium_stats && !d.haute_value_stats && !d.bonne_value_stats && !d.value_combo_stats) return '';
-  let html = `
-    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">📊 Stratégies de Paris Comparées</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:12px;">`;
-
-  const strats = [
-    {s: d.premium_stats, color: '#10b981', border: '#10b981'},
-    {s: d.haute_value_stats, color: '#3b82f6', border: '#3b82f6'},
-    {s: d.bonne_value_stats, color: '#f59e0b', border: '#f59e0b'},
-    {s: d.value_combo_stats, color: '#10b981', border: '#10b981', highlight: true},
-  ];
-
-  for (const {s, color, border, highlight} of strats) {
-    if (!s) continue;
-    const bg = highlight ? 'linear-gradient(135deg,rgba(16,185,129,0.15),rgba(245,158,11,0.15))' : `rgba(${color === '#10b981' ? '16,185,129' : color === '#3b82f6' ? '59,130,246' : '245,158,11'},0.1)`;
-    html += `
-      <div style="background:${bg};border-radius:8px;padding:10px;border:1px solid ${s.roi > 0 ? border : '#ef4444'};${highlight ? 'border-width:2px;' : ''}">
-        <div style="font-size:10px;color:#94a3b8;font-weight:${highlight ? '700' : '600'};">${s.label}</div>
-        <div style="font-size:20px;font-weight:800;color:${s.taux >= 40 ? '#10b981' : '#f59e0b'};">${s.taux}%</div>
-        <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} gagnant · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
-        ${s.place_taux ? `<div style="font-size:10px;color:#f59e0b;margin-top:2px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
-        ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
-      </div>`;
-  }
-
-  html += '</div>';
-  return html;
-}
-
-function renderBacktest(d) {
-  const roiCls = d.roi > 0 ? 'roi-positive' : 'roi-negative';
-  const vbCls = d.vb_roi > 0 ? 'roi-positive' : 'roi-negative';
-  const kCls = d.kelly_roi > 0 ? 'roi-positive' : 'roi-negative';
-
-  let html = `
-    <h3 style="margin:14px 0 8px;color:#06b6d4;font-size:14px;">📊 Pronostic #1 (mise fixe 1€)</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.total_courses}</div><div class="label">Courses</div></div>
-      <div class="stat-card"><div class="value">${d.taux_top1}%</div><div class="label">#1 gagne</div></div>
-      <div class="stat-card"><div class="value">${d.taux_top1_place}%</div><div class="label">#1 dans tiercé</div></div>
-      <div class="stat-card"><div class="value">${d.taux_top3}%</div><div class="label">Gagnant top 3</div></div>
-      <div class="stat-card ${roiCls}"><div class="value">${d.roi>0?'+':''}${d.roi}%</div><div class="label">ROI</div></div>
-      <div class="stat-card"><div class="value">${d.gain_total}€</div><div class="label">Gain</div></div>
-    </div>
-
-    ${d.diagnostic ? `
-    <div style="margin:12px 0;padding:12px;border-radius:8px;background:${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? 'rgba(250,204,21,0.1)' : 'rgba(16,185,129,0.1)'};border:1px solid ${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? '#f59e0b' : '#10b981'};">
-      <div style="font-size:13px;color:#f59e0b;margin-bottom:6px;">💡 Diagnostic Rentabilité</div>
-      <div style="font-size:12px;color:#cbd5e1;line-height:1.8;">
-        → <strong>${d.taux_top1}%</strong> de réussite = cote moyenne nécessaire ≥ <strong>${d.diagnostic.cote_moyenne_necessaire}</strong> pour être rentable<br>
-        → <strong>${d.taux_top1_place}%</strong> en top3 → <span style="color:#10b981;">parier PLACÉ est plus rentable</span> (cote placé ≈ cote/2.5)<br>
-        → Conseil : <strong style="color:${d.diagnostic.conseil === 'PASSER EN MODE PLACÉ (TOP3)' ? '#f59e0b' : '#10b981'}">${d.diagnostic.conseil}</strong>
-        ${d.diagnostic.roi_strategies && Object.keys(d.diagnostic.roi_strategies).length > 0 ? `<br>→ ROI value bets : <strong style="color:${(d.diagnostic.roi_strategies.top1_value_bet||0) >= 0 ? '#10b981' : '#ef4444'}">${(d.diagnostic.roi_strategies.top1_value_bet||0)}%</strong>` : ''}
-      </div>
-    </div>
-    ` : ''}
-
-    ${d.confiance_stats && Object.keys(d.confiance_stats).length > 0 ? `
-    <h3 style="margin:18px 0 8px;color:#10b981;font-size:14px;">🎯 Taux par Confiance du #1 (score composite v8)</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;margin-bottom:12px;">
-      ${Object.values(d.confiance_stats).map(s => `
-        <div style="background:rgba(30,41,59,0.6);border-radius:8px;padding:10px;border:1px solid ${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">
-          <div style="font-size:11px;color:#94a3b8;margin-bottom:4px;">${s.label}</div>
-          <div style="font-size:24px;font-weight:800;color:${s.taux >= 45 ? '#10b981' : s.taux >= 38 ? '#f59e0b' : '#ef4444'};">${s.taux}%</div>
-          <div style="font-size:10px;color:#64748b;">${s.win}/${s.total} courses · ROI ${s.roi > 0 ? '+' : ''}${s.roi}%</div>
-          ${s.place_win > 0 ? `<div style="font-size:10px;color:#f59e0b;margin-top:3px;">🏅 PLACÉ: ${s.place_taux}% · ROI ${s.place_roi > 0 ? '+' : ''}${s.place_roi}%</div>` : ''}
-          ${s.avg_cote ? `<div style="font-size:9px;color:#475569;margin-top:2px;">💰 cote moy: ${s.avg_cote}</div>` : ''}
-        </div>
-      `).join('')}
-    </div>
-    ${renderStrategies(d)}
-    <div style="font-size:11px;color:#64748b;margin-bottom:12px;">💡 Plus la confiance est haute, plus le taux de réussite augmente. Parier seulement en confiance HAUTE ou BONNE atteint 45%+.</div>
-    ` : ''}
-
-    <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Value Bets (mise 1€)</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.vb_nb}</div><div class="label">Total</div></div>
-      <div class="stat-card"><div class="value">${d.vb_winrate}%</div><div class="label">Winrate</div></div>
-      <div class="stat-card ${vbCls}"><div class="value">${d.vb_roi>0?'+':''}${d.vb_roi}%</div><div class="label">ROI</div></div>
-    </div>
-
-    <h3 style="margin:18px 0 8px;color:#a78bfa;font-size:14px;">💰 Kelly Criterion (sizing optimal, capital 100€)</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.kelly_mise_totale}€</div><div class="label">Mise totale</div></div>
-      <div class="stat-card"><div class="value">${d.kelly_gain_total}€</div><div class="label">Gain total</div></div>
-      <div class="stat-card ${kCls}"><div class="value">${d.kelly_profit>0?'+':''}${d.kelly_profit}€</div><div class="label">Profit</div></div>
-      <div class="stat-card ${kCls}"><div class="value">${d.kelly_roi>0?'+':''}${d.kelly_roi}%</div><div class="label">ROI Kelly</div></div>
-    </div>
-
-    ${d.top4_ml_accuracy != null ? `
-    <h3 style="margin:18px 0 8px;color:#06b6d4;font-size:14px;">🎯 Modèle Top 4 ML</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.top4_ml_accuracy}%</div><div class="label">Accuracy Top 4</div></div>
-      <div class="stat-card"><div class="value">${d.top1_top4_rate}%</div><div class="label">#1 dans Top 4</div></div>
-      <div class="stat-card"><div class="value">${d.top4_ml_total}</div><div class="label">Prédictions Top4</div></div>
-      <div class="stat-card"><div class="value">${d.top4_ml_hit}</div><div class="label">Hits Top4</div></div>
-      <div class="stat-card"><div class="value">${d.top4_ml_brier != null && d.top4_ml_brier !== 'N/A' ? d.top4_ml_brier : '—'}</div><div class="label">Brier Score</div></div>
-    </div>
-    ${d.top4_by_confidence ? `
-    <div style="margin-top:10px;font-size:12px;color:#94a3b8;">
-      <strong>Par confiance :</strong>
-      ${d.top4_by_confidence.high && d.top4_by_confidence.high.total > 0 ? `🟢 Haute (≥60%): ${d.top4_by_confidence.high.accuracy}% (${d.top4_by_confidence.high.total} prédictions)` : ''}
-      ${d.top4_by_confidence.medium && d.top4_by_confidence.medium.total > 0 ? ` | 🟡 Moyenne (35-60%): ${d.top4_by_confidence.medium.accuracy}% (${d.top4_by_confidence.medium.total})` : ''}
-      ${d.top4_by_confidence.low && d.top4_by_confidence.low.total > 0 ? ` | 🔴 Basse (<35%): ${d.top4_by_confidence.low.accuracy}% (${d.top4_by_confidence.low.total})` : ''}
-    </div>` : ''}
-    ` : ''}
-
-    ${d.top3_ml_accuracy != null ? `
-    <h3 style="margin:18px 0 8px;color:#fbbf24;font-size:14px;">🏅 Modèle Top 3 ML (dédié ~25% positifs)</h3>
-    <div class="results-grid">
-      <div class="stat-card"><div class="value">${d.top3_ml_accuracy}%</div><div class="label">Accuracy Top 3</div></div>
-      <div class="stat-card"><div class="value">${d.top3_ml_total}</div><div class="label">Prédictions Top3</div></div>
-      <div class="stat-card"><div class="value">${d.top3_ml_hit}</div><div class="label">Hits Top3</div></div>
-      <div class="stat-card"><div class="value">${d.top3_ml_brier != null ? d.top3_ml_brier : '—'}</div><div class="label">Brier Score</div></div>
-    </div>
-    ` : ''}
-
-    ${d.super_base_accuracy != null ? `
-    <h3 style="margin:18px 0 8px;color:#f59e0b;font-size:14px;">⭐ Super Base — Meilleur Top3 ML dans le Top 5</h3>
-    <div class="results-grid">
-      <div class="stat-card" style="border-color:#f59e0b;"><div class="value">${d.super_base_accuracy}%</div><div class="label">Super Base dans Top 3</div></div>
-      <div class="stat-card"><div class="value">${d.super_base_total}</div><div class="label">Courses testées</div></div>
-      <div class="stat-card"><div class="value">${d.super_base_hit}</div><div class="label">Hits Super Base</div></div>
-    </div>
-    ` : ''}
-  `;
-
-  if (d.value_bets && d.value_bets.length) {
-    html += '<div class="vb-list"><h4 style="margin:14px 0 8px;color:#94a3b8;font-size:12px;">Derniers value bets :</h4>';
-    d.value_bets.slice().reverse().forEach(b => {
-      html += `
-        <div class="vb-row ${b.gagne?'win':'lose'}">
-          <span style="color:#94a3b8;">${b.date}</span>
-          <strong>${b.cheval}</strong>
-          <span>C ${b.cote}</span>
-          <span style="color:#10b981;">+${b.edge}%</span>
-          <span>K ${b.kellyMise || 0}€</span>
-          <span>${b.gagne ? '✅ GAGNÉ' : '❌ Perdu'}</span>
-        </div>
-      `;
-    });
-    html += '</div>';
-  }
-
-  document.getElementById('btResult').innerHTML = html;
-}
-
-let teamData = null;
-let currentTab = 'drivers';
-
-async function loadTeamStats() {
-  const res_div = document.getElementById('teamResult');
-  res_div.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement…</div>';
-  try {
-    const res = await fetch('/api/team-stats');
-    teamData = await res.json();
-    renderTeamStats();
-  } catch(e) {
-    res_div.innerHTML = `<div class="error">❌ ${e.message}</div>`;
-  }
-}
-
-function showTab(name, el) {
-  currentTab = name;
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  el.classList.add('active');
-  if (teamData) renderTeamStats();
-}
-
-function renderTeamStats() {
-  if (!teamData) return;
-  const list = currentTab === 'drivers' ? teamData.drivers : teamData.entraineurs;
-  let html = `<table>
-    <thead><tr><th>#</th><th>Nom</th><th>Courses</th><th>V</th><th>P</th><th>Taux V.</th></tr></thead>
-    <tbody>`;
-  list.forEach((p, i) => {
-    html += `<tr>
-      <td>${i+1}</td><td><strong>${p.nom}</strong></td>
-      <td>${p.courses}</td><td>${p.victoires}</td><td>${p.places}</td>
-      <td style="color:#10b981;font-weight:700;">${p.taux_victoire}%</td>
-    </tr>`;
-  });
-  html += '</tbody></table>';
-  document.getElementById('teamResult').innerHTML = html;
-}
 </script>
 </body>
 </html>

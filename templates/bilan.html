@@ -5,285 +5,111 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Bilan — Turf Analyzer</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    color: #e2e8f0; min-height: 100vh;
-  }
-  header {
-    background: rgba(15, 23, 42, 0.95); border-bottom: 2px solid #10b981;
-    padding: 14px 20px; display: flex; justify-content: space-between;
-    align-items: center; position: sticky; top: 0; z-index: 100; flex-wrap: wrap; gap: 10px;
-  }
-  header h1 {
-    font-size: 20px;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .nav-links { display: flex; gap: 8px; }
-  .nav-links a {
-    color: #94a3b8; text-decoration: none; font-size: 13px;
-    padding: 6px 12px; border-radius: 6px; transition: all .2s;
-  }
-  .nav-links a:hover, .nav-links a.active { background: #1e293b; color: #10b981; }
-
-  .container { max-width: 1200px; margin: 0 auto; padding: 20px 16px; }
-
-  .controls {
-    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
-    margin-bottom: 20px;
-  }
-  select, button {
-    background: #1e293b; border: 1px solid #334155; color: #e2e8f0;
-    padding: 7px 12px; border-radius: 7px; font-size: 12px;
-  }
-  button { background: #10b981; border: none; cursor: pointer; font-weight: 600; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0f172a; color: #e2e8f0; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 20px; }
+  h1 { text-align: center; padding: 30px 0; color: #10b981; }
+  .subtitle { text-align: center; color: #94a3b8; margin-bottom: 20px; }
+  .nav { display: flex; justify-content: center; gap: 20px; margin-bottom: 30px; }
+  .nav a { color: #10b981; text-decoration: none; padding: 8px 16px; border: 1px solid #10b981; border-radius: 6px; }
+  .card { background: #1e293b; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { color: #10b981; margin-bottom: 15px; }
+  .day-card { background: #334155; border-radius: 8px; padding: 15px; margin-bottom: 10px; }
+  .day-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .day-date { font-weight: bold; color: #e2e8f0; }
+  .day-stats { display: flex; gap: 20px; font-size: 0.85em; color: #94a3b8; }
+  .day-courses { font-size: 0.8em; margin-top: 8px; }
+  .course-row { display: inline-block; margin: 3px 8px; padding: 3px 8px; background: #1e293b; border-radius: 4px; font-size: 0.8em; }
+  .win { color: #10b981; }
+  .place { color: #f59e0b; }
+  .loss { color: #ef4444; }
+  .loading { text-align: center; padding: 40px; color: #64748b; }
+  .error { color: #ef4444; text-align: center; }
+  .totals { background: #10b981; color: #0f172a; padding: 15px; border-radius: 8px; text-align: center; font-size: 1.1em; margin-bottom: 20px; }
+  select, button { background: #334155; color: #e2e8f0; border: none; padding: 8px 16px; border-radius: 6px; }
+  button { background: #10b981; cursor: pointer; }
   button:hover { background: #059669; }
-
-  /* Totaux globaux */
-  .totals-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 10px; margin-bottom: 24px;
-  }
-  .total-card {
-    background: rgba(30, 41, 59, 0.7); border-radius: 10px;
-    padding: 14px; text-align: center; border: 1px solid #334155;
-  }
-  .total-card .val {
-    font-size: 28px; font-weight: 800; line-height: 1;
-    background: linear-gradient(90deg, #10b981, #06b6d4);
-    -webkit-background-clip: text; background-clip: text;
-    -webkit-text-fill-color: transparent;
-  }
-  .total-card.gold .val { background: linear-gradient(90deg, #facc15, #f59e0b); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .total-card.silver .val { background: linear-gradient(90deg, #cbd5e1, #94a3b8); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .total-card.bronze .val { background: linear-gradient(90deg, #d97706, #b45309); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-  .total-card .lbl {
-    font-size: 11px; color: #94a3b8; text-transform: uppercase;
-    margin-top: 5px; letter-spacing: 0.5px;
-  }
-
-  /* Tableau quotidien */
-  table {
-    width: 100%; border-collapse: collapse; font-size: 13px;
-    background: rgba(30, 41, 59, 0.5); border-radius: 10px; overflow: hidden;
-  }
-  th {
-    background: #0f172a; color: #06b6d4; padding: 10px 12px;
-    text-align: left; font-size: 11px; text-transform: uppercase;
-    letter-spacing: 0.5px; font-weight: 700;
-  }
-  td {
-    padding: 10px 12px; border-bottom: 1px solid #1e293b;
-  }
-  tr:hover td { background: rgba(16, 185, 129, 0.05); }
-  tr.totals-row {
-    background: rgba(16, 185, 129, 0.1);
-    border-top: 2px solid #10b981;
-  }
-  tr.totals-row td { font-weight: 700; color: #10b981; padding: 12px; }
-
-  .num { text-align: center; font-weight: 700; }
-  .gold { color: #facc15; }
-  .silver { color: #cbd5e1; }
-  .bronze { color: #d97706; }
-  .rate {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-weight: 700; font-size: 12px;
-  }
-  .rate.good { background: rgba(16,185,129,0.2); color: #6ee7b7; }
-  .rate.mid { background: rgba(250,204,21,0.2); color: #fbbf24; }
-  .rate.bad { background: rgba(239,68,68,0.2); color: #fca5a5; }
-
-  /* Détail expandable */
-  .detail-row { display: none; }
-  .detail-row.open { display: table-row; }
-  .detail-cell {
-    padding: 8px 12px 8px 40px; background: #0f172a;
-    font-size: 12px; color: #94a3b8;
-  }
-  .detail-cell .course-line {
-    display: inline-block; margin-right: 14px; margin-bottom: 4px;
-  }
-  .expand-btn {
-    background: none; border: none; color: #94a3b8; cursor: pointer;
-    font-size: 14px; padding: 2px 6px; border-radius: 4px;
-  }
-  .expand-btn:hover { background: #1e293b; color: #e2e8f0; }
-
-  .loading { text-align: center; padding: 40px; color: #94a3b8; }
-  .spinner {
-    border: 3px solid #334155; border-top: 3px solid #10b981;
-    border-radius: 50%; width: 30px; height: 30px;
-    animation: spin 1s linear infinite; margin: 0 auto 12px;
-  }
-  @keyframes spin { 100% { transform: rotate(360deg); } }
-
-  @media (max-width: 700px) {
-    table { font-size: 11px; }
-    th, td { padding: 6px 8px; }
-    .totals-grid { grid-template-columns: repeat(3, 1fr); }
-  }
+  .select-row { display: flex; gap: 10px; align-items: center; justify-content: center; margin-bottom: 20px; }
 </style>
 </head>
 <body>
-<header>
-  <h1>🐎 Turf Analyzer — Bilan <span style="background:#8b5cf6;color:white;padding:2px 6px;border-radius:4px;font-size:10px;">v6</span></h1>
-  <div class="nav-links">
-    <a href="/admin">Analyse</a>
-    <a href="/backtest">Backtest & ML</a>
-    <a href="/bilan" class="active">📊 Bilan</a>
-    <a href="/force">💪 Force</a>
-    <a href="/edge">⚡ EDGE</a>
-    <a href="/paris">📋 Mes paris</a>
-    <a href="/logout" style="color:#ef4444;">🔓 Déconnexion</a>
-  </div>
-</header>
-
 <div class="container">
-  <div class="controls">
-    <label style="font-size:12px;color:#94a3b8;">Période :
-      <select id="bilanDays">
-        <option value="3">3 jours</option>
-        <option value="7" selected>7 jours</option>
-        <option value="14">14 jours</option>
-        <option value="21">21 jours</option>
-        <option value="30">30 jours</option>
-      </select>
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#94a3b8;">
-      <input type="checkbox" id="bilanML" style="width:auto;"> 🧠 ML + 🎯 Top4
-    </label>
-    <button onclick="loadBilan()">🔄 Charger</button>
+  <h1>📋 Bilan Quotidien</h1>
+  <p class="subtitle">Où finit le #1 du composite chaque jour ?</p>
+
+  <div class="nav">
+    <a href="/admin">Analyse</a>
+    <a href="/backtest">Backtest</a>
+    <a href="/bilan">Bilan</a>
   </div>
 
-  <div id="bilanResult">
-    <div class="loading"><div class="spinner"></div>Chargement du bilan…</div>
+  <div class="select-row">
+    <label>Jours :</label>
+    <select id="days">
+      <option value="7">7 jours</option>
+      <option value="14">14 jours</option>
+      <option value="21">21 jours</option>
+      <option value="30">30 jours</option>
+    </select>
+    <button onclick="loadBilan()">Charger</button>
   </div>
+
+  <div id="totals"></div>
+  <div id="results" class="loading">Sélectionnez une période</div>
 </div>
 
 <script>
-async function loadBilan() {
-  const days = document.getElementById('bilanDays').value;
-  const ml = document.getElementById('bilanML').checked ? '&ml=1' : '';
-  const block = document.getElementById('bilanResult');
-  block.innerHTML = '<div class="loading"><div class="spinner"></div>Chargement du bilan…</div>';
+  async function loadBilan() {
+    const days = document.getElementById('days').value;
+    const el = document.getElementById('results');
+    el.innerHTML = '<div class="loading">⏳ Chargement...</div>';
 
-  try {
-    const res = await fetch(`/api/bilan?days=${days}${ml}`);
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    renderBilan(data);
-  } catch(e) {
-    block.innerHTML = `<div style="color:#ef4444;padding:20px;">Erreur: ${e.message}</div>`;
+    try {
+      const res = await fetch(`/api/bilan?days=${days}`);
+      const data = await res.json();
+      
+      if (data.error) {
+        el.innerHTML = `<div class="error">Erreur: ${data.error}</div>`;
+        return;
+      }
+
+      // Totals bar
+      const t = data.totals;
+      document.getElementById('totals').innerHTML = `
+        <div class="totals">
+          🏁 ${t.total} courses — 
+          🥇 ${t.top1} (${t.taux_top1}%) — 
+          🥈 ${t.top2} — 
+          🥉 ${t.top3} — 
+          ❌ ${t.hors}
+        </div>`;
+
+      let html = '<div class="card"><h2>📅 Résultats par jour</h2>';
+      data.daily.forEach(d => {
+        html += `<div class="day-card">
+          <div class="day-header">
+            <span class="day-date">${d.jour} ${d.date_short}</span>
+            <span>${d.total} courses</span>
+          </div>
+          <div class="day-stats">
+            <span class="win">🥇 ${d.top1} (${d.taux_top1}%)</span>
+            <span class="place">🥈 ${d.top2}</span>
+            <span class="place">🥉 ${d.top3}</span>
+            <span class="loss">❌ ${d.hors}</span>
+          </div>
+          <div class="day-courses">`;
+        d.courses.forEach(c => {
+          const cls = c.resultat === '🥇' ? 'win' : c.resultat === '🥈' ? 'place' : c.resultat === '🥉' ? 'place' : 'loss';
+          html += `<span class="course-row">${c.nom} — <span class="${cls}">${c.resultat}</span> (cote: ${c.cote || '—'})</span>`;
+        });
+        html += '</div></div>';
+      });
+      html += '</div>';
+      el.innerHTML = html;
+    } catch(e) {
+      el.innerHTML = `<div class="error">Erreur: ${e.message}</div>`;
+    }
   }
-}
-
-function rateClass(pct) {
-  if (pct >= 50) return 'good';
-  if (pct >= 30) return 'mid';
-  return 'bad';
-}
-
-function renderBilan(data) {
-  const { daily, totals } = data;
-  const block = document.getElementById('bilanResult');
-
-  let html = `
-    <div class="totals-grid">
-      <div class="total-card"><div class="val">${totals.total}</div><div class="lbl">Courses analysées</div></div>
-      <div class="total-card gold"><div class="val">${totals.top1}</div><div class="lbl">🥇 Gagnants</div></div>
-      <div class="total-card silver"><div class="val">${totals.top2}</div><div class="lbl">🥈 2èmes</div></div>
-      <div class="total-card bronze"><div class="val">${totals.top3}</div><div class="lbl">🥉 3èmes</div></div>
-      <div class="total-card"><div class="val">${totals.top3_total}</div><div class="lbl">Podium total</div></div>
-      <div class="total-card"><div class="val"><span class="rate ${rateClass(totals.taux_top1)}">${totals.taux_top1}%</span></div><div class="lbl">Taux gagnant</div></div>
-      <div class="total-card"><div class="val"><span class="rate ${rateClass(totals.taux_top3)}">${totals.taux_top3}%</span></div><div class="lbl">Taux podium</div></div>
-      <div class="total-card" style="border-color:#06b6d4;"><div class="val">${totals.top4_count || 0}</div><div class="lbl">🎯 Top 4</div></div>
-      <div class="total-card" style="border-color:#06b6d4;"><div class="val"><span class="rate ${rateClass(totals.taux_top4 || 0)}">${totals.taux_top4 || 0}%</span></div><div class="lbl">Taux Top 4</div></div>
-    </div>
-
-    <table>
-      <thead>
-        <tr>
-          <th></th>
-          <th>Date</th>
-          <th>Jour</th>
-          <th class="num">Courses</th>
-          <th class="num">🥇</th>
-          <th class="num">🥈</th>
-          <th class="num">🥉</th>
-          <th class="num">Hors</th>
-          <th class="num">🎯T4</th>
-          <th class="num">Taux gagnant</th>
-          <th class="num">Taux podium</th>
-          <th class="num">Taux Top4</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-
-  daily.forEach((d, i) => {
-    html += `
-        <tr>
-          <td><button class="expand-btn" onclick="toggleDetail(${i})" id="btn-${i}">▸</button></td>
-          <td><strong>${d.date}</strong></td>
-          <td style="color:#94a3b8;">${d.jour}</td>
-          <td class="num">${d.total}</td>
-          <td class="num gold">${d.top1}</td>
-          <td class="num silver">${d.top2}</td>
-          <td class="num bronze">${d.top3}</td>
-          <td class="num" style="color:#64748b;">${d.hors}</td>
-          <td class="num" style="color:#06b6d4;">${d.top4_count || 0}</td>
-          <td class="num"><span class="rate ${rateClass(d.taux_top1)}">${d.taux_top1}%</span></td>
-          <td class="num"><span class="rate ${rateClass(d.taux_top3)}">${d.taux_top3}%</span></td>
-          <td class="num"><span class="rate ${rateClass(d.taux_top4 || 0)}">${d.taux_top4 || 0}%</span></td>
-        </tr>
-        <tr class="detail-row" id="detail-${i}">
-          <td colspan="12" class="detail-cell">
-            ${d.courses.map(c => `<span class="course-line">${c.resultat} ${c.nom}${c.cote ? ' (c.'+c.cote+')' : ''}</span>`).join('')}
-          </td>
-        </tr>
-    `;
-  });
-
-  // Ligne totaux
-  html += `
-        <tr class="totals-row">
-          <td></td>
-          <td>TOTAL</td>
-          <td></td>
-          <td class="num">${totals.total}</td>
-          <td class="num">${totals.top1}</td>
-          <td class="num">${totals.top2}</td>
-          <td class="num">${totals.top3}</td>
-          <td class="num">${totals.hors}</td>
-          <td class="num" style="color:#06b6d4;">${totals.top4_count || 0}</td>
-          <td class="num">${totals.taux_top1}%</td>
-          <td class="num">${totals.taux_top3}%</td>
-          <td class="num">${totals.taux_top4 || 0}%</td>
-        </tr>
-      </tbody>
-    </table>
-  `;
-
-  block.innerHTML = html;
-}
-
-function toggleDetail(i) {
-  const row = document.getElementById(`detail-${i}`);
-  const btn = document.getElementById(`btn-${i}`);
-  if (row.classList.contains('open')) {
-    row.classList.remove('open');
-    btn.textContent = '▸';
-  } else {
-    row.classList.add('open');
-    btn.textContent = '▾';
-  }
-}
-
-loadBilan();
 </script>
-<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a09797977cf19eed',t:'MTc4MTA4NjI4OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</body>
 </html>
