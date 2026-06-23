@@ -421,6 +421,17 @@ def get_bucket_score(bucket, max_score=100, min_courses=5):
     raw = tv * 200 + tp * 60
     return min(max_score, raw * confiance + 30 * (1 - confiance))
 
+def _score_from_career(nb_courses, nb_victoires, nb_places):
+    """Score basé sur les stats carrière brutes du PMU.
+    Même formule que get_bucket_score mais sans min_courses."""
+    if not nb_courses or nb_courses < 2:
+        return None
+    win_rate = nb_victoires / nb_courses
+    place_rate = nb_places / nb_courses
+    confiance = min(1.0, nb_courses / 30)
+    raw = win_rate * 200 + place_rate * 60
+    return min(100, raw * confiance + 30 * (1 - confiance))
+
 def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=None):
     """Score driver ou entraîneur avec pondération multi-contexte.
     IDENTIQUE à l'ancien get_team_score_multi."""
@@ -455,14 +466,21 @@ def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=Non
     tw = sum(w for _, w in parts)
     return sum(s * w for s, w in parts) / tw
 
-def get_horse_score(cheval, driver, hippodrome, discipline, horse_stats):
+def get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
+                    nb_courses=None, nb_victoires=None, nb_places=None):
     """Score cheval avec pondération multi-contexte.
-    IDENTIQUE à l'ancien get_horse_score."""
+    Utilise les stats carrière PMU comme fallback si l'historique est insuffisant."""
     if not horse_stats or not cheval:
         return 50
     cheval = _norm(cheval)
 
-    s_g = get_bucket_score(horse_stats.get("global", {}).get(cheval)) or 50
+    s_g = get_bucket_score(horse_stats.get("global", {}).get(cheval))
+    if s_g is None and nb_courses and nb_courses >= 2:
+        # Fallback sur stats carrière PMU
+        s_g = _score_from_career(nb_courses, nb_victoires, nb_places)
+    if s_g is None:
+        s_g = 50
+
     s_d = get_bucket_score(
         horse_stats.get("with_driver", {}).get(cheval, {}).get(_norm(driver)),
         min_courses=2) if driver else None
@@ -533,7 +551,9 @@ def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline,
         gains_carriere = gains.get("gainsCarriere", 0) or 0
 
         # Scores des 3 piliers (formules identiques à l'ancien projet)
-        s_horse = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats)
+        # Le cheval utilise ses stats carrière PMU comme fallback
+        s_horse = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
+                                   nb_courses, nb_victoires, nb_places)
         s_driver = get_team_score_multi(driver, "drivers", team_stats, discipline, hippodrome)
         s_trainer = get_team_score_multi(entraineur, "entraineurs", team_stats, discipline)
 
