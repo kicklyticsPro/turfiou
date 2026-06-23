@@ -35,9 +35,15 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TurfAnalyzer/1.0)"}
 CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v5.pkl")
+STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v6.pkl")
 HISTORY_DAYS = 15
 WINDOW_SHORT = 30
+
+# ── Global state ──
+_stats_ready = threading.Event()
+_current_stats = None
+_stats_progress = {"status": "init", "message": "Initialisation...", "progress": 0}
+_progress_lock = threading.Lock()
 
 
 def _norm(name):
@@ -58,6 +64,25 @@ def _safe(val, default=0):
     except (TypeError, ValueError):
         pass
     return val
+
+def _update_progress(done, total, msg=None):
+    """Thread-safe update de la progression."""
+    with _progress_lock:
+        pct = round(done / max(total, 1) * 100)
+        _stats_progress["status"] = "loading"
+        _stats_progress["progress"] = pct
+        _stats_progress["done"] = done
+        _stats_progress["total"] = total
+        _stats_progress["message"] = msg or f"{done}/{total} courses ({pct}%)"
+
+def _freeze(d):
+    """Convertit defaultdict en dict normal pour sérialisation."""
+    if isinstance(d, defaultdict):
+        return {k: _freeze(v) for k, v in d.items()}
+    return d
+
+def _empty_bucket():
+    return {"c": 0, "v": 0, "p": 0}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -122,11 +147,8 @@ def save_pickle(path, payload):
 
 
 # ═══════════════════════════════════════════════════════════
-#  Construction des stats — STRUCTURE IDENTIQUE à l'ancien v6
+#  Build tasks list
 # ═══════════════════════════════════════════════════════════
-
-def _empty_bucket():
-    return {"c": 0, "v": 0, "p": 0}
 
 def _build_tasks(max_days, exclude_recent_days):
     """Construit la liste des tâches (date, r_num, c_num, discipline, hippo, delta)."""
@@ -148,39 +170,197 @@ def _build_tasks(max_days, exclude_recent_days):
                                   c.get("discipline", ""), hippo, delta))
     return tasks
 
-def _fetch_and_process(task):
-    """Fetch les participants et retourne les données brutes pour accumulation."""
+
+# ═══════════════════════════════════════════════════════════
+#  Background stats loading — PARALLÈLE avec progression
+# ═══════════════════════════════════════════════════════════
+
+def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
+                  ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
+                  hs_global, hs_with_driver, hs_hippo, hs_disc):
+    """Traite une seule course et met à jour les stats."""
     date_str, r_num, c_num, discipline, hippo, delta = task
+    is_short = delta <= WINDOW_SHORT
+
     try:
         parts = get_participants_cached(date_str, r_num, c_num)
-        return parts, date_str, r_num, c_num, discipline, hippo, delta
     except Exception:
-        return None
+        return
+
+    for p in parts.get("participants", []):
+        if p.get("statut") != "PARTANT":
+            continue
+        cheval = _norm(p.get("nom"))
+        driver = _norm(p.get("driver"))
+        entraineur = _norm(p.get("entraineur"))
+        place = p.get("ordreArrivee", 0) or 0
+        won = 1 if place == 1 else 0
+        placed = 1 if 1 <= place <= 3 else 0
+
+        # Stats cheval
+        if cheval:
+            hs_global[cheval]["c"] += 1
+            hs_global[cheval]["v"] += won
+            hs_global[cheval]["p"] += placed
+            if driver:
+                hs_with_driver[cheval][driver]["c"] += 1
+                hs_with_driver[cheval][driver]["v"] += won
+                hs_with_driver[cheval][driver]["p"] += placed
+            if hippo:
+                hs_hippo[cheval][hippo]["c"] += 1
+                hs_hippo[cheval][hippo]["v"] += won
+                hs_hippo[cheval][hippo]["p"] += placed
+            if discipline:
+                hs_disc[cheval][discipline]["c"] += 1
+                hs_disc[cheval][discipline]["v"] += won
+                hs_disc[cheval][discipline]["p"] += placed
+
+        # Stats driver
+        if driver:
+            ts_drivers[driver]["c"] += 1
+            ts_drivers[driver]["v"] += won
+            ts_drivers[driver]["p"] += placed
+            if is_short:
+                ts_drivers_short[driver]["c"] += 1
+                ts_drivers_short[driver]["v"] += won
+                ts_drivers_short[driver]["p"] += placed
+            if discipline:
+                ts_drivers_disc[driver][discipline]["c"] += 1
+                ts_drivers_disc[driver][discipline]["v"] += won
+                ts_drivers_disc[driver][discipline]["p"] += placed
+            if hippo:
+                ts_drivers_hippo[driver][hippo]["c"] += 1
+                ts_drivers_hippo[driver][hippo]["v"] += won
+                ts_drivers_hippo[driver][hippo]["p"] += placed
+
+        # Stats entraîneur
+        if entraineur:
+            ts_entraineurs[entraineur]["c"] += 1
+            ts_entraineurs[entraineur]["v"] += won
+            ts_entraineurs[entraineur]["p"] += placed
+            if is_short:
+                ts_entraineurs_short[entraineur]["c"] += 1
+                ts_entraineurs_short[entraineur]["v"] += won
+                ts_entraineurs_short[entraineur]["p"] += placed
+            if discipline:
+                ts_entraineurs_disc[entraineur][discipline]["c"] += 1
+                ts_entraineurs_disc[entraineur][discipline]["v"] += won
+                ts_entraineurs_disc[entraineur][discipline]["p"] += placed
+
+def _background_load_stats():
+    """Charge les stats en arrière-plan avec progression visible."""
+    global _current_stats, _stats_ready, _stats_progress
+
+    # Vérifier le cache d'abord
+    cached = load_pickle(STATS_CACHE_FILE)
+    if cached:
+        _current_stats = cached
+        _stats_ready.set()
+        _stats_progress = {"status": "ready", "message": "Chargé depuis le cache", "progress": 100,
+                           "horses": len(cached.get("horse_stats", {}).get("global", {})),
+                           "drivers": len(cached.get("team_stats", {}).get("drivers", {})),
+                           "trainers": len(cached.get("team_stats", {}).get("entraineurs", {}))}
+        print(f"[Stats] ✅ Cache chargé")
+        return
+
+    # Pas de cache → calculer en parallèle
+    _stats_progress = {"status": "loading", "message": "Dénombrement des courses...", "progress": 0}
+
+    try:
+        # Étape 1 : compter les tâches
+        all_tasks = _build_tasks(HISTORY_DAYS, 0)
+        total = len(all_tasks)
+        _stats_progress = {"status": "loading", "message": f"{total} courses à analyser",
+                           "progress": 0, "total": total, "done": 0}
+
+        if total == 0:
+            _stats_progress = {"status": "error", "message": "Aucune course trouvée", "progress": 0}
+            _stats_ready.set()
+            return
+
+        # Étape 2 : init les compteurs de stats
+        ts_drivers = defaultdict(_empty_bucket)
+        ts_drivers_short = defaultdict(_empty_bucket)
+        ts_drivers_disc = defaultdict(lambda: defaultdict(_empty_bucket))
+        ts_drivers_hippo = defaultdict(lambda: defaultdict(_empty_bucket))
+        ts_entraineurs = defaultdict(_empty_bucket)
+        ts_entraineurs_short = defaultdict(_empty_bucket)
+        ts_entraineurs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
+
+        hs_global = defaultdict(_empty_bucket)
+        hs_with_driver = defaultdict(lambda: defaultdict(_empty_bucket))
+        hs_hippo = defaultdict(lambda: defaultdict(_empty_bucket))
+        hs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
+
+        # Étape 3 : fetch + traitement en parallèle avec compteur
+        done = [0]
+        done_lock = threading.Lock()
+
+        def track_and_process(task):
+            _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
+                         ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
+                         hs_global, hs_with_driver, hs_hippo, hs_disc)
+            with done_lock:
+                done[0] += 1
+                if done[0] % 10 == 0:
+                    _update_progress(done[0], total)
+
+        print(f"[Stats] 🚀 Calcul en parallèle ({total} courses, 15 workers)...")
+        with ThreadPoolExecutor(max_workers=15) as ex:
+            list(ex.map(track_and_process, all_tasks))
+
+        # Étape 4 : finaliser
+        team_stats = {
+            "drivers": _freeze(ts_drivers),
+            "drivers_short": _freeze(ts_drivers_short),
+            "drivers_disc": _freeze(ts_drivers_disc),
+            "drivers_hippo": _freeze(ts_drivers_hippo),
+            "entraineurs": _freeze(ts_entraineurs),
+            "entraineurs_short": _freeze(ts_entraineurs_short),
+            "entraineurs_disc": _freeze(ts_entraineurs_disc),
+        }
+        horse_stats = {
+            "global": _freeze(hs_global),
+            "with_driver": _freeze(hs_with_driver),
+            "hippo": _freeze(hs_hippo),
+            "disc": _freeze(hs_disc),
+        }
+
+        _current_stats = {"team_stats": team_stats, "horse_stats": horse_stats}
+        save_pickle(STATS_CACHE_FILE, _current_stats)
+        _stats_ready.set()
+        _stats_progress = {"status": "ready", "message": "Prêt", "progress": 100,
+                           "horses": len(hs_global), "drivers": len(ts_drivers),
+                           "trainers": len(ts_entraineurs)}
+        print(f"[Stats] ✅ Terminé : {len(hs_global)} chevaux, {len(ts_drivers)} drivers, "
+              f"{len(ts_entraineurs)} entraîneurs")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _stats_ready.set()
+        _stats_progress = {"status": "error", "message": str(e), "progress": 0}
+
+
+# ═══════════════════════════════════════════════════════════
+#  Stats accessors
+# ═══════════════════════════════════════════════════════════
+
+def get_stats():
+    if _stats_ready.is_set():
+        return _current_stats
+    return None
 
 def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
-    """Construit les stats avec la structure complète de l'ancien projet.
-
-    team_stats:
-      drivers:        {nom: {c, v, p}}
-      drivers_short:  {nom: {c, v, p}}         # ≤30 jours
-      drivers_disc:   {nom: {disc: {c, v, p}}}
-      drivers_hippo:  {nom: {hippo: {c, v, p}}}
-      entraineurs:    {nom: {c, v, p}}
-      entraineurs_short: {nom: {c, v, p}}
-      entraineurs_disc:  {nom: {disc: {c, v, p}}}
-
-    horse_stats:
-      global:       {nom: {c, v, p}}
-      with_driver:  {nom_cheval: {nom_driver: {c, v, p}}}
-      hippo:        {nom_cheval: {hippo: {c, v, p}}}
-      disc:         {nom_cheval: {disc: {c, v, p}}}
-    """
+    """Version synchrone pour backtest/bilan (utilise le cache si dispo)."""
     if exclude_recent_days == 0:
         cached = load_pickle(STATS_CACHE_FILE)
         if cached:
             return cached
 
-    # Structure de stats
+    # Calculer de manière synchrone (pour backtest avec exclude)
+    all_tasks = _build_tasks(max_days, exclude_recent_days)
+
     ts_drivers = defaultdict(_empty_bucket)
     ts_drivers_short = defaultdict(_empty_bucket)
     ts_drivers_disc = defaultdict(lambda: defaultdict(_empty_bucket))
@@ -188,154 +368,38 @@ def compute_all_stats(max_days=HISTORY_DAYS, exclude_recent_days=0):
     ts_entraineurs = defaultdict(_empty_bucket)
     ts_entraineurs_short = defaultdict(_empty_bucket)
     ts_entraineurs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
-
     hs_global = defaultdict(_empty_bucket)
     hs_with_driver = defaultdict(lambda: defaultdict(_empty_bucket))
     hs_hippo = defaultdict(lambda: defaultdict(_empty_bucket))
     hs_disc = defaultdict(lambda: defaultdict(_empty_bucket))
 
-    # Fetch toutes les tâches en parallèle
-    tasks = _build_tasks(max_days, exclude_recent_days)
-    print(f"[Stats] {len(tasks)} courses à analyser...")
+    for task in all_tasks:
+        _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
+                     ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
+                     hs_global, hs_with_driver, hs_hippo, hs_disc)
 
-    with ThreadPoolExecutor(max_workers=30) as ex:
-        results = list(ex.map(_fetch_and_process, tasks))
-
-    for result in results:
-        if not result:
-            continue
-        parts_data, date_str, r_num, c_num, discipline, hippo, delta = result
-        if not parts_data:
-            continue
-
-        is_short = delta <= WINDOW_SHORT
-
-        partants = [p for p in parts_data.get("participants", [])
-                    if p.get("statut") == "PARTANT"]
-
-        for p in partants:
-            cheval = _norm(p.get("nom"))
-            driver = _norm(p.get("driver"))
-            entraineur = _norm(p.get("entraineur"))
-            place = p.get("ordreArrivee", 0) or 0
-            won = 1 if place == 1 else 0
-            placed = 1 if 1 <= place <= 3 else 0
-
-            # ── Stats cheval ──
-            if cheval:
-                hs_global[cheval]["c"] += 1
-                hs_global[cheval]["v"] += won
-                hs_global[cheval]["p"] += placed
-                if driver:
-                    hs_with_driver[cheval][driver]["c"] += 1
-                    hs_with_driver[cheval][driver]["v"] += won
-                    hs_with_driver[cheval][driver]["p"] += placed
-                if hippo:
-                    hs_hippo[cheval][hippo]["c"] += 1
-                    hs_hippo[cheval][hippo]["v"] += won
-                    hs_hippo[cheval][hippo]["p"] += placed
-                if discipline:
-                    hs_disc[cheval][discipline]["c"] += 1
-                    hs_disc[cheval][discipline]["v"] += won
-                    hs_disc[cheval][discipline]["p"] += placed
-
-            # ── Stats driver ──
-            if driver:
-                ts_drivers[driver]["c"] += 1
-                ts_drivers[driver]["v"] += won
-                ts_drivers[driver]["p"] += placed
-                if is_short:
-                    ts_drivers_short[driver]["c"] += 1
-                    ts_drivers_short[driver]["v"] += won
-                    ts_drivers_short[driver]["p"] += placed
-                if discipline:
-                    ts_drivers_disc[driver][discipline]["c"] += 1
-                    ts_drivers_disc[driver][discipline]["v"] += won
-                    ts_drivers_disc[driver][discipline]["p"] += placed
-                if hippo:
-                    ts_drivers_hippo[driver][hippo]["c"] += 1
-                    ts_drivers_hippo[driver][hippo]["v"] += won
-                    ts_drivers_hippo[driver][hippo]["p"] += placed
-
-            # ── Stats entraîneur ──
-            if entraineur:
-                ts_entraineurs[entraineur]["c"] += 1
-                ts_entraineurs[entraineur]["v"] += won
-                ts_entraineurs[entraineur]["p"] += placed
-                if is_short:
-                    ts_entraineurs_short[entraineur]["c"] += 1
-                    ts_entraineurs_short[entraineur]["v"] += won
-                    ts_entraineurs_short[entraineur]["p"] += placed
-                if discipline:
-                    ts_entraineurs_disc[entraineur][discipline]["c"] += 1
-                    ts_entraineurs_disc[entraineur][discipline]["v"] += won
-                    ts_entraineurs_disc[entraineur][discipline]["p"] += placed
-
-    # Freeze defaultdicts en dicts normaux pour sérialisation
-    def freeze(d):
-        if isinstance(d, defaultdict):
-            return {k: freeze(v) for k, v in d.items()}
-        return d
-
-    team_stats = {
-        "drivers": freeze(ts_drivers),
-        "drivers_short": freeze(ts_drivers_short),
-        "drivers_disc": freeze(ts_drivers_disc),
-        "drivers_hippo": freeze(ts_drivers_hippo),
-        "entraineurs": freeze(ts_entraineurs),
-        "entraineurs_short": freeze(ts_entraineurs_short),
-        "entraineurs_disc": freeze(ts_entraineurs_disc),
+    out = {
+        "team_stats": {
+            "drivers": _freeze(ts_drivers),
+            "drivers_short": _freeze(ts_drivers_short),
+            "drivers_disc": _freeze(ts_drivers_disc),
+            "drivers_hippo": _freeze(ts_drivers_hippo),
+            "entraineurs": _freeze(ts_entraineurs),
+            "entraineurs_short": _freeze(ts_entraineurs_short),
+            "entraineurs_disc": _freeze(ts_entraineurs_disc),
+        },
+        "horse_stats": {
+            "global": _freeze(hs_global),
+            "with_driver": _freeze(hs_with_driver),
+            "hippo": _freeze(hs_hippo),
+            "disc": _freeze(hs_disc),
+        },
     }
-    horse_stats = {
-        "global": freeze(hs_global),
-        "with_driver": freeze(hs_with_driver),
-        "hippo": freeze(hs_hippo),
-        "disc": freeze(hs_disc),
-    }
-
-    out = {"team_stats": team_stats, "horse_stats": horse_stats}
 
     if exclude_recent_days == 0:
         save_pickle(STATS_CACHE_FILE, out)
-        print(f"[Stats] ✅ Sauvegardé : {len(horse_stats['global'])} chevaux, "
-              f"{len(team_stats['drivers'])} drivers, {len(team_stats['entraineurs'])} entraîneurs")
 
     return out
-
-
-# ═══════════════════════════════════════════════════════════
-#  Background stats loading
-# ═══════════════════════════════════════════════════════════
-
-_stats_ready = threading.Event()
-_current_stats = None
-_stats_progress = {"status": "init", "message": "Initialisation..."}
-
-def _background_load_stats():
-    global _current_stats, _stats_ready
-
-    cached = load_pickle(STATS_CACHE_FILE)
-    if cached:
-        _current_stats = cached
-        _stats_ready.set()
-        print("[Stats] ✅ Chargé depuis le cache")
-        return
-
-    _stats_progress = {"status": "loading", "message": "Calcul en cours..."}
-    try:
-        _current_stats = compute_all_stats(max_days=HISTORY_DAYS)
-        _stats_ready.set()
-        _stats_progress = {"status": "ready", "message": "Prêt"}
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        _stats_ready.set()
-        _stats_progress = {"status": "error", "error": str(e)}
-
-def get_stats():
-    if _stats_ready.is_set():
-        return _current_stats
-    return None
 
 def start_stats_loader():
     t = threading.Thread(target=_background_load_stats, daemon=True)
@@ -358,7 +422,7 @@ def get_bucket_score(bucket, max_score=100, min_courses=5):
     return min(max_score, raw * confiance + 30 * (1 - confiance))
 
 def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=None):
-    """Score team (driver/entraineur) avec pondération multi-contexte.
+    """Score driver ou entraîneur avec pondération multi-contexte.
     IDENTIQUE à l'ancien get_team_score_multi."""
     if not team_stats or not name:
         return 50
@@ -785,9 +849,9 @@ def api_stats_status():
     progress = dict(_stats_progress)
     if stats:
         progress["ready"] = True
-        progress["horses"] = len(stats.get("horse_stats", {}).get("global", {}))
-        progress["drivers"] = len(stats.get("team_stats", {}).get("drivers", {}))
-        progress["trainers"] = len(stats.get("team_stats", {}).get("entraineurs", {}))
+        progress["horses"] = progress.get("horses", len(stats.get("horse_stats", {}).get("global", {})))
+        progress["drivers"] = progress.get("drivers", len(stats.get("team_stats", {}).get("drivers", {})))
+        progress["trainers"] = progress.get("trainers", len(stats.get("team_stats", {}).get("entraineurs", {})))
     else:
         progress["ready"] = False
     return jsonify(progress)
@@ -899,7 +963,7 @@ def api_force_refresh():
     _stats_ready.clear()
     if os.path.exists(STATS_CACHE_FILE):
         os.remove(STATS_CACHE_FILE)
-    _stats_progress = {"status": "loading", "message": "Recalcul..."}
+    _stats_progress = {"status": "loading", "message": "Recalcul...", "progress": 0}
     t = threading.Thread(target=_background_load_stats, daemon=True)
     t.start()
     return jsonify({"status": "refreshing"})
