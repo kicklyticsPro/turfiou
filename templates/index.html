@@ -254,6 +254,17 @@
             <th>Score</th><th>Proba</th><th>Cote</th><th>Cote juste</th><th>Edge</th><th>Arrivée</th>
           </tr></thead><tbody>`;
 
+      // Bannière de sélection (recommandation de pari sur le #1)
+      if (analyses.length && analyses[0].selection) {
+        const sel = analyses[0].selection;
+        const col = sel.jouer ? '#10b981' : (sel.niveau === 'MOYENNE' ? '#f59e0b' : '#64748b');
+        html += `<tr><td colspan="14" style="background:${col}22;border:none;padding:8px 16px;">
+          <span style="color:${col};font-weight:bold;">${sel.label}</span>
+          <span style="color:#94a3b8;font-size:0.85em;margin-left:12px;">
+            confiance ${sel.niveau} — historique : ${sel.hist_top1}% gagnant / ${sel.hist_top3}% placé (${sel.part_courses}% des courses)
+          </span></td></tr>`;
+      }
+
       analyses.forEach((a, i) => {
         const rank = a.rang || (i + 1);
         const rc = rank <= 3 ? `rank-${rank}` : 'rank-other';
