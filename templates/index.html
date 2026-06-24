@@ -93,7 +93,7 @@
 <body>
 <div class="container">
   <h1>🐎 Turf Analyzer</h1>
-  <p class="subtitle">Scores basés sur les stats PMU — Cheval • Driver • Entraîneur</p>
+  <p class="subtitle">Modèle v8 — multiplicateurs de force calibrés (proba gagnant &amp; top 3, cote juste)</p>
 
   <div class="stats-bar">
     <div class="status" id="stats-status">
@@ -251,7 +251,7 @@
             <th>#</th><th>Cheval</th><th>Driver</th><th>Ent.</th>
             <th>Courses</th>
             <th>Sc. Cheval</th><th>Sc. Driver</th><th>Sc. Ent.</th>
-            <th>Score Total</th><th>Cote</th><th>Edge</th><th>Arrivée</th>
+            <th>Score</th><th>Proba</th><th>Cote</th><th>Cote juste</th><th>Edge</th><th>Arrivée</th>
           </tr></thead><tbody>`;
 
       analyses.forEach((a, i) => {
@@ -284,7 +284,11 @@
           <td>${bar(s.driver)}</td>
           <td>${bar(s.entraineur)}</td>
           <td><strong style="color:#10b981;">${Math.round(s.composite)}</strong></td>
+          <td><strong>${a.proba != null ? a.proba.toFixed(1) : '—'}%</strong>
+            <span class="nb-info">t3 ${a.probaTop3 != null ? a.probaTop3.toFixed(0) : '—'}%</span>
+            <span class="score-bar-bg" style="width:70px;"><span class="score-bar-fill score-green" style="width:${Math.min(100, (a.proba||0)*2.5)}%"></span></span></td>
           <td class="cote-val">${a.cote ? a.cote.toFixed(1) : '—'}</td>
+          <td style="color:#94a3b8;">${a.fairOdds ? a.fairOdds.toFixed(1) : '—'}</td>
           <td>${eh}</td>
           <td>${badge(a.ordreArrivee)}</td>
         </tr>`;
