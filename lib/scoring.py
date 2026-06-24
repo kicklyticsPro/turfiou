@@ -49,6 +49,21 @@ MARKET_BLEND = 0.85
 # n'ajoute que du bruit (Top3 64.0% à 0.0 vs 62.4% à 0.10).
 DRAW_COEF = 0.0
 
+# Steam (mouvement de cote). Signal d'argent informé : un cheval délaissé (cote
+# qui monte entre ref et direct) gagne ~2× moins. Intégré au modèle PUR.
+STEAM_COEF = 0.35
+
+# ── Sélectivité (mode "value / confiance") ──
+# On ne peut pas prédire chaque course à 60 % gagnant (le favori du marché
+# gagne ~30 %). La sélection est le SEUL chemin vers ces taux : ne jouer que
+# les courses où la proba du #1 dépasse un seuil. Seuils calibrés sur 178 courses.
+#
+#   proba #1 ≥ CONF_PLAY  (38 %) → JOUER   : ~65 % gagnant, ~84 % placé (18 % des courses)
+#   proba #1 ≥ CONF_WATCH (25 %) → PRUDENCE : ~42 % gagnant, ~75 % placé
+#   sinon                         → ÉVITER  : course trop ouverte, pas d'edge
+CONF_PLAY = 38.0
+CONF_WATCH = 25.0
+
 # Pondération des contextes par pilier
 TEAM_CTX = {"global": 0.40, "short": 0.30, "disc": 0.20, "hippo": 0.10}
 TRAINER_CTX = {"global": 0.45, "short": 0.30, "disc": 0.25}
@@ -180,14 +195,57 @@ def blend_multipliers(parts):
 
 def draw_multiplier(place_corde, n_field, coef=None):
     """Multiplicateur lié à la position à la corde (draw).
-    Inside (placeCorde = 1) = référence (m=1), outside = pénalité exponentielle.
-    Pénalité croît avec le nombre de chevaux tirés à l'intérieur (placeCorde-1),
-    ce qui reflète le trafic à remonter."""
+    Inside (placeCorde = 1) = référence (m=1), outside = pénalité exponentielle."""
     if not place_corde or place_corde < 1 or n_field <= 1:
         return 1.0
     if coef is None:
         coef = DRAW_COEF
     return math.exp(-coef * (place_corde - 1))
+
+
+# ════════════════════════════════════════════════════════════
+#  Steam — mouvement des cotes (signal d'argent informé)
+# ════════════════════════════════════════════════════════════
+
+def steam_multiplier(rapport_direct, rapport_reference, coef=None):
+    """Multiplicateur lié au mouvement de cote entre la cote de référence
+    (matin) et la cote directe (live).
+
+    ratio = direct / reference
+      < 1 → backed (argent descend, cheval soutenu) → léger boost
+      > 1 → drifted (argent remonte, cheval délaissé) → pénalité
+    (mesuré PMU : drifted 7% gagnant vs ~15% stable/backed)
+
+    Forme : m = exp(coef · (1 - ratio))  → bornée et symétrique en log-space.
+    """
+    if not rapport_direct or not rapport_reference or rapport_reference <= 0:
+        return 1.0
+    if coef is None:
+        coef = STEAM_COEF
+    ratio = rapport_direct / rapport_reference
+    return math.exp(coef * (1.0 - ratio))
+
+
+# ════════════════════════════════════════════════════════════
+#  Sélection — niveau de confiance (mode value)
+# ════════════════════════════════════════════════════════════
+
+def classify_confidence(proba_top1):
+    """Classe une course selon la confiance du #1 prédit.
+
+    Renvoie un dict {niveau, jouer, hist_top1, hist_top3, part_courses} basé
+    sur les seuils calibrés CONF_PLAY / CONF_WATCH.
+    « jouer » = recommandation de pari (seules les courses très confiantes
+    atteignent ~60 % gagnant ; les autres sont trop ouvertes).
+    """
+    if proba_top1 >= CONF_PLAY:
+        return {"niveau": "ÉLEVÉE", "jouer": True, "label": "🎯 JOUER",
+                "hist_top1": 65.0, "hist_top3": 84.0, "part_courses": 18}
+    if proba_top1 >= CONF_WATCH:
+        return {"niveau": "MOYENNE", "jouer": False, "label": "⚠️ PRUDENCE",
+                "hist_top1": 42.0, "hist_top3": 75.0, "part_courses": 35}
+    return {"niveau": "FAIBLE", "jouer": False, "label": "🚫 ÉVITER",
+            "hist_top1": 20.0, "hist_top3": 55.0, "part_courses": 47}
 
 
 # ════════════════════════════════════════════════════════════
@@ -509,6 +567,12 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
         m_draw = draw_multiplier(place_corde, len(partants))
         lam_i_win *= m_draw
 
+        # steam : mouvement de cote (backed vs drifted) — signal d'argent informé
+        rap_d = p.get("dernierRapportDirect") or {}
+        rap_r = p.get("dernierRapportReference") or {}
+        m_steam = steam_multiplier(rap_d.get("rapport"), rap_r.get("rapport"))
+        lam_i_win *= m_steam
+
         gains = p.get("gainsParticipant", {}) or {}
         rows.append({
             "numPmu": p.get("numPmu"),
@@ -578,6 +642,9 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
     rows.sort(key=lambda x: -x["proba"])
     for rank, r in enumerate(rows, 1):
         r["rang"] = rank
+
+    # ── sélection : niveau de confiance de la course (basé sur le #1) ──
+    rows[0]["selection"] = classify_confidence(rows[0]["proba"])
 
     return rows
 
