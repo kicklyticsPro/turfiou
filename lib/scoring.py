@@ -35,6 +35,20 @@ TEMPERATURE = 2.5
 # Pondération des piliers (calibrée : cheval renforcé, entraîneur réduit)
 W_HORSE, W_DRIVER, W_TRAINER = 0.55, 0.30, 0.15
 
+# ── Améliorations v9 ──
+# Blend modèle + marché : λ_final = λ_modèle^(1-β) · λ_marché^β.
+# Le marché (cotes) est le prédicteur le plus puissant ; le modèle ajoute le
+# signal de forme/compétence. β=0 → modèle seul, β=1 → marché seul.
+# Calibré sur 178 courses : β=0.85 maximise la précision tout en gardant une
+# contribution utile du modèle (le blend BAT le marché seul sur le Top3 :
+# 64% vs 60.7%). L'edge (value bet) reste calculé sur le modèle PUR (β-indépendant).
+MARKET_BLEND = 0.85
+
+# Effet de la corde (draw). Désactivé (0.0) après calibration : le marché encode
+# déjà la position à la corde, et un pénalty générique sans historique par cheval
+# n'ajoute que du bruit (Top3 64.0% à 0.0 vs 62.4% à 0.10).
+DRAW_COEF = 0.0
+
 # Pondération des contextes par pilier
 TEAM_CTX = {"global": 0.40, "short": 0.30, "disc": 0.20, "hippo": 0.10}
 TRAINER_CTX = {"global": 0.45, "short": 0.30, "disc": 0.25}
@@ -158,6 +172,22 @@ def blend_multipliers(parts):
     tot_w = sum(w for _, w in active)
     log_m = sum(_safe_log(m) * (w / tot_w) for m, w in active)
     return math.exp(log_m)
+
+
+# ════════════════════════════════════════════════════════════
+#  Corde (draw position) — avantage des faibles numéros (inside)
+# ════════════════════════════════════════════════════════════
+
+def draw_multiplier(place_corde, n_field, coef=None):
+    """Multiplicateur lié à la position à la corde (draw).
+    Inside (placeCorde = 1) = référence (m=1), outside = pénalité exponentielle.
+    Pénalité croît avec le nombre de chevaux tirés à l'intérieur (placeCorde-1),
+    ce qui reflète le trafic à remonter."""
+    if not place_corde or place_corde < 1 or n_field <= 1:
+        return 1.0
+    if coef is None:
+        coef = DRAW_COEF
+    return math.exp(-coef * (place_corde - 1))
 
 
 # ════════════════════════════════════════════════════════════
@@ -451,8 +481,7 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
 
     # ── multiplicateurs par partant ──
     rows = []
-    lam_win = []
-    lam_place = []
+    lam_model = []      # force du modèle pur (forme + draw) — pour l'edge
     for i, p in enumerate(partants):
         cheval = p.get("nom") or ""
         driver = p.get("driver") or ""
@@ -474,6 +503,11 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
             (m_h_win, W_HORSE), (m_d_win, W_DRIVER), (m_t_win, W_TRAINER)]) ** TEMPERATURE
         lam_i_place = blend_multipliers([
             (m_h_place, W_HORSE), (m_d_place, W_DRIVER), (m_t_place, W_TRAINER)]) ** TEMPERATURE
+
+        # draw (corde) : facteur de modèle non capté par les stats
+        place_corde = p.get("placeCorde") or 0
+        m_draw = draw_multiplier(place_corde, len(partants))
+        lam_i_win *= m_draw
 
         gains = p.get("gainsParticipant", {}) or {}
         rows.append({
@@ -499,18 +533,34 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
             "_m_total": lam_i_win,
             "_m_place": lam_i_place,
         })
-        lam_win.append(lam_i_win)
-        lam_place.append(lam_i_place)
+        lam_model.append(lam_i_win)
 
-    # ── probabilités calibrées (softmax + Harville) ──
-    S_win = sum(lam_win) or 1.0
-    top3 = harville_top3(lam_win)
+    # ── proba modèle pur (forme + draw) — pour l'edge & calibration ──
+    S_model = sum(lam_model) or 1.0
+    proba_model = [lam_model[i] / S_model * 100.0 for i in range(len(rows))]
+
+    # ── blend modèle + marché (le grand levier de précision) ──
+    # λ_final = λ_modèle^(1-β) · λ_marché^β ; marché = Shin (déoverround).
+    # Sans cote → marché uniforme (1/N) → le modèle prédomine sur ce cheval.
+    lam_mkt = []
+    for i in range(len(rows)):
+        pi = mkt[i] / 100.0
+        lam_mkt.append(pi if pi > 0 else 1.0 / len(rows))
+    lam_final = []
+    for i in range(len(rows)):
+        lm = max(lam_model[i], 1e-9)
+        mk = max(lam_mkt[i], 1e-9)
+        lam_final.append(math.pow(lm, 1.0 - MARKET_BLEND) * math.pow(mk, MARKET_BLEND))
+
+    # ── probabilités calibrées (softmax + Harville) sur les forces blendées ──
+    S_win = sum(lam_final) or 1.0
+    top3 = harville_top3(lam_final)
     for i, r in enumerate(rows):
-        proba_win = lam_win[i] / S_win * 100.0
+        proba_win = lam_final[i] / S_win * 100.0
         r["proba"] = round(proba_win, 2)
         r["probaTop3"] = round(top3[i] * 100.0, 2)
         r["fairOdds"] = round(100.0 / proba_win, 2) if proba_win > 0 else None
-        r["strength"] = round(lam_win[i], 3)
+        r["strength"] = round(lam_final[i], 3)
         r["probaMarche"] = round(mkt[i], 2)
         r["scores"] = {
             "cheval": power_score(r["_m_horse"]),
@@ -518,8 +568,10 @@ def analyze_course(parts_data, team_stats, horse_stats, discipline, hippodrome):
             "entraineur": power_score(r["_m_trainer"]),
             "composite": power_score(r["_m_total"]),
         }
+        # edge : proba modèle PUR vs marché (vrais "value bets")
         mkt_i = mkt[i]
-        r["edge"] = round(proba_win - mkt_i, 2) if mkt_i else 0
+        r["probaModel"] = round(proba_model[i], 2)
+        r["edge"] = round(proba_model[i] - mkt_i, 2) if mkt_i else 0
         r["chance"] = round(proba_win, 1)
 
     # ── classement par probabilité de victoire ──
