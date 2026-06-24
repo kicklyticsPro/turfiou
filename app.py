@@ -772,7 +772,7 @@ def api_force_refresh():
 @app.route("/api/health")
 def api_health():
     stats = get_stats()
-    return jsonify({"status": "ok", "version": "v8",
+    return jsonify({"status": "ok", "version": "v9",
                     "stats_ready": stats is not None})
 
 
