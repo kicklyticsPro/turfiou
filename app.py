@@ -1,27 +1,30 @@
 """
-Turf Analyzer — Version épurée
+Turf Analyzer — Moteur de calcul v8
 
-3 piliers basés UNIQUEMENT sur les données PMU brutes (c, v, p) :
-  1. Stats carrière du cheval
-  2. Stats driver/jockey
-  3. Stats entraîneur
+Classement hippique fondé sur 3 piliers (cheval / driver / entraîneur) traités
+comme des **multiplicateurs de force** (modèle de Bradley-Terry) :
 
-Classement = moyenne des 3 scores.
-Pas de ML, pas de features avancées, pas d'ELO.
+  • normalisés par la taille du champ
+  • régressés vers la moyenne (shrinkage empirique)
+  • combinés en probabilités calibrées (gagnant + top 3)
+  • comparés aux cotes du marché déoverroundées (Shin) → edge / cote juste
+
+Le moteur vit dans lib/scoring.py (testable isolément).
 """
 
 from flask import Flask, jsonify, render_template, request, session, redirect, url_for
 from functools import wraps
 from datetime import datetime, timedelta
 import requests
-import math
 import os
 import pickle
-import json
 import threading
 from functools import lru_cache
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
+
+# Moteur de calcul v8 (multiplicateurs Bradley-Terry + Shin + Harville)
+from lib.scoring import analyze_course as _score_course, PLACE_TOP
 
 app = Flask(__name__)
 app.secret_key = "turf-analyzer-simple"
@@ -32,7 +35,7 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; TurfAnalyzer/1.0)"}
 CACHE_DIR = os.environ.get("CACHE_DIR", "/tmp/turf_cache")
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v7.pkl")
+STATS_CACHE_FILE = os.path.join(CACHE_DIR, "stats_v8.pkl")  # v8: buckets {c,v,p,dw,dp}
 HISTORY_DAYS = 180
 WINDOW_SHORT = 30
 
@@ -51,16 +54,6 @@ def _norm(name):
 def fmt_date(d):
     return d.strftime("%d%m%Y")
 
-def _safe(val, default=0):
-    if val is None:
-        return default
-    try:
-        if math.isnan(val) or math.isinf(val):
-            return default
-    except (TypeError, ValueError):
-        pass
-    return val
-
 def _update_progress(done, total, msg=None):
     with _progress_lock:
         pct = round(done / max(total, 1) * 100)
@@ -76,7 +69,9 @@ def _freeze(d):
     return d
 
 def _empty_bucket():
-    return {"c": 0, "v": 0, "p": 0}
+    """Bucket de stats : c=courses, v=victoires, p=places(top3),
+    dw=Σ1/N (difficulté victoire), dp=Σmin(3,N)/N (difficulté place)."""
+    return {"c": 0, "v": 0, "p": 0, "dw": 0.0, "dp": 0.0}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -171,7 +166,8 @@ def _build_tasks(max_days, exclude_recent_days):
 def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_drivers_hippo,
                   ts_entraineurs, ts_entraineurs_short, ts_entraineurs_disc,
                   hs_global, hs_with_driver, hs_hippo, hs_disc):
-    """Traite une course et met à jour les compteurs."""
+    """Traite une course et met à jour les compteurs (c,v,p) + difficultés
+    de taille de champ (dw = Σ1/N, dp = Σ min(3,N)/N)."""
     date_str, r_num, c_num, discipline, hippo, delta = task
     is_short = delta <= WINDOW_SHORT
 
@@ -180,9 +176,13 @@ def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_driver
     except Exception:
         return
 
-    for p in parts.get("participants", []):
-        if p.get("statut") != "PARTANT":
-            continue
+    # taille du champ = nombre de partants (clé de la normalisation v8)
+    partants = [p for p in parts.get("participants", []) if p.get("statut") == "PARTANT"]
+    n_field = len(partants) or 1
+    dw_inc = 1.0 / n_field                      # difficulté victoire d'un moyen
+    dp_inc = min(PLACE_TOP, n_field) / n_field  # difficulté place d'un moyen
+
+    for p in partants:
         cheval = _norm(p.get("nom"))
         driver = _norm(p.get("driver"))
         entraineur = _norm(p.get("entraineur"))
@@ -190,55 +190,55 @@ def _process_task(task, ts_drivers, ts_drivers_short, ts_drivers_disc, ts_driver
         won = 1 if place == 1 else 0
         placed = 1 if 1 <= place <= 3 else 0
 
-        # Stats cheval
+        # ── Stats cheval ──
         if cheval:
-            hs_global[cheval]["c"] += 1
-            hs_global[cheval]["v"] += won
-            hs_global[cheval]["p"] += placed
+            hb = hs_global[cheval]
+            hb["c"] += 1; hb["v"] += won; hb["p"] += placed
+            hb["dw"] += dw_inc; hb["dp"] += dp_inc
             if driver:
-                hs_with_driver[cheval][driver]["c"] += 1
-                hs_with_driver[cheval][driver]["v"] += won
-                hs_with_driver[cheval][driver]["p"] += placed
+                d = hs_with_driver[cheval][driver]
+                d["c"] += 1; d["v"] += won; d["p"] += placed
+                d["dw"] += dw_inc; d["dp"] += dp_inc
             if hippo:
-                hs_hippo[cheval][hippo]["c"] += 1
-                hs_hippo[cheval][hippo]["v"] += won
-                hs_hippo[cheval][hippo]["p"] += placed
+                h = hs_hippo[cheval][hippo]
+                h["c"] += 1; h["v"] += won; h["p"] += placed
+                h["dw"] += dw_inc; h["dp"] += dp_inc
             if discipline:
-                hs_disc[cheval][discipline]["c"] += 1
-                hs_disc[cheval][discipline]["v"] += won
-                hs_disc[cheval][discipline]["p"] += placed
+                di = hs_disc[cheval][discipline]
+                di["c"] += 1; di["v"] += won; di["p"] += placed
+                di["dw"] += dw_inc; di["dp"] += dp_inc
 
-        # Stats driver
+        # ── Stats driver ──
         if driver:
-            ts_drivers[driver]["c"] += 1
-            ts_drivers[driver]["v"] += won
-            ts_drivers[driver]["p"] += placed
+            d = ts_drivers[driver]
+            d["c"] += 1; d["v"] += won; d["p"] += placed
+            d["dw"] += dw_inc; d["dp"] += dp_inc
             if is_short:
-                ts_drivers_short[driver]["c"] += 1
-                ts_drivers_short[driver]["v"] += won
-                ts_drivers_short[driver]["p"] += placed
+                s = ts_drivers_short[driver]
+                s["c"] += 1; s["v"] += won; s["p"] += placed
+                s["dw"] += dw_inc; s["dp"] += dp_inc
             if discipline:
-                ts_drivers_disc[driver][discipline]["c"] += 1
-                ts_drivers_disc[driver][discipline]["v"] += won
-                ts_drivers_disc[driver][discipline]["p"] += placed
+                dd = ts_drivers_disc[driver][discipline]
+                dd["c"] += 1; dd["v"] += won; dd["p"] += placed
+                dd["dw"] += dw_inc; dd["dp"] += dp_inc
             if hippo:
-                ts_drivers_hippo[driver][hippo]["c"] += 1
-                ts_drivers_hippo[driver][hippo]["v"] += won
-                ts_drivers_hippo[driver][hippo]["p"] += placed
+                dh = ts_drivers_hippo[driver][hippo]
+                dh["c"] += 1; dh["v"] += won; dh["p"] += placed
+                dh["dw"] += dw_inc; dh["dp"] += dp_inc
 
-        # Stats entraîneur
+        # ── Stats entraîneur ──
         if entraineur:
-            ts_entraineurs[entraineur]["c"] += 1
-            ts_entraineurs[entraineur]["v"] += won
-            ts_entraineurs[entraineur]["p"] += placed
+            e = ts_entraineurs[entraineur]
+            e["c"] += 1; e["v"] += won; e["p"] += placed
+            e["dw"] += dw_inc; e["dp"] += dp_inc
             if is_short:
-                ts_entraineurs_short[entraineur]["c"] += 1
-                ts_entraineurs_short[entraineur]["v"] += won
-                ts_entraineurs_short[entraineur]["p"] += placed
+                es = ts_entraineurs_short[entraineur]
+                es["c"] += 1; es["v"] += won; es["p"] += placed
+                es["dw"] += dw_inc; es["dp"] += dp_inc
             if discipline:
-                ts_entraineurs_disc[entraineur][discipline]["c"] += 1
-                ts_entraineurs_disc[entraineur][discipline]["v"] += won
-                ts_entraineurs_disc[entraineur][discipline]["p"] += placed
+                ed = ts_entraineurs_disc[entraineur][discipline]
+                ed["c"] += 1; ed["v"] += won; ed["p"] += placed
+                ed["dw"] += dw_inc; ed["dp"] += dp_inc
 
 
 # ═══════════════════════════════════════════════════════════
@@ -392,176 +392,16 @@ def start_stats_loader():
 
 
 # ═══════════════════════════════════════════════════════════
-#  Scoring — uniquement données brutes PMU (c, v, p)
-# ═══════════════════════════════════════════════════════════
-
-def get_bucket_score(bucket, max_score=100, min_courses=5):
-    """Score 0-100 depuis un bucket {c, v, p}."""
-    if not bucket or bucket["c"] < min_courses:
-        return None
-    c, v, p = bucket["c"], bucket["v"], bucket["p"]
-    tv, tp = v / c, p / c
-    confiance = min(1.0, c / 30)
-    raw = tv * 200 + tp * 60
-    return min(max_score, raw * confiance + 30 * (1 - confiance))
-
-def get_team_score_multi(name, kind, team_stats, discipline=None, hippodrome=None):
-    """Score driver ou entraîneur. Pondération: global 35%, court terme 30%,
-    discipline 20%, hippodrome 15% (driver uniquement)."""
-    if not team_stats or not name:
-        return 50
-    name = _norm(name)
-
-    if kind == "drivers":
-        gb = team_stats.get("drivers", {}).get(name)
-        sb = team_stats.get("drivers_short", {}).get(name)
-        db = team_stats.get("drivers_disc", {}).get(name, {}).get(discipline) if discipline else None
-        hb = team_stats.get("drivers_hippo", {}).get(name, {}).get(hippodrome) if hippodrome else None
-    else:
-        gb = team_stats.get("entraineurs", {}).get(name)
-        sb = team_stats.get("entraineurs_short", {}).get(name)
-        db = team_stats.get("entraineurs_disc", {}).get(name, {}).get(discipline) if discipline else None
-        hb = None
-
-    s_g = get_bucket_score(gb) or 50
-    s_s = get_bucket_score(sb, min_courses=3)
-    s_d = get_bucket_score(db, min_courses=3)
-    s_h = get_bucket_score(hb, min_courses=3)
-
-    parts = [(s_g, 0.35)]
-    if s_s is not None:
-        parts.append((s_s, 0.30))
-    if s_d is not None:
-        parts.append((s_d, 0.20))
-    if s_h is not None:
-        parts.append((s_h, 0.15))
-
-    tw = sum(w for _, w in parts)
-    return sum(s * w for s, w in parts) / tw
-
-def get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
-                    nb_courses=0, nb_victoires=0, nb_places=0):
-    """Score cheval avec pondération multi-contexte.
-    
-    Priorité 1: stats carrière PMU directes (nombreCourses/Victoires/Places) → instantané
-    Priorité 2: stats historiques calculées → quand le cache est chargé
-    """
-    if not horse_stats or not cheval:
-        return 50
-    cheval = _norm(cheval)
-
-    # ── Priorité 1: stats carrière PMU directes ──
-    if nb_courses and nb_courses >= 2:
-        s_g = get_bucket_score({"c": nb_courses, "v": nb_victoires, "p": nb_places})
-    else:
-        s_g = None
-
-    # ── Priorité 2: fallback sur stats historiques si dispo ──
-    if s_g is None:
-        s_g = get_bucket_score(horse_stats.get("global", {}).get(cheval)) or 50
-
-    s_d = get_bucket_score(
-        horse_stats.get("with_driver", {}).get(cheval, {}).get(_norm(driver)),
-        min_courses=2) if driver else None
-    s_h = get_bucket_score(
-        horse_stats.get("hippo", {}).get(cheval, {}).get(hippodrome),
-        min_courses=2) if hippodrome else None
-    s_di = get_bucket_score(
-        horse_stats.get("disc", {}).get(cheval, {}).get(discipline),
-        min_courses=2) if discipline else None
-
-    parts = [(s_g, 0.40)]
-    if s_d is not None:
-        parts.append((s_d, 0.25))
-    if s_h is not None:
-        parts.append((s_h, 0.20))
-    if s_di is not None:
-        parts.append((s_di, 0.15))
-
-    tw = sum(w for _, w in parts)
-    return sum(s * w for s, w in parts) / tw
-
-def _composite_score(horse_s, driver_s, trainer_s):
-    return round((horse_s + driver_s + trainer_s) / 3, 1)
-
-
-# ═══════════════════════════════════════════════════════════
-#  Analyse d'une course
+#  Analyse d'une course — délègue au moteur v8 (lib/scoring.py)
 # ═══════════════════════════════════════════════════════════
 
 def analyser_course(parts_data, perfs_data, team_stats, horse_stats, discipline, hippodrome):
-    partants = [p for p in parts_data.get("participants", [])
-                if p.get("statut") == "PARTANT"]
-    if not partants:
-        return []
+    """Analyse une course via le moteur de multiplicateurs de force (Bradley-Terry).
 
-    cotes = []
-    for p in partants:
-        rap = p.get("dernierRapportDirect") or p.get("dernierRapportReference")
-        cotes.append(float(rap["rapport"]) if rap and rap.get("rapport") else None)
-
-    inv_cotes = [1.0 / c if c and c > 0 else 0 for c in cotes]
-    total_inv = sum(inv_cotes) or 1.0
-    proba_marche = [x / total_inv * 100 for x in inv_cotes]
-
-    analyses = []
-    for i, p in enumerate(partants):
-        cheval = p.get("nom") or ""
-        driver = p.get("driver") or ""
-        entraineur = p.get("entraineur") or ""
-
-        nb_courses = p.get("nombreCourses", 0) or 0
-        nb_victoires = p.get("nombreVictoires", 0) or 0
-        nb_places = p.get("nombrePlaces", 0) or 0
-
-        gains = p.get("gainsParticipant", {}) or {}
-        gains_carriere = gains.get("gainsCarriere", 0) or 0
-
-        # Scores basés uniquement sur les données brutes PMU (c, v, p)
-        s_horse = get_horse_score(cheval, driver, hippodrome, discipline, horse_stats,
-                                   nb_courses, nb_victoires, nb_places)
-        s_driver = get_team_score_multi(driver, "drivers", team_stats, discipline, hippodrome)
-        s_trainer = get_team_score_multi(entraineur, "entraineurs", team_stats, discipline)
-        s_composite = _composite_score(s_horse, s_driver, s_trainer)
-
-        cote = cotes[i]
-        proba_m = proba_marche[i]
-        edge = round(s_composite - proba_m, 2) if cote else 0
-
-        analyses.append({
-            "numPmu": p.get("numPmu"),
-            "nom": cheval,
-            "age": p.get("age"),
-            "sexe": p.get("sexe"),
-            "driver": driver or "—",
-            "entraineur": entraineur or "—",
-            "musique": p.get("musique", ""),
-            "nbCourses": p.get("nombreCourses", 0) or 0,
-            "nbVictoires": p.get("nombreVictoires", 0) or 0,
-            "nbPlaces": p.get("nombrePlaces", 0) or 0,
-            "cote": cote,
-            "probaMarche": round(proba_m, 2),
-            "gainsCarriere": gains_carriere // 100,
-            "deferre": p.get("deferre", ""),
-            "oeilleres": p.get("oeilleres", ""),
-            "urlCasaque": p.get("urlCasaque"),
-            "ordreArrivee": p.get("ordreArrivee"),
-            "scores": {
-                "cheval": round(s_horse, 1),
-                "driver": round(s_driver, 1),
-                "entraineur": round(s_trainer, 1),
-                "composite": round(s_composite, 1),
-                "marche": round(proba_m, 1),
-            },
-            "edge": edge,
-            "chance": s_composite,
-        })
-
-    analyses.sort(key=lambda x: -x["scores"]["composite"])
-    for rank, a in enumerate(analyses, 1):
-        a["rang"] = rank
-
-    return analyses
+    Signature conservée (perfs_data ignoré : la musique vient des participants).
+    Voir lib/scoring.analyze_course pour le détail du calcul.
+    """
+    return _score_course(parts_data, team_stats or {}, horse_stats or {}, discipline, hippodrome)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -932,7 +772,7 @@ def api_force_refresh():
 @app.route("/api/health")
 def api_health():
     stats = get_stats()
-    return jsonify({"status": "ok", "version": "simple",
+    return jsonify({"status": "ok", "version": "v8",
                     "stats_ready": stats is not None})
 
 
